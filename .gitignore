@@ -1,0 +1,7 @@
+.clojure-config/
+.home/
+.m2/
+.tooling/
+.cpcache/
+target/
+

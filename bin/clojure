@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+clojure_bin="$root/.tooling/clojure/bin/clojure"
+
+if [[ ! -x "$clojure_bin" ]]; then
+  echo "Missing repo-local Clojure CLI at $clojure_bin" >&2
+  echo "Run ./scripts/bootstrap-clojure first." >&2
+  exit 1
+fi
+
+export HOME="${CIWI_HOME:-$root/.home}"
+export CLJ_CONFIG="${CIWI_CLJ_CONFIG:-$root/.clojure-config}"
+mkdir -p "$HOME" "$CLJ_CONFIG"
+
+exec "$clojure_bin" "$@"
+

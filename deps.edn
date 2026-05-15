@@ -1,0 +1,8 @@
+{:paths ["src"]
+ :mvn/local-repo ".m2/repository"
+ :deps {org.clojure/clojure {:mvn/version "1.12.5"}}
+ :aliases
+ {:dev {:extra-paths ["dev" "test"]}
+  :test {:extra-paths ["test"]
+         :main-opts ["-m" "ciwi.test-runner"]}}}
+

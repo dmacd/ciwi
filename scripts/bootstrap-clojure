@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+prefix="$root/.tooling/clojure"
+clojure_cli_version="${CLOJURE_CLI_VERSION:-1.12.5.1645}"
+installer_url="${CLOJURE_CLI_INSTALLER_URL:-https://github.com/clojure/brew-install/releases/download/$clojure_cli_version/linux-install.sh}"
+
+export HOME="${CIWI_HOME:-$root/.home}"
+export CLJ_CONFIG="${CIWI_CLJ_CONFIG:-$root/.clojure-config}"
+mkdir -p "$HOME" "$CLJ_CONFIG"
+
+if [[ -x "$prefix/bin/clojure" ]]; then
+  "$prefix/bin/clojure" -Sdescribe
+  exit 0
+fi
+
+tmp_dir="$(mktemp -d)"
+trap 'rm -rf "$tmp_dir"' EXIT
+
+curl -L -f -o "$tmp_dir/linux-install.sh" "$installer_url"
+bash "$tmp_dir/linux-install.sh" --prefix "$prefix"
