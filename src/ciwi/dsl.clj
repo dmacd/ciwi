@@ -75,3 +75,62 @@
 (defn root
   [expr]
   (:root (from-expr expr)))
+
+
+(defn to-expr
+  "Convert a graph rooted at `root-id` back to the Clojure graph literal form.
+  The first operator option is used when a value node has alternatives."
+  [g root-id]
+  (letfn [(literal-if-needed [x]
+            (if (operator-form? x)
+              (literal x)
+              x))
+          (expr* [id trace]
+            (if (contains? trace id)
+              [:ref id]
+              (let [n (graph/node g id)
+                    trace (conj trace id)]
+                (cond
+                  (graph/value-node? n)
+                  (if-let [op-id (first (:options n))]
+                    (expr* op-id trace)
+                    (literal-if-needed (:data (:value n))))
+
+                  (graph/operator-node? n)
+                  (into [(:id (:operator n))]
+                        (map #(expr* % trace) (:children n)))
+
+                  :else nil))))]
+    (expr* root-id #{})))
+
+(defn to-data
+  "Serialize graph structure to EDN-friendly data. Operators are stored by id."
+  [g]
+  {:nodes
+   (into {}
+         (map (fn [[id n]]
+                [id (case (:kind n)
+                      :value {:kind :value
+                              :value (:data (:value n))
+                              :parents (:parents n)
+                              :options (:options n)}
+                      :operator {:kind :operator
+                                 :operator (:id (:operator n))
+                                 :parent (:parent n)
+                                 :children (:children n)})])
+              (:nodes g)))})
+
+(defn from-data
+  ([data]
+   (from-data data {}))
+  ([data {:keys [registry]
+          :or {registry op/registry}}]
+   (let [value-nodes (filter (fn [[_ n]] (= :value (:kind n))) (:nodes data))
+         op-nodes (filter (fn [[_ n]] (= :operator (:kind n))) (:nodes data))]
+     (reduce (fn [g [id n]]
+               (graph/add-operator g id (get registry (:operator n)) (:parent n) (:children n)))
+             (reduce (fn [g [id n]]
+                       (graph/add-value g id (:value n)))
+                     (graph/empty-graph)
+                     value-nodes)
+             op-nodes))))

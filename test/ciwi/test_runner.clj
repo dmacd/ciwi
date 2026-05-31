@@ -9,6 +9,7 @@
             [ciwi.optimize-test]
             [ciwi.propagation-test]
             [ciwi.search-test]
+            [ciwi.structure-test]
             [ciwi.value-test]))
 
 (defn -main
@@ -22,6 +23,7 @@
                                              'ciwi.optimize-test
                                              'ciwi.propagation-test
                                              'ciwi.search-test
+                                             'ciwi.structure-test
                                              'ciwi.value-test)]
     (when (pos? (+ fail error))
       (System/exit 1))))

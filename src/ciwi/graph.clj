@@ -192,3 +192,109 @@
         (recur (into (pop queue) (reverse next-ids))
                (conj seen id)
                (conj result id))))))
+
+
+(defn breadth-first-walk
+  ([g start-id]
+   (breadth-first-walk g start-id {}))
+  ([g start-id {:keys [above? below? values? operators?]
+                :or {above? true
+                     below? true
+                     values? true
+                     operators? true}}]
+   (loop [queue [start-id]
+          seen #{}
+          result []]
+     (if (empty? queue)
+       result
+       (let [id (first queue)
+             queue (subvec (vec queue) 1)]
+         (if (contains? seen id)
+           (recur queue seen result)
+           (let [n (node g id)
+                 include? (or (and values? (value-node? n))
+                              (and operators? (operator-node? n)))
+                 next-ids (remove seen (neighbors g id {:above? above?
+                                                        :below? below?}))]
+             (recur (into queue next-ids)
+                    (conj seen id)
+                    (cond-> result include? (conj id))))))))))
+
+(defn depth
+  ([g id]
+   (depth g id #{}))
+  ([g id trace]
+   (if (contains? trace id)
+     0
+     (let [n (node g id)
+           trace (conj trace id)]
+       (cond
+         (value-node? n)
+         (if (empty? (:options n))
+           0
+           (apply max (map #(depth g % trace) (:options n))))
+
+         (operator-node? n)
+         (if (empty? (:children n))
+           1
+           (inc (apply max (map #(depth g % trace) (:children n)))))
+
+         :else 0)))))
+
+(defn graph-depth
+  [g]
+  (if-let [rs (seq (roots g))]
+    (apply max (map #(depth g %) rs))
+    0))
+
+(defn value-data
+  [g id]
+  (get-in g [:nodes id :value :data]))
+
+(defn leaves-data
+  [g start-id]
+  (mapv #(value-data g %) (leaves g start-id)))
+
+(defn structural-key
+  ([g id]
+   (structural-key g id {}))
+  ([g id {:keys [check-values?]
+          :or {check-values? true}}]
+   (letfn [(key* [id trace]
+             (if (contains? trace id)
+               [:cycle]
+               (let [n (node g id)
+                     trace (conj trace id)]
+                 (cond
+                   (value-node? n)
+                   (let [options (mapv #(key* % trace) (:options n))]
+                     (cond-> [:value]
+                       check-values? (conj (:data (:value n)))
+                       true (conj options)))
+
+                   (operator-node? n)
+                   (let [op (:operator n)
+                         child-keys (mapv #(key* % trace) (:children n))
+                         child-keys (if (:commutative? op)
+                                      (vec (sort-by pr-str child-keys))
+                                      child-keys)]
+                     [:operator (:id op) child-keys])
+
+                   :else [:missing id]))))]
+     (key* id #{}))))
+
+(defn resembles?
+  ([g1 id1 g2 id2]
+   (resembles? g1 id1 g2 id2 {}))
+  ([g1 id1 g2 id2 opts]
+   (= (structural-key g1 id1 opts)
+      (structural-key g2 id2 opts))))
+
+(defn subgraph?
+  ([sub-g sub-root g root]
+   (subgraph? sub-g sub-root g root {}))
+  ([sub-g sub-root g root opts]
+   (let [needle (structural-key sub-g sub-root opts)]
+     (boolean
+      (some #(= needle (structural-key g % opts))
+            (walk g root opts))))))

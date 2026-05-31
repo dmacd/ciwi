@@ -1,5 +1,7 @@
 (ns ciwi.enumerator-test
-  (:require [ciwi.enumerator :as sut]
+  (:require [ciwi.dsl :as dsl]
+            [ciwi.enumerator :as sut]
+            [ciwi.graph :as graph]
             [ciwi.value :as value]
             [clojure.test :refer [deftest is]]))
 
@@ -29,3 +31,19 @@
                     (mapv (fn [item]
                             (mapv :data (:values item)))))]
     (is (= expected actual))))
+
+
+(deftest node-tuple-enumerator-uses-breadth-first-value-order
+  (let [{:keys [graph root]} (dsl/from-expr [:concat [:brange 0 3] [:repeat :x 2]])
+        tuples (sut/node-tuples graph root {:max-tuple-len 2
+                                           :max-results 6})
+        values (mapv (fn [item]
+                       (mapv #(graph/value-data graph %) (:nodes item)))
+                     tuples)]
+    (is (= [[ [0 1 2 :x :x] ]
+            [ [0 1 2 :x :x] [0 1 2 :x :x] ]
+            [ [0 1 2] ]
+            [ [:x :x] ]
+            [ 0 ]
+            [ 3 ]]
+           values))))

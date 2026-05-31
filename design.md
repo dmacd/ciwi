@@ -133,3 +133,12 @@ Python WILLIAM for comparison, but callers see them as recursive search
 operators over explicit state. This lets later work replace numeric search with
 graph rewrite search, gradient descent on differentiable subgraphs, or mixed
 specialized search without changing the surrounding compression loop.
+
+
+## Structural Graph Operations
+
+Graph comparison is based on canonical structural keys over immutable node ids.
+Commutative operators sort child structural keys, while noncommutative operators
+preserve child order. This gives Clojure-native replacements for the Python
+`resembles`, `subgraph`, `depth`, and sexpr round-trip tests without adopting
+Python's mutable object identity assumptions.

@@ -1,5 +1,6 @@
 (ns ciwi.enumerator
-  (:require [ciwi.value :as value]))
+  (:require [ciwi.graph :as graph]
+            [ciwi.value :as value]))
 
 (defrecord BufferedIterator [state])
 
@@ -122,3 +123,51 @@
                   (into queued (map :indices next-items))
                   emitted-values
                   emitted)))))))
+
+
+(defn- node-index-dl
+  [idx]
+  (value/elias-discrete (inc idx)))
+
+(defn node-tuples
+  "Enumerate graph value-node tuples by breadth-first node index cost."
+  [g root-id {:keys [max-tuple-len max-results max-heap-size]
+              :or {max-tuple-len 3
+                   max-results 100
+                   max-heap-size 10000}}]
+  (let [ids (graph/breadth-first-walk g root-id {:above? false
+                                                :below? true
+                                                :values? true
+                                                :operators? false})
+        gens (fn [n] (vec (repeat n ids)))
+        order (atom 0)
+        make-item (fn [indices]
+                    {:dl (reduce + 0.0 (map node-index-dl indices))
+                     :order (swap! order inc)
+                     :indices indices
+                     :nodes (mapv ids indices)})
+        starts (for [n (range 1 (inc max-tuple-len))]
+                 (vec (repeat n 0)))]
+    (loop [heap (into (heap-set) (map make-item starts))
+           queued (set starts)
+           emitted []]
+      (cond
+        (or (empty? heap) (>= (count emitted) max-results))
+        emitted
+
+        (>= (count heap) max-heap-size)
+        emitted
+
+        :else
+        (let [item (first heap)
+              heap (disj heap item)
+              emitted (conj emitted item)
+              next-items
+              (for [k (range (count (:indices item)))
+                    :let [idxs (update (:indices item) k inc)]
+                    :when (and (< (nth idxs k) (count ids))
+                               (not (contains? queued idxs)))]
+                (make-item idxs))]
+          (recur (into heap next-items)
+                 (into queued (map :indices next-items))
+                 emitted))))))
