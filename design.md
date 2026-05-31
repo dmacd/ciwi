@@ -1,0 +1,111 @@
+# CIWI Design Notes
+
+CIWI is a Clojure proof of concept for WILLIAM-style incremental compression.
+The goal is not to transliterate the Python object graph. The Clojure version
+uses persistent values, pure graph transforms, explicit candidate data, and
+parallelizable search stages.
+
+## Porting Scope
+
+The Python WILLIAM tree contains several layers:
+
+- library values, operators, inverses, and description lengths
+- bipartite value/operator graphs
+- propagation through known outputs and inputs
+- graph description length / bottleneck selection
+- enumerative compression and higher-level ALICE tasks
+
+CIWI is being built from the core outward:
+
+1. values/operators/propagation
+2. persistent graph MDL
+3. bounded local graph rewrites
+4. exhaustive search as a reference implementation
+5. mirrored WILLIAM core tests and incremental convergence tests
+
+The current implementation focuses on 1-4 for simple numeric and sequence
+operators. Larger WILLIAM domains such as canvas geometry, type unification,
+classification, and rendering should be layered on top after the rewrite engine
+stabilizes.
+
+## Graph Model
+
+The graph is still WILLIAM's bipartite shape:
+
+- value nodes contain `ciwi.value/Value`
+- operator nodes contain `ciwi.operator/Operator`
+- a value node has zero or more operator `:options`
+- an operator has one parent value and zero or more child values
+
+Unlike Python WILLIAM, graph nodes are maps inside an immutable `Graph` record.
+Edges are ids, not object references. A rewrite returns a new graph.
+
+## Description Length
+
+`ciwi.mdl/node-dl` computes the best local description for a value node:
+
+```text
+min(raw-value-dl,
+    op-dl + sum(best child value dls) for each operator option)
+```
+
+This is the Clojure analogue of WILLIAM's bottleneck/minimum-description
+selection, but expressed as a memoized pure dynamic program.
+
+## Rewrite Model
+
+A rewrite is explicit data:
+
+```clojure
+{:node-id :out
+ :op ciwi.operator/brange
+ :children [0 5]
+ :before 20.0
+ :after 8.0
+ :delta -12.0
+ :reason :brange}
+```
+
+Applying the rewrite does not replace or destroy the original value. It adds a
+new operator option under that value. The original raw value remains available,
+and MDL decides whether the new option is better.
+
+This is important for incremental learning: every local proposal is reversible
+by selection, and graph history can be kept or pruned separately.
+
+## Incremental Bounded Mode
+
+The bounded mode takes target value nodes and a `re-eval` budget. For each
+target it builds a breadth-first neighborhood capped by that budget, generates
+candidate rewrites only for value nodes in that neighborhood, and applies the
+best DL-decreasing candidate. Repeating this process is the local analogue of
+exhaustive compression.
+
+The candidate scorer only inspects the target value and the local subgraph DL.
+It does not run the full decoder and its work scales with:
+
+- number of target leaves
+- neighborhood budget
+- candidate templates enabled for each local value
+
+not total stream history.
+
+## Parallel Search
+
+Candidate generation is embarrassingly parallel over value nodes. The search
+namespace exposes `:parallel? true`, currently implemented with a short-lived
+Java executor over bounded candidate work items. The interface is deliberately
+narrow so it can be replaced with reducers, agents, virtual-thread executors,
+or core.async workers without changing rewrite semantics.
+
+## Current Rewrite Templates
+
+The first templates are intentionally simple but useful for proving the loop:
+
+- arithmetic integer ranges: `(brange start n)`
+- constant repetitions: `(repeat value n)`
+- sequence concatenation: `(concat left right)`
+
+Each template can be detected from a local value. Children introduced by one
+rewrite can themselves be rewritten in later bounded passes, which is the basic
+mechanism used by the convergence tests.

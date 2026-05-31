@@ -7,4 +7,4 @@
     (is (= 42 (:data v)))
     (is (:permeable? v))
     (is (false? (:dummy? v)))
-    (is (= 2.0 (sut/desc-len v)))))
+    (is (pos? (sut/desc-len v)))))

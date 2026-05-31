@@ -64,6 +64,30 @@
               (update-in [:nodes parent :options] conj id))
           (map vector children (range))))
 
+(defn unique-id
+  [g base]
+  (let [base (keyword (name base))]
+    (loop [candidate base
+           n 1]
+      (if (contains? (:nodes g) candidate)
+        (recur (keyword (str (name base) "-" n)) (inc n))
+        candidate))))
+
+(defn add-derived-option
+  "Add an operator option under an existing value node.
+
+  `child-values` are plain data or `Value` records. Returns `[new-graph op-id]`.
+  "
+  [g parent-id op child-values]
+  (let [op-id (unique-id g (keyword (str (name parent-id) "-" (name (:id op)))))
+        [g child-ids]
+        (reduce (fn [[acc ids] [idx child-value]]
+                  (let [child-id (unique-id acc (keyword (str (name op-id) "-arg" idx)))]
+                    [(add-value acc child-id child-value) (conj ids child-id)]))
+                [g []]
+                (map-indexed vector child-values))]
+    [(add-operator g op-id op parent-id child-ids) op-id]))
+
 (defn ids-by-kind
   [g kind]
   (->> (:nodes g)
@@ -147,3 +171,24 @@
                     (and (value-node? n)
                          (empty? (:options n))))))
         vec)))
+
+(defn neighborhood
+  "Return a breadth-first local neighborhood capped by `budget` node ids."
+  [g start-id budget]
+  (loop [queue [start-id]
+         seen #{}
+         result []]
+    (cond
+      (or (empty? queue)
+          (>= (count result) budget))
+      result
+
+      (contains? seen (peek queue))
+      (recur (pop queue) seen result)
+
+      :else
+      (let [id (peek queue)
+            next-ids (remove seen (neighbors g id {}))]
+        (recur (into (pop queue) (reverse next-ids))
+               (conj seen id)
+               (conj result id))))))
