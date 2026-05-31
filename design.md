@@ -109,3 +109,27 @@ The first templates are intentionally simple but useful for proving the loop:
 Each template can be detected from a local value. Children introduced by one
 rewrite can themselves be rewritten in later bounded passes, which is the basic
 mechanism used by the convergence tests.
+
+
+## Clojure Graph Literals
+
+CIWI does not port Python's string-based sexpr parser directly. Graphs can be
+built from Clojure data:
+
+```clojure
+[:add 3 4]
+[:concat [:brange 0 3] [:repeat :x 2]]
+```
+
+A vector or list is an operator form only when its head resolves through the
+operator registry. Other vectors are literal data. Use `ciwi.dsl/literal` to
+force literal interpretation of operator-looking data.
+
+## Search Operators
+
+Optimizers implement `ciwi.optimize/SearchOperator`. The first port keeps a
+Newton/pattern-search style optimizer and an adaptive grid optimizer close to
+Python WILLIAM for comparison, but callers see them as recursive search
+operators over explicit state. This lets later work replace numeric search with
+graph rewrite search, gradient descent on differentiable subgraphs, or mixed
+specialized search without changing the surrounding compression loop.
