@@ -6,6 +6,7 @@
             [ciwi.core-test]
             [ciwi.dsl-test]
             [ciwi.enumerator-test]
+            [ciwi.enumerative-rewrite-test]
             [ciwi.graph-test]
             [ciwi.library-test]
             [ciwi.mdl-test]
@@ -24,6 +25,7 @@
                                              'ciwi.core-test
                                              'ciwi.dsl-test
                                              'ciwi.enumerator-test
+                                             'ciwi.enumerative-rewrite-test
                                              'ciwi.graph-test
                                              'ciwi.library-test
                                              'ciwi.mdl-test

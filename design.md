@@ -181,6 +181,21 @@ local matchers, EDN persistence, and caller-provided runtime templates. Later we
 can add rendering to Clojure source, compilation, and dynamic loading without
 changing the local search loop's contract.
 
+## Bounded Enumeration
+
+`ciwi.enumerative-rewrite` adds the first general local enumeration rule. It is
+still an inner-loop `RewriteTemplate`: for one focused value node, it enumerates
+expression trees over a configured operator set and literal generator, bounded by
+`:max-depth`, `:max-generated`, and `:max-pool-size`. When an enumerated
+expression evaluates to the focused node value, it emits a normal local rewrite
+candidate using the expression's root operator and child values, with predicted
+DL taken from the whole enumerated expression. Repeated bounded search can then
+compress those introduced child values through ordinary local rewrites.
+
+This is intentionally not a corpus-level DreamCoder phase. Outer control loops
+can decide which operators, composites, literal generators, and budgets to pass
+to this local enumerator.
+
 ## Search Operators
 
 Optimizers implement `ciwi.optimize/SearchOperator`. The first port keeps a
