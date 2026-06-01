@@ -7,7 +7,7 @@
             [clojure.java.io :as io]
             [clojure.pprint :as pprint]))
 
-(def linear-sequence-composite-def
+(def linear-sequence-composite-definition
   {:kind :composite
    :id :linear-sequence
    :expr [:add [:mult [:brange [:input :range-start 0]
@@ -16,7 +16,7 @@
           [:input :start 0]]
    :metadata {:origin :builtin}})
 
-(def linear-sequence-template-def
+(def linear-sequence-template-definition
   {:kind :rewrite-template
    :id :linear-sequence
    :operator :linear-sequence
@@ -26,9 +26,15 @@
    :reason :linear-sequence
    :metadata {:origin :builtin}})
 
+(def builtin-composite-definitions
+  [linear-sequence-composite-definition])
+
+(def builtin-template-definitions
+  [linear-sequence-template-definition])
+
 (def builtin-definitions
-  [linear-sequence-composite-def
-   linear-sequence-template-def])
+  (vec (concat builtin-composite-definitions
+               builtin-template-definitions)))
 
 (defn- definition-seq
   [defs]
@@ -36,6 +42,24 @@
     (and (map? defs) (:definitions defs)) (:definitions defs)
     (sequential? defs) defs
     :else [defs]))
+
+(defn- composite-definition?
+  [definition]
+  (= :composite (:kind definition)))
+
+(defn- template-definition?
+  [definition]
+  (= :rewrite-template (:kind definition)))
+
+(defn split-definitions
+  [defs]
+  (let [definitions (vec (definition-seq defs))
+        known? (some-fn composite-definition? template-definition?)
+        unknown (remove known? definitions)]
+    (when-let [definition (first unknown)]
+      (throw (ex-info "Unknown library definition kind" {:definition definition})))
+    {:composites (filterv composite-definition? definitions)
+     :templates (filterv template-definition? definitions)}))
 
 (defn- arithmetic-range?
   [xs]
@@ -102,7 +126,7 @@
 
     :else child))
 
-(defn- hydrate-composite
+(defn hydrate-composite
   [operators {:keys [id expr dl constant-indices metadata] :as definition}]
   (when-not id
     (throw (ex-info "Composite definition requires :id" {:definition definition})))
@@ -113,7 +137,7 @@
                                :constant-indices (or constant-indices #{})
                                :metadata metadata}))
 
-(defn- hydrate-template
+(defn hydrate-template
   [operators {:keys [id operator matcher children reason] :as definition}]
   (when-not id
     (throw (ex-info "Rewrite template definition requires :id" {:definition definition})))
@@ -136,34 +160,83 @@
                             (mapv #(resolve-child bindings %) children)
                             (or reason id)))))))
 
-(defn- load-one
-  [state definition]
-  (case (:kind definition)
-    :composite
-    (let [runtime-op (hydrate-composite (:operators state) definition)]
-      (-> state
-          (assoc-in [:operators (:id definition)] runtime-op)
-          (update :definitions conj definition)))
-
-    :rewrite-template
-    (let [template (hydrate-template (:operators state) definition)]
-      (-> state
-          (update :templates conj template)
-          (update :definitions conj definition)))
-
-    (throw (ex-info "Unknown library definition kind" {:definition definition}))))
-
-(defn load-definitions
-  "Hydrate durable library definitions into runtime operators and templates."
+(defn load-composites
+  "Hydrate durable composite definitions into runtime operators."
   ([defs]
-   (load-definitions defs {}))
+   (load-composites defs {}))
   ([defs {:keys [operators]
           :or {operators op/registry}}]
-   (reduce load-one
+   (reduce (fn [state definition]
+             (when-not (composite-definition? definition)
+               (throw (ex-info "Expected composite definition" {:definition definition})))
+             (let [runtime-op (hydrate-composite (:operators state) definition)]
+               (-> state
+                   (assoc-in [:operators (:id definition)] runtime-op)
+                   (assoc-in [:composites (:id definition)] runtime-op)
+                   (update :definitions conj definition))))
            {:operators operators
-            :templates []
+            :composites {}
             :definitions []}
            (definition-seq defs))))
+
+(defn load-templates
+  "Hydrate durable rewrite-template definitions into runtime templates."
+  ([defs]
+   (load-templates defs {}))
+  ([defs {:keys [operators]
+          :or {operators op/registry}}]
+   (reduce (fn [state definition]
+             (when-not (template-definition? definition)
+               (throw (ex-info "Expected rewrite-template definition"
+                               {:definition definition})))
+             (let [template (hydrate-template operators definition)]
+               (-> state
+                   (update :templates conj template)
+                   (assoc-in [:templates-by-id (:id definition)] template)
+                   (update :definitions conj definition))))
+           {:templates []
+            :templates-by-id {}
+            :definitions []}
+           (definition-seq defs))))
+
+(defn load-library
+  "Hydrate composite and template definitions through separate loaders."
+  ([defs]
+   (load-library defs {}))
+  ([defs opts]
+   (let [{:keys [composites templates]} (if (and (map? defs)
+                                                 (or (:composites defs)
+                                                     (:templates defs)))
+                                          {:composites (:composites defs)
+                                           :templates (:templates defs)}
+                                          (split-definitions defs))
+         loaded-composites (load-composites (or composites []) opts)
+         loaded-templates (load-templates (or templates [])
+                                          {:operators (:operators loaded-composites)})]
+     {:operators (:operators loaded-composites)
+      :composites (:composites loaded-composites)
+      :templates (:templates loaded-templates)
+      :templates-by-id (:templates-by-id loaded-templates)
+      :composite-definitions (:definitions loaded-composites)
+      :template-definitions (:definitions loaded-templates)
+      :definitions (vec (concat (:definitions loaded-composites)
+                                (:definitions loaded-templates)))})))
+
+(defn load-definitions
+  "Compatibility wrapper around load-library."
+  ([defs]
+   (load-library defs {}))
+  ([defs opts]
+   (load-library defs opts)))
+
+(defn builtin-library
+  []
+  (load-library {:composites builtin-composite-definitions
+                 :templates builtin-template-definitions}))
+
+(defn builtin-templates
+  []
+  (:templates (builtin-library)))
 
 (defn read-definitions
   [path]
@@ -171,7 +244,7 @@
 
 (defn load-file
   [path]
-  (load-definitions (read-definitions path)))
+  (load-library (read-definitions path)))
 
 (defn write-definitions!
   [path defs]

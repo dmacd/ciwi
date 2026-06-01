@@ -1,5 +1,6 @@
 (ns ciwi.search
   (:require [ciwi.graph :as graph]
+            [ciwi.library :as library]
             [ciwi.mdl :as mdl]
             [ciwi.rewrite :as rewrite])
   (:import [java.util.concurrent Callable Executors TimeUnit]))
@@ -34,7 +35,11 @@
   [g node-ids {:keys [parallel?]
                :or {parallel? true}
                :as opts}]
-  (let [items (value-work-items g node-ids)
+  (let [opts (cond-> opts
+               (:composite-templates? opts)
+               (-> (update :extra-templates into (library/builtin-templates))
+                   (dissoc :composite-templates?)))
+        items (value-work-items g node-ids)
         batches (if parallel?
                   (parallel-mapv #(rewrite/candidates-for-node g % opts) items)
                   (mapv #(rewrite/candidates-for-node g % opts) items))]

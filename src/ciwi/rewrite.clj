@@ -1,6 +1,5 @@
 (ns ciwi.rewrite
-  (:require [ciwi.composite :as composite]
-            [ciwi.graph :as graph]
+  (:require [ciwi.graph :as graph]
             [ciwi.mdl :as mdl]
             [ciwi.operator :as op]
             [ciwi.value :as value]))
@@ -24,14 +23,6 @@
   "
   [id propose-fn]
   (->ValueTemplate id propose-fn))
-
-(def linear-sequence-op
-  (composite/operator
-   :linear-sequence
-   [:add [:mult [:brange [:input :range-start 0]
-                 [:input :n 1]]
-          [:input :step 1]]
-    [:input :start 0]]))
 
 (defn- node-data
   [g node-id]
@@ -136,12 +127,6 @@
                   (arithmetic-range? xs))
       (candidate g node-id op/add [scaled start] :affine-add (affine-add-dl start step n)))))
 
-(defn- linear-sequence-candidate
-  [g node-id xs]
-  (when-let [{:keys [start step n]} (affine-sequence xs)]
-    (when-not (arithmetic-range? xs)
-      (candidate g node-id linear-sequence-op [0 n step start] :linear-sequence))))
-
 (defn- primitive-templates
   []
   [(value-template :brange brange-candidate)
@@ -149,10 +134,6 @@
    (value-template :scale-mult scale-mult-candidate)
    (value-template :affine-add affine-candidate)
    (value-template :concat concat-candidates)])
-
-(defn composite-templates
-  []
-  [(value-template :linear-sequence linear-sequence-candidate)])
 
 (defn- ensure-template
   [x]
@@ -162,10 +143,9 @@
     :else (throw (ex-info "Expected RewriteTemplate or function" {:template x}))))
 
 (defn- configured-templates
-  [{:keys [composite-templates? extra-templates extra-candidate-fns]}]
+  [{:keys [extra-templates extra-candidate-fns]}]
   (let [legacy-templates (mapv #(value-template :legacy %) extra-candidate-fns)]
     (cond-> (vec (primitive-templates))
-      composite-templates? (into (composite-templates))
       (seq extra-templates) (into (map ensure-template extra-templates))
       (seq legacy-templates) (into legacy-templates))))
 

@@ -167,10 +167,14 @@ object hierarchy.
 Learned and built-in artifacts should share a native-looking runtime interface,
 but they also need durable definitions. `ciwi.library` is the near-term shim for
 that split. Composite definitions and rewrite-template definitions are ordinary
-EDN maps with metadata. Loading hydrates them into `ciwi.operator/Operator`
-values and `ciwi.rewrite/RewriteTemplate` values, which means the inner rewrite
-loop does not care whether a rule was built in, hand-written, or produced by an
-outer library-compression/amortization phase.
+EDN maps with metadata, but their loading paths are separate: composite loading
+hydrates graph-shaped definitions into `ciwi.operator/Operator` values, while
+template loading hydrates local matcher/operator definitions into
+`ciwi.rewrite/RewriteTemplate` values. A small `load-library` orchestrator wires
+the two paths together when both definition types are present. The inner rewrite
+loop only receives runtime templates, so it does not care whether a rule was
+built in, hand-written, or produced by an outer library-compression/amortization
+phase.
 
 The loader is deliberately small: it supports graph-backed composites, tagged
 local matchers, EDN persistence, and caller-provided runtime templates. Later we

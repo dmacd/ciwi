@@ -17,7 +17,7 @@
       (graph/add-value :out x)))
 
 (deftest loads-composite-definition-as-native-operator
-  (let [library (sut/load-definitions
+  (let [library (sut/load-composites
                  [{:kind :composite
                    :id :increment
                    :expr [:add [:input :x 0] 1]
@@ -32,7 +32,8 @@
                                        []))))))
 
 (deftest loaded-template-drives-local-rewrite-search
-  (let [library (sut/load-definitions sut/builtin-definitions)
+  (let [library (sut/load-library {:composites sut/builtin-composite-definitions
+                                   :templates sut/builtin-template-definitions})
         g (one-target-graph [2 5 8 11 14 17])
         exhaustive (search/exhaustive-converge
                     g
@@ -50,6 +51,29 @@
     (is (= (:dl exhaustive) (:dl bounded)))
     (is (= (mdl/selected-expression (:graph exhaustive) :out)
            (mdl/selected-expression (:graph bounded) :out)))))
+
+(deftest composite-and-template-loaders-compose-explicitly
+  (let [loaded-composites (sut/load-composites
+                           [{:kind :composite
+                             :id :square-range
+                             :expr [:mult [:brange 0 [:input :n 1]]
+                                    [:brange 0 [:input :n 1]]]}])
+        loaded-templates (sut/load-templates
+                          [{:kind :rewrite-template
+                            :id :square-range
+                            :operator :square-range
+                            :matcher {:kind :square-range}
+                            :children [:n]
+                            :reason :square-range}]
+                          {:operators (:operators loaded-composites)})
+        g (one-target-graph [0 1 4 9 16 25])
+        result (search/exhaustive-converge
+                g
+                {:parallel? false
+                 :extra-templates (:templates loaded-templates)})]
+    (is (= [:square-range] (mapv :reason (:history result))))
+    (is (= [:square-range 6]
+           (mdl/selected-expression (:graph result) :out)))))
 
 (deftest persists-and-loads-edn-definitions
   (let [defs [{:kind :composite
