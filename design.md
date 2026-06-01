@@ -127,6 +127,22 @@ A vector or list is an operator form only when its head resolves through the
 operator registry. Other vectors are literal data. Use `ciwi.dsl/literal` to
 force literal interpretation of operator-looking data.
 
+## Conditions and Composites
+
+Python WILLIAM's condition machinery is now represented as pure Clojure data in
+`ciwi.conditions`. Conditions are vectors of root-leaf indices with set semantics
+for redundancy checks. The port keeps WILLIAM's redundancy behavior so existing
+golden cases remain comparable, but graph extraction walks CIWI graphs directly
+instead of reconstructing Python sexprs.
+
+Composite operators are graph-backed `ciwi.operator/Operator` values. A
+composite captures a CIWI graph, its root, and optionally a set of constant leaf
+indices. Calls and inverses run through the existing propagation engine, while
+the public operator interface remains the same as primitive operators. This is a
+deliberate stepping stone toward treating composites, local graph rewrites, and
+specialized numeric optimizers as recursive graph search operators rather than a
+separate mutable object hierarchy.
+
 ## Search Operators
 
 Optimizers implement `ciwi.optimize/SearchOperator`. The first port keeps a
