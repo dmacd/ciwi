@@ -25,7 +25,7 @@
     :literal-values square-literals
     :max-depth 2
     :max-generated 200
-    :max-pool-size 64}))
+    :beam-width 64}))
 
 (deftest bounded-enumerator-finds-nested-local-rewrite
   (let [g (one-target-graph [0 1 4 9 16 25])

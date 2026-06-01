@@ -111,37 +111,37 @@
   configured operator set and literal generator, deduping by produced value while
   keeping the cheapest expression seen for that value.
   "
-  [data {:keys [operators literal-values registry max-depth max-generated max-pool-size]
+  [data {:keys [operators literal-values registry max-depth max-generated beam-width max-pool-size]
          :or {registry op/registry
               max-depth 2
-              max-generated 1000
-              max-pool-size 256}}]
+              max-generated 1000}}]
   (let [operator-specs (mapv #(normalize-operator-spec registry %) operators)
+        beam-width (or beam-width max-pool-size 256)
         literals (mapv literal-expr (seed-literals data literal-values))]
     (loop [depth 1
            generated 0
            by-value (reduce add-expr {} literals)
-           pool (sort-by (juxt :dl #(pr-str (:form %))) literals)]
+           beam (sort-by (juxt :dl #(pr-str (:form %))) literals)]
       (if (or (> depth max-depth)
               (>= generated max-generated))
         (vals by-value)
         (let [remaining (- max-generated generated)
               new-exprs (->> (for [spec operator-specs
-                                    children (product pool (:arity spec))
+                                    children (product beam (:arity spec))
                                     :let [expr (op-expr spec children)]
                                     :when expr]
                                 expr)
                               (take remaining)
                               vec)
               by-value (reduce add-expr by-value new-exprs)
-              pool (->> (vals by-value)
+              beam (->> (vals by-value)
                         (sort-by (juxt :dl #(pr-str (:form %))))
-                        (take max-pool-size)
+                        (take beam-width)
                         vec)]
           (recur (inc depth)
                  (+ generated (count new-exprs))
                  by-value
-                 pool))))))
+                 beam))))))
 
 (defn- candidate-for-expression
   [g node-id reason expr]
@@ -160,7 +160,8 @@
 
   Required option: `:operators`, a collection of maps like `{:op :brange
   :arity 2}`. Bounds are controlled by `:max-depth`, `:max-generated`, and
-  `:max-pool-size`. `:literal-values` may be a collection or `(fn [data] ...)`.
+  `:beam-width`. `:literal-values` may be a collection or `(fn [data] ...)`.
+  `:max-pool-size` is accepted as a compatibility alias for `:beam-width`.
   "
   [{:keys [id reason]
     :or {id :enumerative

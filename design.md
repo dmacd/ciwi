@@ -186,11 +186,13 @@ changing the local search loop's contract.
 `ciwi.enumerative-rewrite` adds the first general local enumeration rule. It is
 still an inner-loop `RewriteTemplate`: for one focused value node, it enumerates
 expression trees over a configured operator set and literal generator, bounded by
-`:max-depth`, `:max-generated`, and `:max-pool-size`. When an enumerated
+`:max-depth`, `:max-generated`, and `:beam-width`. When an enumerated
 expression evaluates to the focused node value, it emits a normal local rewrite
 candidate using the expression's root operator and child values, with predicted
 DL taken from the whole enumerated expression. Repeated bounded search can then
-compress those introduced child values through ordinary local rewrites.
+compress those introduced child values through ordinary local rewrites. The beam
+keeps the cheapest expressions by predicted expression DL, with deterministic
+expression-form tie-breaking.
 
 This is intentionally not a corpus-level DreamCoder phase. Outer control loops
 can decide which operators, composites, literal generators, and budgets to pass
