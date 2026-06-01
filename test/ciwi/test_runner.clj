@@ -7,6 +7,7 @@
             [ciwi.dsl-test]
             [ciwi.enumerator-test]
             [ciwi.graph-test]
+            [ciwi.library-test]
             [ciwi.mdl-test]
             [ciwi.operator-test]
             [ciwi.optimize-test]
@@ -24,6 +25,7 @@
                                              'ciwi.dsl-test
                                              'ciwi.enumerator-test
                                              'ciwi.graph-test
+                                             'ciwi.library-test
                                              'ciwi.mdl-test
                                              'ciwi.operator-test
                                              'ciwi.optimize-test

@@ -162,6 +162,21 @@ toward treating composites, local graph rewrites, and specialized numeric
 optimizers as recursive graph search operators rather than a separate mutable
 object hierarchy.
 
+## Library Loading
+
+Learned and built-in artifacts should share a native-looking runtime interface,
+but they also need durable definitions. `ciwi.library` is the near-term shim for
+that split. Composite definitions and rewrite-template definitions are ordinary
+EDN maps with metadata. Loading hydrates them into `ciwi.operator/Operator`
+values and `ciwi.rewrite/RewriteTemplate` values, which means the inner rewrite
+loop does not care whether a rule was built in, hand-written, or produced by an
+outer library-compression/amortization phase.
+
+The loader is deliberately small: it supports graph-backed composites, tagged
+local matchers, EDN persistence, and caller-provided runtime templates. Later we
+can add rendering to Clojure source, compilation, and dynamic loading without
+changing the local search loop's contract.
+
 ## Search Operators
 
 Optimizers implement `ciwi.optimize/SearchOperator`. The first port keeps a
