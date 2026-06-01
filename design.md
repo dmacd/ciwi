@@ -81,8 +81,9 @@ candidate rewrites only for value nodes in that neighborhood, and applies the
 best DL-decreasing candidate. Repeating this process is the local analogue of
 exhaustive compression.
 
-The candidate scorer only inspects the target value and the local subgraph DL.
-It does not run the full decoder and its work scales with:
+The candidate scorer only inspects the target value and template-local predicted
+DL. Compound templates may use a recursive predicted DL for their own introduced
+children, but they do not run the full decoder. Work scales with:
 
 - number of target leaves
 - neighborhood budget
@@ -105,11 +106,12 @@ The first templates are intentionally simple but useful for proving the loop:
 - arithmetic integer ranges: `(brange start n)`
 - constant repetitions: `(repeat value n)`
 - sequence concatenation: `(concat left right)`
+- scaled ranges: `(mult (brange 0 n) step)`
+- affine sequences: `(add (mult (brange 0 n) step) start)`
 
 Each template can be detected from a local value. Children introduced by one
 rewrite can themselves be rewritten in later bounded passes, which is the basic
 mechanism used by the convergence tests.
-
 
 ## Clojure Graph Literals
 
@@ -134,7 +136,6 @@ operators over explicit state. This lets later work replace numeric search with
 graph rewrite search, gradient descent on differentiable subgraphs, or mixed
 specialized search without changing the surrounding compression loop.
 
-
 ## Structural Graph Operations
 
 Graph comparison is based on canonical structural keys over immutable node ids.
@@ -142,3 +143,16 @@ Commutative operators sort child structural keys, while noncommutative operators
 preserve child order. This gives Clojure-native replacements for the Python
 `resembles`, `subgraph`, `depth`, and sexpr round-trip tests without adopting
 Python's mutable object identity assumptions.
+
+
+## Compression API
+
+`ciwi.compress` is the public compression loop over the lower-level search
+machinery. `compress-exhaustive` searches every value node until a fixed point.
+`compress-bounded` searches only bounded neighborhoods around target value
+nodes. Both return the final graph, history, DL, stop reason, and selected
+expressions derived from the MDL choice tree.
+
+Bottleneck-style tests now assert that exhaustive compression and repeated
+bounded local compression converge to the same selected expressions for simple
+range, repetition, and affine sequence cases.

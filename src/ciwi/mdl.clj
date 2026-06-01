@@ -49,3 +49,14 @@
                     (mapcat collect (:child-choices choice)))
               ()))]
     (vec (collect (:choice (node-dl g id))))))
+
+
+(defn selected-expression
+  [g id]
+  (letfn [(expr [choice]
+            (if (= :operator (:kind choice))
+              (let [op-node (graph/node g (:op-id choice))]
+                (into [(:id (:operator op-node))]
+                      (map expr (:child-choices choice))))
+              (get-in g [:nodes (:node-id choice) :value :data])))]
+    (expr (:choice (node-dl g id)))))

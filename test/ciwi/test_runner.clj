@@ -1,5 +1,6 @@
 (ns ciwi.test-runner
   (:require [clojure.test :as test]
+            [ciwi.compress-test]
             [ciwi.core-test]
             [ciwi.dsl-test]
             [ciwi.enumerator-test]
@@ -14,7 +15,8 @@
 
 (defn -main
   [& _args]
-  (let [{:keys [fail error]} (test/run-tests 'ciwi.core-test
+  (let [{:keys [fail error]} (test/run-tests 'ciwi.compress-test
+                                             'ciwi.core-test
                                              'ciwi.dsl-test
                                              'ciwi.enumerator-test
                                              'ciwi.graph-test
