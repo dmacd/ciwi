@@ -41,3 +41,37 @@
                                        (value/value 37)
                                        [(value/value 7)]
                                        [1]))))))
+
+
+(deftest composite-template-inputs-can-share-graph-leaves
+  (let [square (sut/operator :square
+                             [:mult [:input :x 2]
+                              [:input :x 2]])
+        square-plus-y (sut/operator :square-plus-y
+                                    [:add [:mult [:input :x 2]
+                                           [:input :x 2]]
+                                     [:input :y 3]])]
+    (is (= 25
+           (value/datum (op/apply-op square [(value/value 5)]))))
+    (is (= 32
+           (value/datum (op/apply-op square-plus-y [(value/value 5)
+                                                   (value/value 7)]))))
+    (is (= [[0]]
+           (:conditions square-plus-y)))
+    (is (= [[7]]
+           (data-results (op/invert-op square-plus-y
+                                       (value/value 32)
+                                       [(value/value 5)]
+                                       [0]))))))
+
+(deftest composite-template-literals-are-captured-as-constants
+  (let [inc-op (sut/operator :increment [:add [:input :x 0] 1])]
+    (is (= [[]]
+           (:conditions inc-op)))
+    (is (= 42
+           (value/datum (op/apply-op inc-op [(value/value 41)]))))
+    (is (= [[41]]
+           (data-results (op/invert-op inc-op
+                                       (value/value 42)
+                                       []
+                                       []))))))

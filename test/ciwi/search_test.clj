@@ -52,3 +52,32 @@
     (is (= (mdl/selected-operators (:graph exhaustive) :flat)
            (mdl/selected-operators (:graph bounded) :flat)))
     (is (= #{:brange :repeat} (set (map :reason (:history bounded)))))))
+
+
+(deftest opt-in-composite-rewrites-participate-in-search
+  (let [g (one-target-graph [2 5 8 11 14 17])
+        candidates (sut/candidates g [:out] {:parallel? false
+                                             :composite-templates? true})
+        best (first candidates)
+        result (sut/exhaustive-converge g {:parallel? false
+                                           :composite-templates? true})]
+    (is (= :linear-sequence (:reason best)))
+    (is (= :fixed-point (:stopped result)))
+    (is (= [:linear-sequence] (mapv :reason (:history result))))
+    (is (= [:out-linear-sequence]
+           (mdl/selected-operators (:graph result) :out)))
+    (is (= [:linear-sequence 0 6 3 2]
+           (mdl/selected-expression (:graph result) :out)))))
+
+(deftest bounded-composite-rewrites-converge-to-exhaustive-result
+  (let [g (one-target-graph [2 5 8 11 14 17])
+        exhaustive (sut/exhaustive-converge g {:parallel? false
+                                               :composite-templates? true})
+        bounded (sut/bounded-converge g [:out] {:parallel? true
+                                                :re-eval-budget 4
+                                                :composite-templates? true})]
+    (is (= (:dl exhaustive) (:dl bounded)))
+    (is (= (mapv :reason (:history exhaustive))
+           (mapv :reason (:history bounded))))
+    (is (= (mdl/selected-expression (:graph exhaustive) :out)
+           (mdl/selected-expression (:graph bounded) :out)))))

@@ -138,7 +138,19 @@ instead of reconstructing Python sexprs.
 Composite operators are graph-backed `ciwi.operator/Operator` values. A
 composite captures a CIWI graph, its root, and optionally a set of constant leaf
 indices. Calls and inverses run through the existing propagation engine, while
-the public operator interface remains the same as primitive operators. This is a
+the public operator interface remains the same as primitive operators.
+
+Composite literals support `[:input id sample]` placeholders. Reusing an input id
+ties multiple graph leaves to one operator argument, which gives CIWI a native
+way to express DAG-style composites such as `x*x + y` without porting Python's
+sexpr parser. Non-input leaves in a placeholder template are captured as
+constants.
+
+The rewrite engine can opt into composite templates with
+`:composite-templates? true`. The first such template is `:linear-sequence`, a
+single graph-backed operator equivalent to `(add (mult (brange 0 n) step)
+start)`. It demonstrates that composites can participate in the same candidate,
+parallel search, and bounded convergence pipeline as primitives. This is a
 deliberate stepping stone toward treating composites, local graph rewrites, and
 specialized numeric optimizers as recursive graph search operators rather than a
 separate mutable object hierarchy.

@@ -1,8 +1,17 @@
 (ns ciwi.rewrite
-  (:require [ciwi.graph :as graph]
+  (:require [ciwi.composite :as composite]
+            [ciwi.graph :as graph]
             [ciwi.mdl :as mdl]
             [ciwi.operator :as op]
             [ciwi.value :as value]))
+
+(def linear-sequence-op
+  (composite/operator
+   :linear-sequence
+   [:add [:mult [:brange [:input :range-start 0]
+                 [:input :n 1]]
+          [:input :step 1]]
+    [:input :start 0]]))
 
 (defn- node-data
   [g node-id]
@@ -106,21 +115,44 @@
                   (arithmetic-range? xs))
       (candidate g node-id op/add [scaled start] :affine-add (affine-add-dl start step n)))))
 
+(defn- linear-sequence-candidate
+  [g node-id xs]
+  (when-let [{:keys [start step n]} (affine-sequence xs)]
+    (when-not (arithmetic-range? xs)
+      (candidate g node-id linear-sequence-op [0 n step start] :linear-sequence))))
+
+(defn- base-candidate-fns
+  []
+  [brange-candidate
+   repeat-candidate
+   scale-mult-candidate
+   affine-candidate
+   concat-candidates])
+
+(defn- candidate-fns
+  [{:keys [composite-templates? extra-candidate-fns]}]
+  (cond-> (vec (base-candidate-fns))
+    composite-templates? (conj linear-sequence-candidate)
+    (seq extra-candidate-fns) (into extra-candidate-fns)))
+
 (defn candidates-for-node
-  [g node-id]
-  (let [n (graph/node g node-id)
-        data (node-data g node-id)]
-    (if-not (and (graph/value-node? n) (some? data))
-      []
-      (->> (concat [(brange-candidate g node-id data)
-                    (repeat-candidate g node-id data)
-                    (scale-mult-candidate g node-id data)
-                    (affine-candidate g node-id data)]
-                   (concat-candidates g node-id data))
-           (remove nil?)
-           (filter neg-delta?)
-           (sort-by (juxt :after :delta (comp str :reason)))
-           vec))))
+  ([g node-id]
+   (candidates-for-node g node-id {}))
+  ([g node-id opts]
+   (let [n (graph/node g node-id)
+         data (node-data g node-id)]
+     (if-not (and (graph/value-node? n) (some? data))
+       []
+       (->> (mapcat (fn [candidate-fn]
+                      (let [result (candidate-fn g node-id data)]
+                        (if (sequential? result)
+                          result
+                          [result])))
+                    (candidate-fns opts))
+            (remove nil?)
+            (filter neg-delta?)
+            (sort-by (juxt :after :delta (comp str :reason)))
+            vec)))))
 
 (defn apply-candidate
   [g {:keys [node-id op children]}]

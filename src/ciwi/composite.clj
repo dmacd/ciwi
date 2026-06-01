@@ -10,17 +10,67 @@
   [g root]
   (graph/leaves g root))
 
+(defn input-form?
+  [x]
+  (and (vector? x)
+       (= :input (first x))
+       (= 3 (count x))))
+
+(defn- analyze-template
+  [expr registry]
+  (let [leaf-idx (atom 0)
+        input-order (atom [])
+        input-groups (atom {})]
+    (letfn [(remember-input! [input-id]
+              (let [idx @leaf-idx]
+                (swap! leaf-idx inc)
+                (when-not (contains? @input-groups input-id)
+                  (swap! input-order conj input-id))
+                (swap! input-groups update input-id (fnil conj []) idx)))
+            (remember-literal! []
+              (swap! leaf-idx inc))
+            (walk [form]
+              (cond
+                (input-form? form)
+                (let [[_ input-id sample] form]
+                  (remember-input! input-id)
+                  sample)
+
+                (and (vector? form) (= :value (first form)))
+                (do
+                  (remember-literal!)
+                  form)
+
+                (dsl/operator-form? form registry)
+                (into [(first form)] (map walk (rest form)))
+
+                :else
+                (do
+                  (remember-literal!)
+                  form)))]
+      (let [sample-expr (walk expr)
+            ordered-groups (mapv #(vec (get @input-groups %)) @input-order)]
+        {:expr sample-expr
+         :input-groups ordered-groups
+         :input-ids (vec @input-order)}))))
+
 (defn- graph-spec
   [expr opts]
   (cond
     (and (:graph opts) (:root opts))
-    {:graph (:graph opts) :root (:root opts)}
+    {:graph (:graph opts)
+     :root (:root opts)
+     :input-groups (:input-groups opts)
+     :input-ids (:input-ids opts)}
 
     (and (map? expr) (:graph expr) (:root expr))
     expr
 
     :else
-    (dsl/from-expr expr)))
+    (let [registry (:registry opts op/registry)
+          analyzed (analyze-template expr registry)]
+      (merge (dsl/from-expr (:expr analyzed) {:registry registry})
+             (select-keys analyzed [:input-groups :input-ids])))))
 
 (defn- validate-constant-indices!
   [constant-indices arity]
@@ -36,35 +86,53 @@
   [arity constant-indices]
   (vec (remove constant-indices (range arity))))
 
+(defn- effective-constant-indices
+  [arity declared-constants input-groups]
+  (let [input-leaves (set (mapcat identity input-groups))
+        all-leaves (set (range arity))]
+    (when (seq (filter input-leaves declared-constants))
+      (throw (ex-info "Composite input leaves cannot also be constants"
+                      {:constant-indices declared-constants
+                       :input-groups input-groups})))
+    (if (seq input-groups)
+      (into (set declared-constants) (remove input-leaves all-leaves))
+      (set declared-constants))))
+
+(defn- default-input-groups
+  [arity constant-indices input-groups]
+  (if (seq input-groups)
+    (mapv vec input-groups)
+    (mapv vector (variable-indices arity constant-indices))))
+
+(defn- raw-condition->input-condition
+  [condition input-groups constant-indices]
+  (let [condition-set (set condition)]
+    (when (every? condition-set constant-indices)
+      (->> input-groups
+           (keep-indexed (fn [idx leaf-idxs]
+                           (when (some condition-set leaf-idxs)
+                             idx)))
+           conditions/normalize-condition))))
+
 (defn- composite-conditions
-  [g root leaves constant-indices]
-  (let [raw (conditions/get-conditions g root)
-        arity (count leaves)
-        variable-idxs (variable-indices arity constant-indices)]
-    (if (empty? constant-indices)
-      raw
-      (let [constant-set (set constant-indices)
-            old->new (zipmap variable-idxs (range))]
-        (->> raw
-             (keep (fn [condition]
-                     (let [condition-set (set condition)]
-                       (when (every? condition-set constant-set)
-                         (->> condition
-                              (remove constant-set)
-                              (keep old->new)
-                              conditions/normalize-condition)))))
-             conditions/remove-redundant-conditions)))))
+  [g root input-groups constant-indices]
+  (->> (conditions/get-conditions g root)
+       (keep #(raw-condition->input-condition % input-groups constant-indices))
+       (#(conditions/filter-redundant % (count input-groups)))))
 
 (defn- memory-with-inputs
-  [base leaves variable-idxs inputs]
-  (when-not (= (count variable-idxs) (count inputs))
+  [base leaves input-groups inputs]
+  (when-not (= (count input-groups) (count inputs))
     (throw (ex-info "Composite input arity mismatch"
-                    {:expected (count variable-idxs)
+                    {:expected (count input-groups)
                      :actual (count inputs)})))
-  (reduce (fn [mem [leaf-idx input]]
-            (assoc mem (nth leaves leaf-idx) (propagation/entry input)))
+  (reduce (fn [mem [leaf-idxs input]]
+            (reduce (fn [acc leaf-idx]
+                      (assoc acc (nth leaves leaf-idx) (propagation/entry input)))
+                    mem
+                    leaf-idxs))
           base
-          (map vector variable-idxs inputs)))
+          (map vector input-groups inputs)))
 
 (defn- first-root-value
   [g root mem]
@@ -72,12 +140,12 @@
           (propagation/value-at root)))
 
 (defn- call-composite
-  [g root leaves variable-idxs constant-indices inputs]
+  [g root leaves input-groups constant-indices inputs]
   (let [base (into {}
                    (for [[idx leaf-id] (map-indexed vector leaves)
                          :when (contains? constant-indices idx)]
                      [leaf-id (propagation/entry (graph/value-data g leaf-id))]))
-        mem (memory-with-inputs base leaves variable-idxs inputs)
+        mem (memory-with-inputs base leaves input-groups inputs)
         output (first-root-value g root mem)]
     (if output
       (value/datum output)
@@ -85,36 +153,49 @@
                       {:root root
                        :inputs inputs})))))
 
+(defn- group-value
+  [result leaf-ids]
+  (let [values (mapv #(propagation/value-at result %) leaf-ids)]
+    (when (every? some? values)
+      (let [data (mapv value/datum values)]
+        (when (apply = data)
+          (first data))))))
+
 (defn- inverse-composite
-  [g root leaves variable-idxs constant-indices output cond-inputs cond]
+  [g root leaves input-groups constant-indices output cond-inputs cond]
   (let [condition-set (set cond)
-        missing-variable-idxs (vec (remove condition-set (range (count variable-idxs))))]
-    (when (seq missing-variable-idxs)
+        missing-input-idxs (vec (remove condition-set (range (count input-groups))))]
+    (when (seq missing-input-idxs)
       (let [base (into {root (propagation/entry output)}
                        (for [[idx leaf-id] (map-indexed vector leaves)
                              :when (contains? constant-indices idx)]
                          [leaf-id (propagation/entry (graph/value-data g leaf-id))]))
             mem (reduce (fn [acc [condition-idx input]]
-                          (let [leaf-idx (nth variable-idxs condition-idx)
-                                leaf-id (nth leaves leaf-idx)]
-                            (assoc acc leaf-id (propagation/entry input))))
+                          (reduce (fn [acc leaf-idx]
+                                    (assoc acc (nth leaves leaf-idx)
+                                           (propagation/entry input)))
+                                  acc
+                                  (nth input-groups condition-idx)))
                         base
                         (map vector cond cond-inputs))
-            missing-leaf-ids (mapv (fn [condition-idx]
-                                     (nth leaves (nth variable-idxs condition-idx)))
-                                   missing-variable-idxs)]
+            missing-leaf-groups (mapv (fn [input-idx]
+                                        (mapv #(nth leaves %) (nth input-groups input-idx)))
+                                      missing-input-idxs)]
         (->> (propagation/propagate g mem)
              (keep (fn [result]
-                     (when (every? #(propagation/value-at result %) missing-leaf-ids)
-                       (mapv #(value/datum (propagation/value-at result %))
-                             missing-leaf-ids))))
+                     (let [values (mapv #(group-value result %) missing-leaf-groups)]
+                       (when (every? some? values)
+                         values))))
              distinct)))))
 
 (defn operator
   "Create a graph-backed composite Operator from a Clojure graph literal.
 
   `constant-indices` names root leaves that are captured as constants from the
-  graph literal. Remaining leaves become the composite operator inputs.
+  graph literal. Remaining leaves become the composite operator inputs. A leaf
+  written as `[:input id sample]` is a named input placeholder; repeated ids tie
+  multiple graph leaves to one operator input, and non-input leaves are captured
+  as constants.
   "
   ([id expr]
    (operator id expr {}))
@@ -122,18 +203,21 @@
              :or {constant-indices #{}
                   dl 1.0}
              :as opts}]
-   (let [{:keys [graph root]} (graph-spec expr opts)
+   (let [{:keys [graph root input-groups]} (graph-spec expr opts)
          leaves (leaf-ids graph root)
-         constant-indices (validate-constant-indices! (set constant-indices) (count leaves))
-         variable-idxs (variable-indices (count leaves) constant-indices)
-         conditions (composite-conditions graph root leaves constant-indices)]
+         declared-constants (validate-constant-indices! (set constant-indices) (count leaves))
+         input-groups (default-input-groups (count leaves) declared-constants input-groups)
+         constant-indices (effective-constant-indices (count leaves)
+                                                      declared-constants
+                                                      input-groups)
+         conditions (composite-conditions graph root input-groups constant-indices)]
      (op/operator
       {:id id
        :conditions conditions
        :commutative? false
        :dl dl
        :call (fn [inputs]
-               (call-composite graph root leaves variable-idxs constant-indices inputs))
+               (call-composite graph root leaves input-groups constant-indices inputs))
        :inverse (fn [output cond-inputs cond]
-                  (inverse-composite graph root leaves variable-idxs constant-indices
+                  (inverse-composite graph root leaves input-groups constant-indices
                                      output cond-inputs cond))}))))

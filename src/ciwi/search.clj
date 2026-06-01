@@ -32,11 +32,12 @@
 
 (defn candidates
   [g node-ids {:keys [parallel?]
-               :or {parallel? true}}]
+               :or {parallel? true}
+               :as opts}]
   (let [items (value-work-items g node-ids)
         batches (if parallel?
-                  (parallel-mapv #(rewrite/candidates-for-node g %) items)
-                  (mapv #(rewrite/candidates-for-node g %) items))]
+                  (parallel-mapv #(rewrite/candidates-for-node g % opts) items)
+                  (mapv #(rewrite/candidates-for-node g % opts) items))]
     (->> batches
          (apply concat)
          (sort-by (juxt :after :delta (comp str :node-id) (comp str :reason)))
