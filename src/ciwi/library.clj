@@ -222,12 +222,6 @@
       :definitions (vec (concat (:definitions loaded-composites)
                                 (:definitions loaded-templates)))})))
 
-(defn load-definitions
-  "Compatibility wrapper around load-library."
-  ([defs]
-   (load-library defs {}))
-  ([defs opts]
-   (load-library defs opts)))
 
 (defn builtin-library
   []

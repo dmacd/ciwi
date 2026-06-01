@@ -143,11 +143,9 @@
     :else (throw (ex-info "Expected RewriteTemplate or function" {:template x}))))
 
 (defn- configured-templates
-  [{:keys [extra-templates extra-candidate-fns]}]
-  (let [legacy-templates (mapv #(value-template :legacy %) extra-candidate-fns)]
-    (cond-> (vec (primitive-templates))
-      (seq extra-templates) (into (map ensure-template extra-templates))
-      (seq legacy-templates) (into legacy-templates))))
+  [{:keys [extra-templates]}]
+  (cond-> (vec (primitive-templates))
+    (seq extra-templates) (into (map ensure-template extra-templates))))
 
 (defn- result-candidates
   [result]

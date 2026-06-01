@@ -111,12 +111,12 @@
   configured operator set and literal generator, deduping by produced value while
   keeping the cheapest expression seen for that value.
   "
-  [data {:keys [operators literal-values registry max-depth max-generated beam-width max-pool-size]
+  [data {:keys [operators literal-values registry max-depth max-generated beam-width]
          :or {registry op/registry
               max-depth 2
-              max-generated 1000}}]
+              max-generated 1000
+              beam-width 256}}]
   (let [operator-specs (mapv #(normalize-operator-spec registry %) operators)
-        beam-width (or beam-width max-pool-size 256)
         literals (mapv literal-expr (seed-literals data literal-values))]
     (loop [depth 1
            generated 0
@@ -161,7 +161,6 @@
   Required option: `:operators`, a collection of maps like `{:op :brange
   :arity 2}`. Bounds are controlled by `:max-depth`, `:max-generated`, and
   `:beam-width`. `:literal-values` may be a collection or `(fn [data] ...)`.
-  `:max-pool-size` is accepted as a compatibility alias for `:beam-width`.
   "
   [{:keys [id reason]
     :or {id :enumerative
