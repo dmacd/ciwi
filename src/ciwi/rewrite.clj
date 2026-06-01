@@ -5,6 +5,26 @@
             [ciwi.operator :as op]
             [ciwi.value :as value]))
 
+(defprotocol RewriteTemplate
+  (template-id [template])
+  (propose [template g node-id data]))
+
+(defrecord ValueTemplate [id propose-fn]
+  RewriteTemplate
+  (template-id [_]
+    id)
+  (propose [_ g node-id data]
+    (propose-fn g node-id data)))
+
+(defn value-template
+  "Create a local value-node rewrite template.
+
+  `propose-fn` receives `g`, `node-id`, and the node's plain data, and returns a
+  candidate, a sequence of candidates, or nil.
+  "
+  [id propose-fn]
+  (->ValueTemplate id propose-fn))
+
 (def linear-sequence-op
   (composite/operator
    :linear-sequence
@@ -42,7 +62,8 @@
      (scale-mult-dl step n)
      (value/desc-len (value/value start))))
 
-(defn- candidate
+(defn candidate
+  "Build a scored rewrite candidate for adding `operator` under `node-id`."
   ([g node-id operator children reason]
    (candidate g node-id operator children reason nil))
   ([g node-id operator children reason predicted-after]
@@ -121,19 +142,40 @@
     (when-not (arithmetic-range? xs)
       (candidate g node-id linear-sequence-op [0 n step start] :linear-sequence))))
 
-(defn- base-candidate-fns
+(defn- primitive-templates
   []
-  [brange-candidate
-   repeat-candidate
-   scale-mult-candidate
-   affine-candidate
-   concat-candidates])
+  [(value-template :brange brange-candidate)
+   (value-template :repeat repeat-candidate)
+   (value-template :scale-mult scale-mult-candidate)
+   (value-template :affine-add affine-candidate)
+   (value-template :concat concat-candidates)])
 
-(defn- candidate-fns
-  [{:keys [composite-templates? extra-candidate-fns]}]
-  (cond-> (vec (base-candidate-fns))
-    composite-templates? (conj linear-sequence-candidate)
-    (seq extra-candidate-fns) (into extra-candidate-fns)))
+(defn composite-templates
+  []
+  [(value-template :linear-sequence linear-sequence-candidate)])
+
+(defn- ensure-template
+  [x]
+  (cond
+    (satisfies? RewriteTemplate x) x
+    (fn? x) (value-template :anonymous x)
+    :else (throw (ex-info "Expected RewriteTemplate or function" {:template x}))))
+
+(defn- configured-templates
+  [{:keys [composite-templates? extra-templates extra-candidate-fns]}]
+  (let [legacy-templates (mapv #(value-template :legacy %) extra-candidate-fns)]
+    (cond-> (vec (primitive-templates))
+      composite-templates? (into (composite-templates))
+      (seq extra-templates) (into (map ensure-template extra-templates))
+      (seq legacy-templates) (into legacy-templates))))
+
+(defn- result-candidates
+  [result]
+  (cond
+    (nil? result) []
+    (map? result) [result]
+    (sequential? result) result
+    :else [result]))
 
 (defn candidates-for-node
   ([g node-id]
@@ -143,12 +185,9 @@
          data (node-data g node-id)]
      (if-not (and (graph/value-node? n) (some? data))
        []
-       (->> (mapcat (fn [candidate-fn]
-                      (let [result (candidate-fn g node-id data)]
-                        (if (sequential? result)
-                          result
-                          [result])))
-                    (candidate-fns opts))
+       (->> (configured-templates opts)
+            (mapcat (fn [template]
+                      (result-candidates (propose template g node-id data))))
             (remove nil?)
             (filter neg-delta?)
             (sort-by (juxt :after :delta (comp str :reason)))

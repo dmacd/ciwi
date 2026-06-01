@@ -146,14 +146,21 @@ way to express DAG-style composites such as `x*x + y` without porting Python's
 sexpr parser. Non-input leaves in a placeholder template are captured as
 constants.
 
-The rewrite engine can opt into composite templates with
-`:composite-templates? true`. The first such template is `:linear-sequence`, a
+Rewrite proposal is now factored behind `ciwi.rewrite/RewriteTemplate`.
+Primitive templates, composite templates, and caller-supplied templates all use
+that same interface: inspect one value node and return zero or more scored
+candidate rewrites. Search remains parallel over value nodes because templates
+are pure local proposal functions.
+
+The rewrite engine can opt into bundled composite templates with
+`:composite-templates? true`, or accept caller-provided templates through
+`:extra-templates`. The first bundled composite template is `:linear-sequence`, a
 single graph-backed operator equivalent to `(add (mult (brange 0 n) step)
-start)`. It demonstrates that composites can participate in the same candidate,
-parallel search, and bounded convergence pipeline as primitives. This is a
-deliberate stepping stone toward treating composites, local graph rewrites, and
-specialized numeric optimizers as recursive graph search operators rather than a
-separate mutable object hierarchy.
+start)`. Tests also inject a separate `:square-range` composite template to keep
+the path generic rather than special-cased. This is a deliberate stepping stone
+toward treating composites, local graph rewrites, and specialized numeric
+optimizers as recursive graph search operators rather than a separate mutable
+object hierarchy.
 
 ## Search Operators
 

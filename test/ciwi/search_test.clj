@@ -1,6 +1,8 @@
 (ns ciwi.search-test
-  (:require [ciwi.graph :as graph]
+  (:require [ciwi.composite :as composite]
+            [ciwi.graph :as graph]
             [ciwi.mdl :as mdl]
+            [ciwi.rewrite :as rewrite]
             [ciwi.search :as sut]
             [clojure.test :refer [deftest is]]))
 
@@ -79,5 +81,36 @@
     (is (= (:dl exhaustive) (:dl bounded)))
     (is (= (mapv :reason (:history exhaustive))
            (mapv :reason (:history bounded))))
+    (is (= (mdl/selected-expression (:graph exhaustive) :out)
+           (mdl/selected-expression (:graph bounded) :out)))))
+
+
+(def square-range-op
+  (composite/operator :square-range
+                      [:mult [:brange 0 [:input :n 1]]
+                       [:brange 0 [:input :n 1]]]))
+
+(def square-range-template
+  (rewrite/value-template
+   :square-range
+   (fn [g node-id xs]
+     (when (vector? xs)
+       (let [n (count xs)]
+         (when (and (>= n 3)
+                    (= xs (mapv #(* % %) (range n))))
+           (rewrite/candidate g node-id square-range-op [n] :square-range)))))))
+
+(deftest injected-composite-template-compresses-square-range
+  (let [g (one-target-graph [0 1 4 9 16 25])
+        opts {:parallel? false
+              :extra-templates [square-range-template]}
+        exhaustive (sut/exhaustive-converge g opts)
+        bounded (sut/bounded-converge g [:out] (assoc opts :parallel? true
+                                                      :re-eval-budget 1))]
+    (is (= :fixed-point (:stopped exhaustive)))
+    (is (= [:square-range] (mapv :reason (:history exhaustive))))
+    (is (= [:square-range 6]
+           (mdl/selected-expression (:graph exhaustive) :out)))
+    (is (= (:dl exhaustive) (:dl bounded)))
     (is (= (mdl/selected-expression (:graph exhaustive) :out)
            (mdl/selected-expression (:graph bounded) :out)))))
