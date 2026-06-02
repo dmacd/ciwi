@@ -93,7 +93,7 @@
 (def square-range-template
   (rewrite/value-template
    :square-range
-   (fn [g node-id xs]
+   (fn [g node-id xs _opts]
      (when (vector? xs)
        (let [n (count xs)]
          (when (and (>= n 3)

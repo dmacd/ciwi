@@ -59,16 +59,21 @@ A rewrite is explicit data:
 ```clojure
 {:node-id :out
  :op ciwi.operator/brange
- :children [0 5]
+ :child-refs [{:kind :value :value 0}
+              {:kind :value :value 5}]
  :before 20.0
  :after 8.0
  :delta -12.0
  :reason :brange}
 ```
 
-Applying the rewrite does not replace or destroy the original value. It adds a
-new operator option under that value. The original raw value remains available,
-and MDL decides whether the new option is better.
+`child-refs` are normalized local graph edit operands. `{:kind :value ...}`
+materializes a fresh child value node. `{:kind :node ...}` reuses an existing
+local value node, including repeated references to the same child for DAG-style
+sharing. Node refs are valid only when they keep the value dependency graph
+acyclic. Applying the rewrite does not replace or destroy the original value. It
+adds a new operator option under that value. The original raw value remains
+available, and MDL decides whether the new option is better.
 
 This is important for incremental learning: every local proposal is reversible
 by selection, and graph history can be kept or pruned separately.
@@ -193,6 +198,13 @@ DL taken from the whole enumerated expression. Repeated bounded search can then
 compress those introduced child values through ordinary local rewrites. The beam
 keeps the cheapest expressions by predicted expression DL, with deterministic
 expression-form tie-breaking.
+
+When search supplies a local neighborhood, the enumerator also seeds the beam
+with existing local value nodes. Matching candidates then reuse those nodes via
+`:child-refs` instead of rematerializing duplicate children. Candidate metadata
+records the enumeration resource usage, including generated expression count,
+depth reached, beam width, and the literal/local seed counts used for that
+bounded enumeration.
 
 This is intentionally not a corpus-level DreamCoder phase. Outer control loops
 can decide which operators, composites, literal generators, and budgets to pass

@@ -35,11 +35,11 @@
   [g node-ids {:keys [parallel?]
                :or {parallel? true}
                :as opts}]
-  (let [opts (cond-> opts
+  (let [items (value-work-items g node-ids)
+        opts (cond-> (assoc opts :local-node-ids (or (:local-node-ids opts) items))
                (:composite-templates? opts)
                (-> (update :extra-templates into (library/builtin-templates))
                    (dissoc :composite-templates?)))
-        items (value-work-items g node-ids)
         batches (if parallel?
                   (parallel-mapv #(rewrite/candidates-for-node g % opts) items)
                   (mapv #(rewrite/candidates-for-node g % opts) items))]

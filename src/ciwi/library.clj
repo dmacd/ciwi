@@ -152,7 +152,7 @@
                        :known-operators (keys operators)})))
     (rewrite/value-template
      id
-     (fn [g node-id data]
+     (fn [g node-id data _opts]
        (when-let [bindings (match matcher data)]
          (rewrite/candidate g
                             node-id
