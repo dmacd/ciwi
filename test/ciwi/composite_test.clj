@@ -122,3 +122,56 @@
     (is (:commutative? times))
     (is (not (:commutative? minus)))
     (is (not (:commutative? square-plus-y)))))
+
+
+(deftest composite-inverts-nested-arithmetic-with-captured-constants
+  (let [offset-product (sut/operator :offset-product
+                                     [:add [:mult [:input :x 2]
+                                            [:input :y 3]]
+                                      5])
+        sub-chain (sut/operator :sub-chain
+                                [:sub [:add [:input :x 0]
+                                       [:input :y 0]]
+                                 [:input :z 0]])]
+    (is (= [[6]]
+           (data-results (op/invert-op offset-product
+                                       (value/value 35)
+                                       [(value/value 5)]
+                                       [0]))))
+    (is (= [[7]]
+           (data-results (op/invert-op sub-chain
+                                       (value/value 10)
+                                       [(value/value 4) (value/value 1)]
+                                       [0 2]))))))
+
+(deftest composite-inverts-through-negated-intermediate-values
+  (let [neg-shift (sut/operator :neg-shift
+                                [:add [:negate [:input :x 0]]
+                                 [:input :y 0]])]
+    (is (= [[-10]]
+           (data-results (op/invert-op neg-shift
+                                       (value/value 13)
+                                       [(value/value 3)]
+                                       [1]))))
+    (is (= [[10]]
+           (data-results (op/invert-op neg-shift
+                                       (value/value 13)
+                                       [(value/value -3)]
+                                       [0]))))))
+
+(deftest composite-inversion-returns-no-results-for-unsatisfied-or-invalid-local-equations
+  (let [product (sut/operator :product
+                              [:mult [:input :x 0]
+                               [:input :y 0]])
+        square-plus-y (sut/operator :square-plus-y
+                                    [:add [:mult [:input :x 2]
+                                           [:input :x 2]]
+                                     [:input :y 3]])]
+    (is (empty? (data-results (op/invert-op product
+                                            (value/value 10)
+                                            [(value/value 0)]
+                                            [1]))))
+    (is (empty? (data-results (op/invert-op square-plus-y
+                                            (value/value 32)
+                                            [(value/value 7)]
+                                            [1]))))))

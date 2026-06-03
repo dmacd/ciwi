@@ -197,7 +197,9 @@ Composite literals support `[:input id sample]` placeholders. Reusing an input i
 ties multiple graph leaves to one operator argument, which gives CIWI a native
 way to express DAG-style composites such as `x*x + y` without porting Python's
 sexpr parser. Non-input leaves in a placeholder template are captured as
-constants.
+constants. Composite inversion also uses these input groups: all leaves in a
+repeated group must be inferred with the same value, and unresolved local
+equations produce no inverse result rather than fabricating a symbolic solution.
 
 `ciwi.fix/fix-first` is the Clojure equivalent of Python WILLIAM's `Fix`
 operator. It captures the first input of any runtime `Operator` and returns a
