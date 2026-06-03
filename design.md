@@ -256,7 +256,9 @@ can inspect successful and failed local searches without rerunning them.
 
 This is intentionally not a corpus-level DreamCoder phase. Outer control loops
 can decide which operators, composites, literal generators, and budgets to pass
-to this local enumerator.
+to this local enumerator. `ciwi.enumerator/count-trees` mirrors Python
+Wunderbaum's pure tree-counting helper for estimating typed expansion sizes from
+plain spec transition maps.
 
 ## Graph-Edit Enumeration
 

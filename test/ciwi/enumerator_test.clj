@@ -47,3 +47,11 @@
             [ 0 ]
             [ 3 ]]
            values))))
+
+
+(deftest count-trees-matches-python-wunderbaum-fixture
+  (let [spec-dict {:int [[:int :float] [:int] [:array-int]]
+                   :float [[:float :float] [:float]]
+                   :array-int [[:array-int :int] [:array-int]]}]
+    (is (= 85
+           (sut/count-trees [:int] 3 spec-dict)))))

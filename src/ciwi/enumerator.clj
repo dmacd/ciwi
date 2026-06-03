@@ -55,6 +55,37 @@
                 specs
                 indices))))
 
+(defn- cartesian-product
+  [xss]
+  (if (empty? xss)
+    [[]]
+    (for [x (first xss)
+          tail (cartesian-product (rest xss))]
+      (into [x] tail))))
+
+(defn count-trees
+  "Count expression trees that can produce `out-specs` up to `depth`.
+
+  `spec-dict` maps an output spec to a collection of child spec tuples for
+  operators that can produce that output. This mirrors Python WILLIAM's
+  Wunderbaum counting helper but uses plain Clojure data.
+  "
+  ([out-specs depth spec-dict]
+   (count-trees out-specs depth spec-dict (atom {})))
+  ([out-specs depth spec-dict cache]
+   (if (zero? depth)
+     1
+     (reduce +
+             0
+             (for [types (cartesian-product (map #(get spec-dict % []) out-specs))]
+               (let [flat-types (vec (mapcat identity types))
+                     cache-key [flat-types depth]]
+                 (if-let [cached (get @cache cache-key)]
+                   cached
+                   (let [count (count-trees flat-types (dec depth) spec-dict cache)]
+                     (swap! cache assoc cache-key count)
+                     count))))))))
+
 (defn- tuple-at
   [gens indices]
   (mapv (fn [gen idx]
