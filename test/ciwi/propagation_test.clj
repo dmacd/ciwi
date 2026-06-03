@@ -154,3 +154,38 @@
            (:data (sut/value-at source-down :idx))))
     (is (= "x"
            (:data (sut/value-at source-down :item))))))
+
+
+(defn threshold-patch-graph
+  []
+  (-> (graph/empty-graph)
+      (graph/add-value :out nil)
+      (graph/add-value :base nil)
+      (graph/add-value :scores nil)
+      (graph/add-value :threshold nil)
+      (graph/add-value :mask nil)
+      (graph/add-value :items nil)
+      (graph/add-operator :mask-op op/lessthan :mask [:scores :threshold])
+      (graph/add-operator :patch op/setitem :out [:base :mask :items])))
+
+(deftest propagates-generated-mask-into-setitem
+  (let [g (threshold-patch-graph)
+        up (first (sut/propagate g
+                                 (sut/memory {:base ["-" "-" "-" "-"]
+                                              :scores [0 1 2 3]
+                                              :threshold 2
+                                              :items ["x" "x"]})))
+        down (first (sut/propagate g
+                                   (sut/memory {:out ["x" "x" "-" "-"]
+                                                :scores [0 1 2 3]
+                                                :threshold 2})))]
+    (is (= [true true false false]
+           (:data (sut/value-at up :mask))))
+    (is (= ["x" "x" "-" "-"]
+           (:data (sut/value-at up :out))))
+    (is (= [true true false false]
+           (:data (sut/value-at down :mask))))
+    (is (= ["" "" "-" "-"]
+           (:data (sut/value-at down :base))))
+    (is (= ["x" "x"]
+           (:data (sut/value-at down :items))))))

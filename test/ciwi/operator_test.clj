@@ -51,3 +51,60 @@
          (raw-inversions sut/setitem [342 78 34 252] [[false true true false]] [1])))
   (is (= [[["-" "-" "-" "-" ""] "x"]]
          (raw-inversions sut/setitem ["-" "-" "-" "-" "x"] [4] [1]))))
+
+
+(deftest boolean-and-comparison-operators-run-forward-and-backward
+  (is (= false (:data (sut/apply-op sut/lessthan [(value/value 5)
+                                                  (value/value 2)]))))
+  (is (= true (:data (sut/apply-op sut/lessthan [(value/value 5.4)
+                                                 (value/value 9.1)]))))
+  (is (= [true false]
+         (:data (sut/apply-op sut/lessthan [(value/value [5.6 1.3])
+                                            (value/value [13.4 0.9])]))))
+  (is (= [false true]
+         (:data (sut/apply-op sut/lessthan [(value/value [5.6 1.3])
+                                            (value/value 1.6)]))))
+  (is (= [[]]
+         (raw-inversions sut/lessthan [false true] [[5.6 1.3] [1.6 2.0]] [0 1])))
+  (is (empty? (raw-inversions sut/lessthan [true true] [[5.6 1.3] [1.6 2.0]] [0 1])))
+
+  (is (= true (:data (sut/apply-op sut/equal [(value/value 5.6)
+                                              (value/value 5.6)]))))
+  (is (= [true false]
+         (:data (sut/apply-op sut/equal [(value/value [5.6 6.7])
+                                         (value/value [5.6 8.7])]))))
+  (is (= [[[1 3]]]
+         (raw-inversions sut/equal true [[1 3]] [0])))
+  (is (empty? (raw-inversions sut/equal [true false] [[5.6 6.7]] [1])))
+  (is (= [[[5.6 6.7]]]
+         (raw-inversions sut/equal [true true] [[5.6 6.7]] [1])))
+
+  (is (= false (:data (sut/apply-op sut/logical-not [(value/value true)]))))
+  (is (= [false true]
+         (:data (sut/apply-op sut/logical-not [(value/value [true false])]))))
+  (is (= [[[true false]]]
+         (raw-inversions sut/logical-not [false true] [] [])))
+
+  (is (= true (:data (sut/apply-op sut/logical-and [(value/value true)
+                                                    (value/value true)]))))
+  (is (= false (:data (sut/apply-op sut/logical-and [(value/value true)
+                                                     (value/value false)]))))
+  (is (= [true false false]
+         (:data (sut/apply-op sut/logical-and [(value/value [true false true])
+                                               (value/value [true true false])]))))
+  (is (= [[true]]
+         (raw-inversions sut/logical-and true [true] [0])))
+  (is (= [[true] [false]]
+         (raw-inversions sut/logical-and false [false] [0])))
+
+  (is (= true (:data (sut/apply-op sut/logical-or [(value/value false)
+                                                   (value/value true)]))))
+  (is (= false (:data (sut/apply-op sut/logical-or [(value/value false)
+                                                    (value/value false)]))))
+  (is (= [true true false]
+         (:data (sut/apply-op sut/logical-or [(value/value [true false false])
+                                              (value/value [false true false])]))))
+  (is (= [[true] [false]]
+         (raw-inversions sut/logical-or true [true] [0])))
+  (is (= [[false]]
+         (raw-inversions sut/logical-or false [false] [0]))))

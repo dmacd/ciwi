@@ -170,3 +170,44 @@
            (mdl/selected-expression (:graph bounded) :out)))
     (is (= (mdl/selected-expression (:graph exhaustive) :out)
            (mdl/selected-expression (:graph bounded) :out)))))
+
+
+(defn- generated-mask-edit-graph
+  []
+  (let [g0 (-> (graph/empty-graph)
+               (graph/add-value :scores [0 1 2 3])
+               (graph/add-value :base ["--------" "--------" "--------" "--------"])
+               (graph/add-value :out ["xxxxxxxx" "xxxxxxxx" "--------" "--------"]))
+        g1 (first (graph/add-derived-option g0 :scores op/brange [0 4]))]
+    (first (graph/add-derived-option g1 :base op/repeat ["--------" 4]))))
+
+(deftest graph-rewrite-compresses-generated-setitem-mask-locally
+  (let [g (generated-mask-edit-graph)
+        rewrite-op (graph-rewrite/graph-rewrite-operator
+                    {:id :generated-mask-edit
+                     :operators [{:op :lessthan :arity 2}
+                                 {:op :setitem :arity 3}]
+                     :literal-values [2 ["xxxxxxxx" "xxxxxxxx"]]
+                     :max-depth 2
+                     :max-generated 5000
+                     :beam-width 128})
+        exhaustive (search/exhaustive-converge g {:parallel? false
+                                                  :local-node-ids [:out :scores :base]
+                                                  :rewrite-operators [rewrite-op]
+                                                  :max-steps 5})
+        bounded (search/bounded-converge g [:out :scores :base]
+                                         {:parallel? true
+                                          :re-eval-budget 8
+                                          :local-node-ids [:out :scores :base]
+                                          :rewrite-operators [rewrite-op]
+                                          :max-steps 5})]
+    (is (= (:dl exhaustive) (:dl bounded)))
+    (is (= :fixed-point (:stopped bounded)))
+    (is (= [:setitem :lessthan]
+           (mapv :reason (:history bounded))))
+    (is (= [:setitem [:repeat "--------" 4]
+            [:lessthan [:brange 0 4] 2]
+            ["xxxxxxxx" "xxxxxxxx"]]
+           (mdl/selected-expression (:graph bounded) :out)))
+    (is (= (mdl/selected-expression (:graph exhaustive) :out)
+           (mdl/selected-expression (:graph bounded) :out)))))

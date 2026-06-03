@@ -211,3 +211,24 @@
                                        (value/value [342 78 34 252])
                                        [(value/value [false true true false])]
                                        [1]))))))
+
+
+(deftest composite-generated-mask-feeds-setitem
+  (let [patch (sut/operator :threshold-patch
+                            [:setitem [:input :base ["-" "-" "-" "-"]]
+                             [:lessthan [:input :scores [0 1 2 3]]
+                              [:input :threshold 2]]
+                             [:input :items ["x" "x"]]])]
+    (is (= [[1 2]]
+           (:conditions patch)))
+    (is (= ["x" "x" "-" "-"]
+           (value/datum (op/apply-op patch [(value/value ["-" "-" "-" "-"])
+                                            (value/value [0 1 2 3])
+                                            (value/value 2)
+                                            (value/value ["x" "x"])]))))
+    (is (= [[["" "" "-" "-"] ["x" "x"]]]
+           (data-results (op/invert-op patch
+                                       (value/value ["x" "x" "-" "-"])
+                                       [(value/value [0 1 2 3])
+                                        (value/value 2)]
+                                       [1 2]))))))

@@ -56,10 +56,15 @@ pure forward and inverse functions. The current sequence-edit set includes
 `getitem` and `setitem` for Clojure sequences/vectors with nonnegative integer
 indices, explicit index vectors, and boolean masks. Their inverses return
 partially known source templates using `nil`, `""`, or `false` as lightweight
-missing sentinels depending on value type. This is enough for the core WILLIAM
-sequence rewrite tests without importing Python/NumPy slicing semantics.
-Shape-rich indexing should be added later as data-driven operators or composed
-rewrite rules rather than hidden mutable array behavior.
+missing sentinels depending on value type. Boolean/comparison primitives
+`lessthan`, `equal`, `not`, `and`, and `or` use Clojure-native scalar/vector
+broadcasting helpers so masks can be produced by ordinary subgraphs. Their
+inverses stay conservative: comparison constraints verify known inputs, equality
+only solves the all-true case, and logical inverses are currently scalar. This
+is enough for the core WILLIAM sequence and mask rewrite tests without importing
+Python/NumPy slicing semantics. Shape-rich indexing should be added later as
+data-driven operators or composed rewrite rules rather than hidden mutable array
+behavior.
 
 ## Description Length
 
@@ -316,7 +321,11 @@ outer loops need for extracting successful templates or training amortized
 proposal mechanisms. Item edits such as `setitem` are handled by the same direct
 edit machinery: literal seeds supply bounded indices/items, while local node
 seeds let a candidate reuse an already-compressed source vector instead of
-materializing a duplicate child.
+materializing a duplicate child. When a generated edit, such as a `lessthan`
+mask, is used as a child of another generated edit, the first applied rewrite
+materializes that intermediate value. Repeated bounded passes can then compress
+that intermediate into its own subgraph, yielding the same selected structure as
+an exhaustive pass while keeping each edit local.
 
 ## Numeric Search Operators
 

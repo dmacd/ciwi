@@ -33,6 +33,12 @@
   [x]
   (and (sequential? x) (not (string? x))))
 
+(defn- elementwise1
+  [f x]
+  (if (seqish? x)
+    (mapv f x)
+    (f x)))
+
 (defn- elementwise2
   [f x y]
   (cond
@@ -48,6 +54,32 @@
 
     :else
     (f x y)))
+
+(defn- all-true?
+  [x]
+  (if (seqish? x)
+    (every? true? x)
+    (true? x)))
+
+(defn- boolean-scalar?
+  [x]
+  (or (true? x) (false? x)))
+
+(defn- logical-and-call
+  [x y]
+  (elementwise2 #(boolean (clojure.core/and %1 %2)) x y))
+
+(defn- logical-or-call
+  [x y]
+  (elementwise2 #(boolean (clojure.core/or %1 %2)) x y))
+
+(defn- logical-scalar-inverses
+  [f output known]
+  (when (and (boolean-scalar? output)
+             (boolean-scalar? known))
+    (for [candidate [true false]
+          :when (= output (f known candidate))]
+      [candidate])))
 
 (defn- index-vector?
   [x]
@@ -192,6 +224,62 @@
                      (mapv - output)
                      (- output))]]))}))
 
+(def lessthan
+  (operator
+   {:id :lessthan
+    :conditions [[0 1]]
+    :call (fn [[x y]]
+            (elementwise2 < x y))
+    :inverse (fn [output cond-inputs condition]
+               (when (= [0 1] (vec condition))
+                 (let [[x y] cond-inputs]
+                   (when (= output (elementwise2 < x y))
+                     [[]]))))}))
+
+(def equal
+  (operator
+   {:id :equal
+    :conditions [[0] [1]]
+    :commutative? true
+    :call (fn [[x y]]
+            (elementwise2 = x y))
+    :inverse (fn [output cond-inputs condition]
+               (when (and (= 1 (count condition))
+                          (all-true? output))
+                 [[(first cond-inputs)]]))}))
+
+(def logical-not
+  (operator
+   {:id :not
+    :conditions [[]]
+    :call (fn [[x]]
+            (elementwise1 clojure.core/not x))
+    :inverse (fn [output _cond-inputs condition]
+               (when (empty? condition)
+                 [[(elementwise1 clojure.core/not output)]]))}))
+
+(def logical-and
+  (operator
+   {:id :and
+    :conditions [[0] [1]]
+    :commutative? true
+    :call (fn [[x y]]
+            (logical-and-call x y))
+    :inverse (fn [output cond-inputs condition]
+               (when (= 1 (count condition))
+                 (logical-scalar-inverses logical-and-call output (first cond-inputs))))}))
+
+(def logical-or
+  (operator
+   {:id :or
+    :conditions [[0] [1]]
+    :commutative? true
+    :call (fn [[x y]]
+            (logical-or-call x y))
+    :inverse (fn [output cond-inputs condition]
+               (when (= 1 (count condition))
+                 (logical-scalar-inverses logical-or-call output (first cond-inputs))))}))
+
 (def brange
   (operator
    {:id :brange
@@ -322,6 +410,11 @@
    :sub sub
    :mult mult
    :negate negate
+   :lessthan lessthan
+   :equal equal
+   :not logical-not
+   :and logical-and
+   :or logical-or
    :brange brange
    :repeat repeat
    :concat concat
