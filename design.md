@@ -286,7 +286,11 @@ proposal mechanisms.
 Optimizers implement `ciwi.optimize/SearchOperator`. The first port keeps a
 Newton/pattern-search style optimizer and an adaptive grid optimizer close to
 Python WILLIAM for comparison, but callers see them as recursive search
-operators over explicit state. This lets later work replace numeric search with
+operators over explicit state. Newton search supports mixed integer/float axes
+with dimension-appropriate finite differences. Adaptive grid search carries its
+scale in the search state and can optionally sample the joint Cartesian grid
+when coordinate-wise moves stall, matching the Python optimizer's
+joint-improvement behavior. This lets later work replace numeric search with
 graph rewrite search, gradient descent on differentiable subgraphs, or mixed
 specialized search without changing the surrounding compression loop.
 

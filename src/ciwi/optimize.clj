@@ -67,23 +67,56 @@
         (swap! (:cache search) assoc k result)
         result))))
 
+(defn- float-diff-step
+  [x]
+  (max 1.0e-6 (* (abs (double x)) 1.0e-3)))
+
+(defn- finite-diff-axis
+  [search objective x fx i]
+  (if (nth (:int-mask search) i)
+    (let [xp (update x i inc)
+          xm (update x i dec)
+          fp (:score (cached-eval search objective xp))
+          fm (:score (cached-eval search objective xm))]
+      {:g (cond
+            (and (finite? fp) (finite? fm)) (* 0.5 (- fp fm))
+            (finite? fp) (- fp fx)
+            (finite? fm) (- fx fm)
+            :else 0.0)
+       :hdiag (when (and (finite? fp) (finite? fm))
+                (- (+ fp fm) (* 2.0 fx)))})
+    (loop [h (float-diff-step (nth x i))]
+      (let [xi (double (nth x i))
+            xp (assoc x i (+ xi h))
+            xm (assoc x i (- xi h))
+            fp (:score (cached-eval search objective xp))
+            fm (:score (cached-eval search objective xm))]
+        (cond
+          (and (< h 1.0)
+               (or (and (not (finite? fp)) (not (finite? fm)))
+                   (and (finite? fp) (finite? fm) (= fp fm fx))
+                   (and (finite? fp) (= fp fx) (not (finite? fm)))
+                   (and (finite? fm) (= fm fx) (not (finite? fp)))))
+          (recur (* 10.0 h))
+
+          :else
+          {:g (cond
+                (and (finite? fp) (finite? fm)) (/ (- fp fm) (* 2.0 h))
+                (finite? fp) (/ (- fp fx) h)
+                (finite? fm) (/ (- fx fm) h)
+                :else 0.0)
+           :hdiag (when (and (finite? fp) (finite? fm))
+                    (/ (- (+ fp fm) (* 2.0 fx)) (* h h)))})))))
+
 (defn finite-diffs
   [search objective state]
   (let [x (:x state)
         fx (:score state)
         dims (count x)]
     (reduce (fn [{:keys [g hdiag]} i]
-              (let [xp (update x i inc)
-                    xm (update x i dec)
-                    fp (:score (cached-eval search objective xp))
-                    fm (:score (cached-eval search objective xm))]
-                {:g (assoc g i (cond
-                                  (and (finite? fp) (finite? fm)) (* 0.5 (- fp fm))
-                                  (finite? fp) (- fp fx)
-                                  (finite? fm) (- fx fm)
-                                  :else 0.0))
-                 :hdiag (assoc hdiag i (when (and (finite? fp) (finite? fm))
-                                         (- fp (* 2.0 fx) fm)))}))
+              (let [{gi :g hi :hdiag} (finite-diff-axis search objective x fx i)]
+                {:g (assoc g i gi)
+                 :hdiag (assoc hdiag i hi)}))
             {:g (vec (repeat dims 0.0))
              :hdiag (vec (repeat dims nil))}
             (range dims))))
@@ -128,10 +161,17 @@
                        (:int-mask search))
                  (inc attempts)))))))
 
+(defn- pattern-step
+  [search x i direction]
+  (let [step (if (nth (:int-mask search) i)
+               1.0
+               (float-diff-step (nth x i)))]
+    (update x i + (* direction step))))
+
 (defn- pattern-search
   [search objective state]
   (reduce (fn [best [i d]]
-            (let [x (update (:x best) i + d)
+            (let [x (pattern-step search (:x best) i d)
                   candidate (candidate-state search objective x)]
               (better-state best candidate)))
           state
@@ -159,15 +199,16 @@
         (recur next-state (inc iter))
         state))))
 
-(defrecord AdaptiveGridSearch [int-mask n-points grow shrink max-iters])
+(defrecord AdaptiveGridSearch [int-mask n-points grow shrink max-iters jointly-optimize?])
 
 (defn adaptive-grid-search
-  [{:keys [int-mask n-points grow shrink max-iters]
+  [{:keys [int-mask n-points grow shrink max-iters jointly-optimize?]
     :or {n-points 21
          grow 2.0
          shrink 0.5
-         max-iters 20}}]
-  (->AdaptiveGridSearch (vec int-mask) n-points grow shrink max-iters))
+         max-iters 20
+         jointly-optimize? false}}]
+  (->AdaptiveGridSearch (vec int-mask) n-points grow shrink max-iters jointly-optimize?))
 
 (defn- linspace
   [lo hi n]
@@ -182,23 +223,108 @@
       (vec (distinct (map #(double (long %)) xs)))
       xs)))
 
+(defn- initial-scale
+  [x int-mask]
+  (mapv (fn [v int?]
+          (let [s (+ (* (abs v) 0.5) 1.0)]
+            (if int? (max 1.0 (Math/rint s)) s)))
+        x
+        int-mask))
+
+(defn- normalize-scale
+  [scale int-mask]
+  (mapv (fn [s int?]
+          (if int?
+            (max 1.0 (Math/rint s))
+            s))
+        scale
+        int-mask))
+
+(defn- adaptive-candidate
+  [search objective x]
+  (candidate-state (newton-search {:int-mask (:int-mask search)}) objective x))
+
+(defn- axis-search
+  [search objective state dim values]
+  (let [f-init (:score state)]
+    (reduce (fn [{:keys [best all-equal?]} v]
+              (let [candidate (adaptive-candidate search objective (assoc (:x state) dim v))
+                    score (:score candidate)
+                    all-equal? (and all-equal?
+                                    (or (not (finite? score))
+                                        (= score f-init)))]
+                {:best (better-state best candidate)
+                 :all-equal? all-equal?}))
+            {:best state
+             :all-equal? true}
+            values)))
+
+(defn- product
+  [xss]
+  (if (empty? xss)
+    [[]]
+    (for [x (first xss)
+          tail (product (rest xss))]
+      (into [x] tail))))
+
+(defn- update-joint-scale
+  [search scale axes x]
+  (-> (mapv (fn [s axis v]
+              (* s (if (some #{v} [(first axis) (last axis)])
+                     (:grow search)
+                     (:shrink search))))
+            scale
+            axes
+            x)
+      (normalize-scale (:int-mask search))))
+
+(defn- joint-sample
+  [search objective state scale]
+  (let [axes (mapv (fn [center span int?]
+                     (axis center span (:n-points search) int?))
+                   (:x state)
+                   scale
+                   (:int-mask search))]
+    (some (fn [values]
+            (let [candidate (adaptive-candidate search objective (mapv double values))]
+              (when (and candidate
+                         (finite? (:score candidate))
+                         (< (:score candidate) (:score state)))
+                (assoc candidate :scale (update-joint-scale search
+                                                            scale
+                                                            axes
+                                                            (:x candidate))))))
+          (product axes))))
+
 (extend-type AdaptiveGridSearch
   SearchOperator
   (search-step [this objective state]
-    (let [scale (mapv (fn [x int?]
-                        (let [s (+ (* (abs x) 0.5) 1.0)]
-                          (if int? (max 1.0 (Math/rint s)) s)))
-                      (:x state)
-                      (:int-mask this))]
-      (loop [i 0
-             best state]
-        (if (= i (count (:x state)))
-          (when (< (:score best) (:score state)) best)
-          (let [values (axis (nth (:x best) i) (nth scale i) (:n-points this) (nth (:int-mask this) i))
-                best' (reduce (fn [acc v]
-                                (let [x (assoc (:x acc) i v)
-                                      candidate (candidate-state (newton-search {:int-mask (:int-mask this)}) objective x)]
-                                  (better-state acc candidate)))
-                              best
-                              values)]
-            (recur (inc i) best')))))))
+    (let [scale (or (:scale state)
+                    (initial-scale (:x state) (:int-mask this)))]
+      (loop [dim 0
+             best state
+             scale scale
+             modified? false]
+        (if (= dim (count (:x state)))
+          (let [scale (normalize-scale scale (:int-mask this))]
+            (if modified?
+              (assoc best :scale scale)
+              (or (when (:jointly-optimize? this)
+                    (joint-sample this objective state scale))
+                  (when (not= scale (:scale state))
+                    (assoc state :scale scale)))))
+          (let [values (axis (nth (:x best) dim)
+                             (nth scale dim)
+                             (:n-points this)
+                             (nth (:int-mask this) dim))
+                before-score (:score best)
+                {:keys [best all-equal?]} (axis-search this objective best dim values)
+                improved? (< (:score best) before-score)
+                best-v (nth (:x best) dim)
+                scale-factor (if improved?
+                               (if (some #{best-v} [(first values) (last values)])
+                                 (:grow this)
+                                 (:shrink this))
+                               (if all-equal? (:grow this) (:shrink this)))
+                scale (assoc scale dim (* (nth scale dim) scale-factor))]
+            (recur (inc dim) best scale (or modified? improved?))))))))
