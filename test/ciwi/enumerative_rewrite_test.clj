@@ -59,8 +59,8 @@
                   :literal-values square-literals
                   :max-depth 1
                   :max-generated 200})
-        candidates (search/candidates g [:out] {:parallel? false
-                                                :extra-templates [shallow]})]
+        candidates (:candidates (search/rewrite-search g [:out] {:parallel? false
+                                                         :extra-templates [shallow]}))]
     (is (not-any? #(= :shallow-enum (:reason %)) candidates))))
 
 
@@ -114,12 +114,13 @@
 
 (deftest bounded-enumerator-does-not-reuse-ancestors
   (let [g (ancestor-reuse-graph)
-        candidates (search/candidates
-                    g
-                    [:child]
-                    {:parallel? false
-                     :local-node-ids [:child :root]
-                     :extra-templates [cycle-guard-enumerator]})]
+        candidates (:candidates
+                    (search/rewrite-search
+                     g
+                     [:child]
+                     {:parallel? false
+                      :local-node-ids [:child :root]
+                      :extra-templates [cycle-guard-enumerator]}))]
     (is (not (rewrite/reusable-child-node? g :child :root)))
     (is (rewrite/reusable-child-node? g :root :child))
     (is (nil? (rewrite/candidate-from-refs

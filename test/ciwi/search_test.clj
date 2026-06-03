@@ -31,6 +31,37 @@
     (is (= (mdl/selected-operators (:graph exhaustive) :out)
            (mdl/selected-operators (:graph bounded) :out)))))
 
+(deftest rewrite-search-returns-structured-resource-and-trace
+  (let [g (one-target-graph [0 1 2 3 4 5 6 7])
+        result (sut/rewrite-search g [:out] {:parallel? false})
+        best (first (:candidates result))]
+    (is (= :brange (:reason best)))
+    (is (= :brange (:template-id best)))
+    (is (= 1 (get-in result [:resource :nodes-considered])))
+    (is (pos? (get-in result [:resource :templates-considered])))
+    (is (pos? (get-in result [:resource :candidates-proposed])))
+    (is (= (count (:candidates result))
+           (get-in result [:resource :candidates-accepted])))
+    (is (some #(and (= :template-proposal (:kind %))
+                    (= :brange (:template-id %)))
+              (:trace result)))))
+
+(deftest bounded-converge-records-step-and-terminal-resource
+  (let [g (one-target-graph [0 1 2 3 4 5 6 7])
+        result (sut/bounded-converge g [:out] {:parallel? false
+                                               :re-eval-budget 4})
+        first-step (first (:steps result))]
+    (is (= 1 (count (:history result))))
+    (is (= 1 (count (:steps result))))
+    (is (= :bounded (get-in first-step [:resource :mode])))
+    (is (= 4 (get-in first-step [:resource :re-eval-budget])))
+    (is (= 1 (get-in first-step [:resource :target-count])))
+    (is (= :fixed-point (:stopped result)))
+    (is (= 2 (get-in result [:resource :searches-run])))
+    (is (= 1 (get-in result [:resource :applied-steps])))
+    (is (some? (:terminal-search result)))
+    (is (zero? (get-in result [:terminal-resource :candidates-accepted])))))
+
 (deftest repeated-bounded-local-rewrites-reach-fixed-point
   (let [g (one-target-graph [0 1 2 3 4 5 6 7 8 9])
         exhaustive (sut/exhaustive-converge g {:parallel? false})
@@ -58,8 +89,8 @@
 
 (deftest opt-in-composite-rewrites-participate-in-search
   (let [g (one-target-graph [2 5 8 11 14 17])
-        candidates (sut/candidates g [:out] {:parallel? false
-                                             :composite-templates? true})
+        candidates (:candidates (sut/rewrite-search g [:out] {:parallel? false
+                                                      :composite-templates? true}))
         best (first candidates)
         result (sut/exhaustive-converge g {:parallel? false
                                            :composite-templates? true})]
@@ -94,11 +125,12 @@
   (rewrite/value-template
    :square-range
    (fn [g node-id xs _opts]
-     (when (vector? xs)
-       (let [n (count xs)]
-         (when (and (>= n 3)
-                    (= xs (mapv #(* % %) (range n))))
-           (rewrite/candidate g node-id square-range-op [n] :square-range)))))))
+     (rewrite/candidate-proposal
+      (when (vector? xs)
+        (let [n (count xs)]
+          (when (and (>= n 3)
+                     (= xs (mapv #(* % %) (range n))))
+            (rewrite/candidate g node-id square-range-op [n] :square-range))))))))
 
 (deftest injected-composite-template-compresses-square-range
   (let [g (one-target-graph [0 1 4 9 16 25])

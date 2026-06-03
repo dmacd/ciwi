@@ -185,15 +185,16 @@
 (defn- candidate-for-expression
   [g node-id reason resource expr]
   (when (= :op (:kind expr))
-    (assoc (rewrite/candidate-from-refs g
-                                        node-id
-                                        (:op expr)
-                                        (mapv child-ref (:children expr))
-                                        reason
-                                        (:dl expr))
-           :expression (:form expr)
-           :enum-depth (:depth expr)
-           :resource resource)))
+    (when-let [candidate (rewrite/candidate-from-refs g
+                                                       node-id
+                                                       (:op expr)
+                                                       (mapv child-ref (:children expr))
+                                                       reason
+                                                       (:dl expr))]
+      (assoc candidate
+             :expression (:form expr)
+             :enum-depth (:depth expr)
+             :resource resource))))
 
 (defn enumerative-template
   "Create a bounded local enumerative rewrite template.
@@ -216,7 +217,16 @@
            {:keys [expressions resource]} (enumeration-result data
                                                               (assoc opts
                                                                      :seed-expressions
-                                                                     node-exprs))]
-       (->> expressions
-            (filter #(= data (:value %)))
-            (keep #(candidate-for-expression g node-id reason resource %)))))))
+                                                                     node-exprs))
+           candidates (->> expressions
+                           (filter #(= data (:value %)))
+                           (keep #(candidate-for-expression g node-id reason resource %))
+                           vec)]
+       (rewrite/proposal
+        candidates
+        resource
+        [{:kind :bounded-enumeration
+          :node-id node-id
+          :template-id id
+          :matched-expressions (count candidates)
+          :resource resource}])))))

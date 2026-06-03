@@ -153,12 +153,13 @@
     (rewrite/value-template
      id
      (fn [g node-id data _opts]
-       (when-let [bindings (match matcher data)]
-         (rewrite/candidate g
-                            node-id
-                            runtime-op
-                            (mapv #(resolve-child bindings %) children)
-                            (or reason id)))))))
+       (rewrite/candidate-proposal
+        (when-let [bindings (match matcher data)]
+          (rewrite/candidate g
+                             node-id
+                             runtime-op
+                             (mapv #(resolve-child bindings %) children)
+                             (or reason id))))))))
 
 (defn load-composites
   "Hydrate durable composite definitions into runtime operators."

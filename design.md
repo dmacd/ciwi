@@ -104,6 +104,30 @@ Java executor over bounded candidate work items. The interface is deliberately
 narrow so it can be replaced with reducers, agents, virtual-thread executors,
 or core.async workers without changing rewrite semantics.
 
+`ciwi.search/rewrite-search` returns structured search data rather than a bare
+candidate vector:
+
+```clojure
+{:candidates [...]
+ :resource {:nodes-considered 4
+            :templates-considered 20
+            :candidates-proposed 7
+            :candidates-accepted 2
+            :generated-expressions 128}
+ :trace [{:kind :template-proposal
+          :node-id :out
+          :template-id :brange
+          :candidate-count 1
+          :accepted-count 1
+          :resource {}}]}
+```
+
+Convergence keeps `:history` as the sequence of applied candidates and adds
+`:steps` for applied search steps. Each step contains the chosen candidate, the
+full search result, per-step resource accounting, trace data, and DL before and
+after applying the rewrite. Fixed-point runs also retain `:terminal-search` and
+`:terminal-resource` for the final no-candidate search.
+
 ## Current Rewrite Templates
 
 The first templates are intentionally simple but useful for proving the loop:
@@ -153,9 +177,9 @@ constants.
 
 Rewrite proposal is now factored behind `ciwi.rewrite/RewriteTemplate`.
 Primitive templates, composite templates, and caller-supplied templates all use
-that same interface: inspect one value node and return zero or more scored
-candidate rewrites. Search remains parallel over value nodes because templates
-are pure local proposal functions.
+that same interface: inspect one value node and return a structured proposal
+result with `:candidates`, `:resource`, and `:trace`. Search remains parallel
+over value nodes because templates are pure local proposal functions.
 
 The rewrite engine can opt into bundled composite templates with
 `:composite-templates? true`, or accept caller-provided templates through
@@ -204,7 +228,9 @@ with existing local value nodes. Matching candidates then reuse those nodes via
 `:child-refs` instead of rematerializing duplicate children. Candidate metadata
 records the enumeration resource usage, including generated expression count,
 depth reached, beam width, and the literal/local seed counts used for that
-bounded enumeration.
+bounded enumeration. The same resource map is surfaced at the proposal, search,
+and convergence-step layers so later template extraction and amortization code
+can inspect successful and failed local searches without rerunning them.
 
 This is intentionally not a corpus-level DreamCoder phase. Outer control loops
 can decide which operators, composites, literal generators, and budgets to pass
