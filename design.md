@@ -59,7 +59,13 @@ min(raw-value-dl,
 ```
 
 This is the Clojure analogue of WILLIAM's bottleneck/minimum-description
-selection, but expressed as a memoized pure dynamic program.
+selection, but expressed as a memoized pure dynamic program. Current parity tests
+assert selected structure, selected operator order, alternative-option choice,
+and relative DL behavior. They intentionally do not assert Python's exact
+floating DL constants because CIWI uses a simpler Clojure-native data codec.
+Root-summed `graph-dl` also charges a selected shared sub-DAG once per root; a
+future global shared-DAG minimizer should account for selected shared structure
+only once across the projected solution.
 
 ## Rewrite Model
 
