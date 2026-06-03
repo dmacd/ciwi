@@ -49,6 +49,18 @@ inversion. Nested propagation still branches over operators that can fire, and
 partial propagation can return the best currently known memory when no remaining
 operator is executable.
 
+## Core Operators
+
+Primitive operators are ordinary immutable `ciwi.operator/Operator` records with
+pure forward and inverse functions. The current sequence-edit set includes
+`getitem` and `setitem` for Clojure sequences/vectors with nonnegative integer
+indices, explicit index vectors, and boolean masks. Their inverses return
+partially known source templates using `nil`, `""`, or `false` as lightweight
+missing sentinels depending on value type. This is enough for the core WILLIAM
+sequence rewrite tests without importing Python/NumPy slicing semantics.
+Shape-rich indexing should be added later as data-driven operators or composed
+rewrite rules rather than hidden mutable array behavior.
+
 ## Description Length
 
 `ciwi.mdl/node-dl` computes the best local description for a value node:
