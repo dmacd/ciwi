@@ -133,3 +133,40 @@
                       :rewrite-operators [rewrite-op]}))]
     (is (not (rewrite/reusable-child-node? g :child :root)))
     (is (not-any? #(some #{(rewrite/node-ref :root)} (:child-refs %)) candidates))))
+
+
+(defn- item-edit-graph
+  []
+  (let [g (-> (graph/empty-graph)
+              (graph/add-value :base ["-" "-" "-" "-" "-"])
+              (graph/add-value :out ["-" "-" "-" "-" "x"]))]
+    (first (graph/add-derived-option g :base op/repeat ["-" 5]))))
+
+(deftest graph-rewrite-enumerates-local-setitem-edits-with-node-reuse
+  (let [g (item-edit-graph)
+        rewrite-op (graph-rewrite/graph-rewrite-operator
+                    {:id :item-edit
+                     :operators [{:op :setitem :arity 3}]
+                     :literal-values [4 "x"]
+                     :max-depth 1
+                     :max-generated 200
+                     :beam-width 64})
+        exhaustive (search/exhaustive-converge g {:parallel? false
+                                                  :rewrite-operators [rewrite-op]})
+        bounded (search/bounded-converge g [:out :base]
+                                         {:parallel? true
+                                          :re-eval-budget 1
+                                          :rewrite-operators [rewrite-op]})
+        first-candidate (first (:history bounded))]
+    (is (= (:dl exhaustive) (:dl bounded)))
+    (is (= :fixed-point (:stopped bounded)))
+    (is (= [:setitem]
+           (mapv :reason (:history bounded))))
+    (is (= [(rewrite/node-ref :base)
+            (rewrite/value-ref 4)
+            (rewrite/value-ref "x")]
+           (:child-refs first-candidate)))
+    (is (= [:setitem [:repeat "-" 5] 4 "x"]
+           (mdl/selected-expression (:graph bounded) :out)))
+    (is (= (mdl/selected-expression (:graph exhaustive) :out)
+           (mdl/selected-expression (:graph bounded) :out)))))

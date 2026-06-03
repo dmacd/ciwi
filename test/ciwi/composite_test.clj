@@ -175,3 +175,39 @@
                                             (value/value 32)
                                             [(value/value 7)]
                                             [1]))))))
+
+
+(deftest composite-item-operators-call-and-invert-through-propagation
+  (let [pick (sut/operator :pick-selected
+                           [:getitem [:input :xs [3 5 2]]
+                            [:input :mask [true false true]]])
+        patch (sut/operator :patch-selected
+                            [:setitem [:input :xs [342 6 8 252]]
+                             [:input :mask [false true true false]]
+                             [:input :items [78 34]]])]
+    (is (= [3 2]
+           (value/datum (op/apply-op pick [(value/value [3 5 2])
+                                           (value/value [true false true])]))))
+    (is (= [[] [1]]
+           (:conditions pick)))
+    (is (= [[[2.0 nil nil 3.0]]]
+           (data-results (op/invert-op pick
+                                       (value/value [2.0 3.0])
+                                       [(value/value [true false false true])]
+                                       [1]))))
+    (is (= [[[2.0 3.0] [0 1]]]
+           (data-results (op/invert-op pick
+                                       (value/value [2.0 3.0])
+                                       []
+                                       []))))
+    (is (= [342 78 34 252]
+           (value/datum (op/apply-op patch [(value/value [342 6 8 252])
+                                            (value/value [false true true false])
+                                            (value/value [78 34])]))))
+    (is (= [[0] [1]]
+           (:conditions patch)))
+    (is (= [[[342 nil nil 252] [78 34]]]
+           (data-results (op/invert-op patch
+                                       (value/value [342 78 34 252])
+                                       [(value/value [false true true false])]
+                                       [1]))))))

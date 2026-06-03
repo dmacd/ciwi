@@ -100,3 +100,57 @@
            (:data (sut/value-at result :range-start))))
     (is (= 4
            (:data (sut/value-at result :n))))))
+
+
+(defn getitem-graph
+  []
+  (-> (graph/empty-graph)
+      (graph/add-value :out nil)
+      (graph/add-value :xs nil)
+      (graph/add-value :idx nil)
+      (graph/add-operator :pick op/getitem :out [:xs :idx])))
+
+(deftest propagates-getitem-up-and-down-with-boolean-mask
+  (let [g (getitem-graph)
+        up (first (sut/propagate g
+                                 (sut/memory {:xs [3 5 2]
+                                              :idx [true false true]})))
+        down (first (sut/propagate g
+                                   (sut/memory {:out [2.0 3.0]
+                                                :idx [true false false true]})))]
+    (is (= [3 2]
+           (:data (sut/value-at up :out))))
+    (is (= [2.0 nil nil 3.0]
+           (:data (sut/value-at down :xs))))))
+
+(defn setitem-graph
+  []
+  (-> (graph/empty-graph)
+      (graph/add-value :out nil)
+      (graph/add-value :xs nil)
+      (graph/add-value :idx nil)
+      (graph/add-value :item nil)
+      (graph/add-operator :patch op/setitem :out [:xs :idx :item])))
+
+(deftest propagates-setitem-up-and-down-through-mask-and-source
+  (let [g (setitem-graph)
+        up (first (sut/propagate g
+                                 (sut/memory {:xs [342 6 8 252]
+                                              :idx [false true true false]
+                                              :item [78 34]})))
+        mask-down (first (sut/propagate g
+                                        (sut/memory {:out [342 78 34 252]
+                                                     :idx [false true true false]})))
+        source-down (first (sut/propagate g
+                                          (sut/memory {:out ["-" "-" "-" "-" "x"]
+                                                       :xs ["-" "-" "-" "-" "-"]})))]
+    (is (= [342 78 34 252]
+           (:data (sut/value-at up :out))))
+    (is (= [342 nil nil 252]
+           (:data (sut/value-at mask-down :xs))))
+    (is (= [78 34]
+           (:data (sut/value-at mask-down :item))))
+    (is (= 4
+           (:data (sut/value-at source-down :idx))))
+    (is (= "x"
+           (:data (sut/value-at source-down :item))))))

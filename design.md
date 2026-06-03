@@ -313,7 +313,10 @@ Graph-edit candidates carry `:edit-form`, `:edit-depth`, and candidate-local
 resource metadata. Operator traces include generated edit count, matched edit
 count, accepted count, and termination reason, which is the information later
 outer loops need for extracting successful templates or training amortized
-proposal mechanisms.
+proposal mechanisms. Item edits such as `setitem` are handled by the same direct
+edit machinery: literal seeds supply bounded indices/items, while local node
+seeds let a candidate reuse an already-compressed source vector instead of
+materializing a duplicate child.
 
 ## Numeric Search Operators
 
