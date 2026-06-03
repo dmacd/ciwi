@@ -75,6 +75,12 @@ acyclic. Applying the rewrite does not replace or destroy the original value. It
 adds a new operator option under that value. The original raw value remains
 available, and MDL decides whether the new option is better.
 
+`ciwi.delayed-builder` covers the complementary graph-construction path used by
+Python WILLIAM's delayed DAG builder tests. It attaches a selected graph element
+to conditioned value nodes, either above known inputs or below a known output via
+operator inversion. Conditioned nodes may repeat, so graph construction supports
+DAG-shared inputs such as `mult(d, d)` without special mutable clone logic.
+
 This is important for incremental learning: every local proposal is reversible
 by selection, and graph history can be kept or pruned separately.
 

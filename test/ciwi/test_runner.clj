@@ -4,6 +4,7 @@
             [ciwi.composite-test]
             [ciwi.conditions-test]
             [ciwi.core-test]
+            [ciwi.delayed-builder-test]
             [ciwi.dsl-test]
             [ciwi.enumerator-test]
             [ciwi.enumerative-rewrite-test]
@@ -25,6 +26,7 @@
                                              'ciwi.composite-test
                                              'ciwi.conditions-test
                                              'ciwi.core-test
+                                             'ciwi.delayed-builder-test
                                              'ciwi.dsl-test
                                              'ciwi.enumerator-test
                                              'ciwi.enumerative-rewrite-test

@@ -50,19 +50,25 @@
                        :node n}))))
   g)
 
+(defn- conj-parent
+  [parents parent-id]
+  (if (some #{parent-id} parents)
+    parents
+    (conj parents parent-id)))
+
 (defn add-operator
   [g id op parent children]
   (when-not (operator/operator? op)
     (throw (ex-info "Expected ciwi.operator/Operator" {:id id :operator op})))
-  (reduce (fn [acc [child idx]]
+  (reduce (fn [acc child]
             (-> acc
                 (require-value-node child :child)
-                (update-in [:nodes child :parents] conj id)))
+                (update-in [:nodes child :parents] conj-parent id)))
           (-> g
               (require-value-node parent :parent)
               (assoc-in [:nodes id] (operator-node id op parent children))
               (update-in [:nodes parent :options] conj id))
-          (map vector children (range))))
+          children))
 
 (defn unique-id
   [g base]
