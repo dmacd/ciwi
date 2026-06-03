@@ -115,7 +115,8 @@ values and returns structured search data rather than a bare candidate vector:
             :templates-considered 20
             :candidates-proposed 7
             :candidates-accepted 2
-            :generated-expressions 128}
+            :generated-expressions 128
+            :generated-edits 64}
  :trace [{:kind :rewrite-operator
           :rewrite-operator-id :primitive-templates
           :resource {...}}
@@ -240,6 +241,32 @@ can inspect successful and failed local searches without rerunning them.
 This is intentionally not a corpus-level DreamCoder phase. Outer control loops
 can decide which operators, composites, literal generators, and budgets to pass
 to this local enumerator.
+
+## Graph-Edit Enumeration
+
+`ciwi.graph-rewrite` is the graph-native bounded rewrite operator. Instead of
+starting from expression trees and converting matches into graph edits, it
+enumerates local edits directly:
+
+1. choose a focused parent value node
+2. choose a root operator
+3. choose child operands from DAG-safe local node refs and literal value refs
+4. evaluate the candidate edit and score its predicted DL
+5. emit a normal rewrite candidate with `:child-refs`
+
+The same depth, generation, and beam controls apply: `:max-depth`,
+`:max-generated`, and `:beam-width`. Depth greater than one means generated edit
+outputs can become operands for later generated edits. If such a generated edit
+is used as a child, the emitted graph candidate uses a fresh value ref for that
+child; later bounded passes can compress that child value through ordinary local
+rewrites. If an existing local node is cheapest for a value, the candidate keeps
+a `{:kind :node ...}` ref, preserving DAG sharing.
+
+Graph-edit candidates carry `:edit-form`, `:edit-depth`, and candidate-local
+resource metadata. Operator traces include generated edit count, matched edit
+count, accepted count, and termination reason, which is the information later
+outer loops need for extracting successful templates or training amortized
+proposal mechanisms.
 
 ## Numeric Search Operators
 

@@ -7,15 +7,6 @@
   [results k]
   (reduce + 0 (map #(get-in % [:resource k] 0) results)))
 
-(defn- trace-resource-sum
-  [trace k]
-  (reduce +
-          0
-          (keep (fn [entry]
-                  (let [v (get-in entry [:resource k])]
-                    (when (number? v) v)))
-                trace)))
-
 (defn- ensure-rewrite-operator
   [x]
   (if (satisfies? rewrite/RewriteOperator x)
@@ -56,7 +47,8 @@
                 :candidates-proposed (sum-resource operator-results :candidates-proposed)
                 :candidates-accepted (count candidates)
                 :candidates-rejected (sum-resource operator-results :candidates-rejected)
-                :generated-expressions (trace-resource-sum trace :generated-expressions)}
+                :generated-expressions (sum-resource operator-results :generated-expressions)
+                :generated-edits (sum-resource operator-results :generated-edits)}
      :trace trace}))
 
 (defn- step-from-search
@@ -111,6 +103,7 @@
    :candidates-accepted
    :candidates-rejected
    :generated-expressions
+   :generated-edits
    :neighborhood-node-visits])
 
 (defn- aggregate-resources

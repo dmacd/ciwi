@@ -8,6 +8,7 @@
             [ciwi.enumerator-test]
             [ciwi.enumerative-rewrite-test]
             [ciwi.graph-test]
+            [ciwi.graph-rewrite-test]
             [ciwi.library-test]
             [ciwi.mdl-test]
             [ciwi.operator-test]
@@ -27,6 +28,7 @@
                                              'ciwi.enumerator-test
                                              'ciwi.enumerative-rewrite-test
                                              'ciwi.graph-test
+                                             'ciwi.graph-rewrite-test
                                              'ciwi.library-test
                                              'ciwi.mdl-test
                                              'ciwi.operator-test
