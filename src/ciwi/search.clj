@@ -1,35 +1,7 @@
 (ns ciwi.search
   (:require [ciwi.graph :as graph]
-            [ciwi.library :as library]
             [ciwi.mdl :as mdl]
-            [ciwi.rewrite :as rewrite])
-  (:import [java.util.concurrent Callable Executors TimeUnit]))
-
-(defn- value-work-items
-  [g node-ids]
-  (->> node-ids
-       distinct
-       (filter #(graph/value-node? (graph/node g %)))
-       vec))
-
-(defn- parallel-mapv
-  [f xs]
-  (let [xs (vec xs)]
-    (if (< (count xs) 2)
-      (mapv f xs)
-      (let [n-threads (max 1 (min (count xs)
-                                  (.availableProcessors (Runtime/getRuntime))))
-            pool (Executors/newFixedThreadPool n-threads)
-            tasks (mapv (fn [x]
-                          (reify Callable
-                            (call [_]
-                              (f x))))
-                        xs)]
-        (try
-          (mapv #(.get %) (.invokeAll pool tasks))
-          (finally
-            (.shutdown pool)
-            (.awaitTermination pool 5 TimeUnit/SECONDS)))))))
+            [ciwi.rewrite :as rewrite]))
 
 (defn- sum-resource
   [results k]
@@ -44,36 +16,46 @@
                     (when (number? v) v)))
                 trace)))
 
+(defn- ensure-rewrite-operator
+  [x]
+  (if (satisfies? rewrite/RewriteOperator x)
+    x
+    (throw (ex-info "Expected RewriteOperator" {:rewrite-operator x}))))
+
+(defn- configured-rewrite-operators
+  [{:keys [rewrite-operators]}]
+  (if (seq rewrite-operators)
+    (mapv ensure-rewrite-operator rewrite-operators)
+    [(rewrite/primitive-template-operator)]))
+
 (defn rewrite-search
-  "Run local rewrite proposal over value nodes and return candidates plus metadata."
-  [g node-ids {:keys [parallel?]
-               :or {parallel? true}
-               :as opts}]
+  "Run composed rewrite operators over local value nodes."
+  [g node-ids opts]
   (let [requested-node-ids (vec node-ids)
-        items (value-work-items g requested-node-ids)
-        opts (cond-> (assoc opts :local-node-ids (or (:local-node-ids opts) items))
-               (:composite-templates? opts)
-               (-> (update :extra-templates into (library/builtin-templates))
-                   (dissoc :composite-templates?)))
-        node-results (if parallel?
-                       (parallel-mapv #(rewrite/proposal-for-node g % opts) items)
-                       (mapv #(rewrite/proposal-for-node g % opts) items))
-        candidates (->> node-results
+        items (rewrite/value-node-ids g requested-node-ids)
+        opts (assoc (merge {:parallel? true} opts)
+                    :local-node-ids
+                    (or (:local-node-ids opts) items))
+        operators (configured-rewrite-operators opts)
+        operator-results (mapv #(rewrite/run-rewrite % g items opts) operators)
+        candidates (->> operator-results
                         (mapcat :candidates)
                         (sort-by (juxt :after :delta (comp str :node-id) (comp str :reason)))
                         vec)
-        trace (vec (mapcat :trace node-results))]
+        trace (vec (mapcat :trace operator-results))]
     {:node-ids items
      :requested-node-ids requested-node-ids
+     :rewrite-operator-ids (mapv rewrite/rewrite-operator-id operators)
      :candidates candidates
-     :resource {:parallel? parallel?
+     :resource {:rewrite-operators-considered (count operators)
+                :parallel? (boolean (:parallel? opts))
                 :nodes-requested (count requested-node-ids)
-                :nodes-considered (sum-resource node-results :nodes-considered)
+                :nodes-considered (sum-resource operator-results :nodes-considered)
                 :local-node-count (count (:local-node-ids opts))
-                :templates-considered (sum-resource node-results :templates-considered)
-                :candidates-proposed (sum-resource node-results :candidates-proposed)
+                :templates-considered (sum-resource operator-results :templates-considered)
+                :candidates-proposed (sum-resource operator-results :candidates-proposed)
                 :candidates-accepted (count candidates)
-                :candidates-rejected (sum-resource node-results :candidates-rejected)
+                :candidates-rejected (sum-resource operator-results :candidates-rejected)
                 :generated-expressions (trace-resource-sum trace :generated-expressions)}
      :trace trace}))
 
@@ -120,7 +102,8 @@
                               :neighborhoods neighborhoods}]))))
 
 (def ^:private aggregate-resource-keys
-  [:nodes-requested
+  [:rewrite-operators-considered
+   :nodes-requested
    :nodes-considered
    :local-node-count
    :templates-considered

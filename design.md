@@ -92,7 +92,7 @@ children, but they do not run the full decoder. Work scales with:
 
 - number of target leaves
 - neighborhood budget
-- candidate templates enabled for each local value
+- rewrite operators enabled for the local search
 
 not total stream history.
 
@@ -104,22 +104,26 @@ Java executor over bounded candidate work items. The interface is deliberately
 narrow so it can be replaced with reducers, agents, virtual-thread executors,
 or core.async workers without changing rewrite semantics.
 
-`ciwi.search/rewrite-search` returns structured search data rather than a bare
-candidate vector:
+`ciwi.search/rewrite-search` composes explicit `ciwi.rewrite/RewriteOperator`
+values and returns structured search data rather than a bare candidate vector:
 
 ```clojure
-{:candidates [...]
- :resource {:nodes-considered 4
+{:rewrite-operator-ids [:primitive-templates :bounded-enum]
+ :candidates [...]
+ :resource {:rewrite-operators-considered 2
+            :nodes-considered 4
             :templates-considered 20
             :candidates-proposed 7
             :candidates-accepted 2
             :generated-expressions 128}
- :trace [{:kind :template-proposal
+ :trace [{:kind :rewrite-operator
+          :rewrite-operator-id :primitive-templates
+          :resource {...}}
+         {:kind :template-proposal
           :node-id :out
           :template-id :brange
           :candidate-count 1
-          :accepted-count 1
-          :resource {}}]}
+          :accepted-count 1}]}
 ```
 
 Convergence keeps `:history` as the sequence of applied candidates and adds
@@ -138,9 +142,10 @@ The first templates are intentionally simple but useful for proving the loop:
 - scaled ranges: `(mult (brange 0 n) step)`
 - affine sequences: `(add (mult (brange 0 n) step) start)`
 
-Each template can be detected from a local value. Children introduced by one
-rewrite can themselves be rewritten in later bounded passes, which is the basic
-mechanism used by the convergence tests.
+Each template can be detected from a local value. Templates are intentionally
+small local candidate rules; search sees them through `rewrite/template-operator`.
+Children introduced by one rewrite can themselves be rewritten in later bounded
+passes, which is the basic mechanism used by the convergence tests.
 
 ## Clojure Graph Literals
 
@@ -175,21 +180,20 @@ way to express DAG-style composites such as `x*x + y` without porting Python's
 sexpr parser. Non-input leaves in a placeholder template are captured as
 constants.
 
-Rewrite proposal is now factored behind `ciwi.rewrite/RewriteTemplate`.
-Primitive templates, composite templates, and caller-supplied templates all use
-that same interface: inspect one value node and return a structured proposal
-result with `:candidates`, `:resource`, and `:trace`. Search remains parallel
-over value nodes because templates are pure local proposal functions.
+Local template rules still implement `ciwi.rewrite/RewriteTemplate`, but the
+search layer no longer treats templates as the top-level unit. Search composes
+`ciwi.rewrite/RewriteOperator` values. `rewrite/template-operator` wraps any
+set of local templates into one operator, while other mechanisms such as bounded
+enumeration can implement `RewriteOperator` directly.
 
-The rewrite engine can opt into bundled composite templates with
-`:composite-templates? true`, or accept caller-provided templates through
-`:extra-templates`. The first bundled composite template is `:linear-sequence`, a
-single graph-backed operator equivalent to `(add (mult (brange 0 n) step)
-start)`. Tests also inject a separate `:square-range` composite template to keep
-the path generic rather than special-cased. This is a deliberate stepping stone
-toward treating composites, local graph rewrites, and specialized numeric
-optimizers as recursive graph search operators rather than a separate mutable
-object hierarchy.
+The first bundled composite template is `:linear-sequence`, a single
+graph-backed operator equivalent to `(add (mult (brange 0 n) step) start)`. To
+use it in search, callers load the template and explicitly wrap it with
+`rewrite/template-operator`. Tests also inject a separate `:square-range`
+composite template to keep the path generic rather than special-cased. This is a
+deliberate stepping stone toward treating composites, local graph rewrites, and
+specialized numeric optimizers as recursive graph search operators rather than a
+separate mutable object hierarchy.
 
 ## Library Loading
 
@@ -201,9 +205,10 @@ hydrates graph-shaped definitions into `ciwi.operator/Operator` values, while
 template loading hydrates local matcher/operator definitions into
 `ciwi.rewrite/RewriteTemplate` values. A small `load-library` orchestrator wires
 the two paths together when both definition types are present. The inner rewrite
-loop only receives runtime templates, so it does not care whether a rule was
-built in, hand-written, or produced by an outer library-compression/amortization
-phase.
+loop receives runtime `RewriteOperator` values, so loaded templates are wrapped
+with `rewrite/template-operator` at the search boundary. Search therefore does
+not care whether a rule was built in, hand-written, or produced by an outer
+library-compression/amortization phase.
 
 The loader is deliberately small: it supports graph-backed composites, tagged
 local matchers, EDN persistence, and caller-provided runtime templates. Later we
@@ -213,7 +218,7 @@ changing the local search loop's contract.
 ## Bounded Enumeration
 
 `ciwi.enumerative-rewrite` adds the first general local enumeration rule. It is
-still an inner-loop `RewriteTemplate`: for one focused value node, it enumerates
+a first-class `RewriteOperator`: for each focused value node, it enumerates
 expression trees over a configured operator set and literal generator, bounded by
 `:max-depth`, `:max-generated`, and `:beam-width`. When an enumerated
 expression evaluates to the focused node value, it emits a normal local rewrite
@@ -228,7 +233,7 @@ with existing local value nodes. Matching candidates then reuse those nodes via
 `:child-refs` instead of rematerializing duplicate children. Candidate metadata
 records the enumeration resource usage, including generated expression count,
 depth reached, beam width, and the literal/local seed counts used for that
-bounded enumeration. The same resource map is surfaced at the proposal, search,
+bounded enumeration. The same resource map is surfaced at the operator, search,
 and convergence-step layers so later template extraction and amortization code
 can inspect successful and failed local searches without rerunning them.
 
@@ -236,7 +241,7 @@ This is intentionally not a corpus-level DreamCoder phase. Outer control loops
 can decide which operators, composites, literal generators, and budgets to pass
 to this local enumerator.
 
-## Search Operators
+## Numeric Search Operators
 
 Optimizers implement `ciwi.optimize/SearchOperator`. The first port keeps a
 Newton/pattern-search style optimizer and an adaptive grid optimizer close to

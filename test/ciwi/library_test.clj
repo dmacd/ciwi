@@ -2,6 +2,7 @@
   (:require [ciwi.library :as sut]
             [ciwi.mdl :as mdl]
             [ciwi.operator :as op]
+            [ciwi.rewrite :as rewrite]
             [ciwi.search :as search]
             [ciwi.value :as value]
             [ciwi.graph :as graph]
@@ -38,13 +39,15 @@
         exhaustive (search/exhaustive-converge
                     g
                     {:parallel? false
-                     :extra-templates (:templates library)})
+                     :rewrite-operators [(rewrite/template-operator :loaded-templates
+                                                               (:templates library))]})
         bounded (search/bounded-converge
                  g
                  [:out]
                  {:parallel? true
                   :re-eval-budget 4
-                  :extra-templates (:templates library)})]
+                  :rewrite-operators [(rewrite/template-operator :loaded-templates
+                                                               (:templates library))]})]
     (is (= [:linear-sequence] (mapv :reason (:history exhaustive))))
     (is (= [:linear-sequence 0 6 3 2]
            (mdl/selected-expression (:graph exhaustive) :out)))
@@ -70,7 +73,8 @@
         result (search/exhaustive-converge
                 g
                 {:parallel? false
-                 :extra-templates (:templates loaded-templates)})]
+                 :rewrite-operators [(rewrite/template-operator :loaded-templates
+                                                               (:templates loaded-templates))]})]
     (is (= [:square-range] (mapv :reason (:history result))))
     (is (= [:square-range 6]
            (mdl/selected-expression (:graph result) :out)))))
@@ -94,7 +98,8 @@
             result (search/exhaustive-converge
                     g
                     {:parallel? false
-                     :extra-templates (:templates library)})]
+                     :rewrite-operators [(rewrite/template-operator :loaded-templates
+                                                               (:templates library))]})]
         (is (= [:square-range] (mapv :reason (:history result))))
         (is (= [:square-range 6]
                (mdl/selected-expression (:graph result) :out))))

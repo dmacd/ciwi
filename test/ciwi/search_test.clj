@@ -1,6 +1,7 @@
 (ns ciwi.search-test
   (:require [ciwi.composite :as composite]
             [ciwi.graph :as graph]
+            [ciwi.library :as library]
             [ciwi.mdl :as mdl]
             [ciwi.rewrite :as rewrite]
             [ciwi.search :as sut]
@@ -87,13 +88,24 @@
     (is (= #{:brange :repeat} (set (map :reason (:history bounded)))))))
 
 
-(deftest opt-in-composite-rewrites-participate-in-search
+(deftest composed-rewrite-operators-participate-in-search
   (let [g (one-target-graph [2 5 8 11 14 17])
-        candidates (:candidates (sut/rewrite-search g [:out] {:parallel? false
-                                                      :composite-templates? true}))
+        operators [(rewrite/primitive-template-operator)
+                   (rewrite/template-operator :builtin-composites
+                                              (library/builtin-templates))]
+        search-result (sut/rewrite-search g [:out] {:parallel? false
+                                                       :rewrite-operators operators})
+        candidates (:candidates search-result)
         best (first candidates)
         result (sut/exhaustive-converge g {:parallel? false
-                                           :composite-templates? true})]
+                                           :rewrite-operators operators})]
+    (is (= [:primitive-templates :builtin-composites]
+           (:rewrite-operator-ids search-result)))
+    (is (= 2 (get-in search-result [:resource :rewrite-operators-considered])))
+    (is (some #(and (= :rewrite-operator (:kind %))
+                    (= :builtin-composites (:rewrite-operator-id %)))
+              (:trace search-result)))
+    (is (= :builtin-composites (:rewrite-operator-id best)))
     (is (= :linear-sequence (:reason best)))
     (is (= :fixed-point (:stopped result)))
     (is (= [:linear-sequence] (mapv :reason (:history result))))
@@ -104,11 +116,14 @@
 
 (deftest bounded-composite-rewrites-converge-to-exhaustive-result
   (let [g (one-target-graph [2 5 8 11 14 17])
+        operators [(rewrite/primitive-template-operator)
+                   (rewrite/template-operator :builtin-composites
+                                              (library/builtin-templates))]
         exhaustive (sut/exhaustive-converge g {:parallel? false
-                                               :composite-templates? true})
+                                               :rewrite-operators operators})
         bounded (sut/bounded-converge g [:out] {:parallel? true
                                                 :re-eval-budget 4
-                                                :composite-templates? true})]
+                                                :rewrite-operators operators})]
     (is (= (:dl exhaustive) (:dl bounded)))
     (is (= (mapv :reason (:history exhaustive))
            (mapv :reason (:history bounded))))
@@ -125,17 +140,17 @@
   (rewrite/value-template
    :square-range
    (fn [g node-id xs _opts]
-     (rewrite/candidate-proposal
-      (when (vector? xs)
-        (let [n (count xs)]
-          (when (and (>= n 3)
-                     (= xs (mapv #(* % %) (range n))))
-            (rewrite/candidate g node-id square-range-op [n] :square-range))))))))
+     (when (vector? xs)
+       (let [n (count xs)]
+         (when (and (>= n 3)
+                    (= xs (mapv #(* % %) (range n))))
+           (rewrite/candidate g node-id square-range-op [n] :square-range)))))))
 
 (deftest injected-composite-template-compresses-square-range
   (let [g (one-target-graph [0 1 4 9 16 25])
         opts {:parallel? false
-              :extra-templates [square-range-template]}
+              :rewrite-operators [(rewrite/template-operator :square-range
+                                                              [square-range-template])]}
         exhaustive (sut/exhaustive-converge g opts)
         bounded (sut/bounded-converge g [:out] (assoc opts :parallel? true
                                                       :re-eval-budget 1))]

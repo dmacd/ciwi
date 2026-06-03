@@ -2,11 +2,16 @@
   (:require [ciwi.graph :as graph]
             [ciwi.mdl :as mdl]
             [ciwi.operator :as op]
-            [ciwi.value :as value]))
+            [ciwi.value :as value])
+  (:import [java.util.concurrent Callable Executors TimeUnit]))
 
 (defprotocol RewriteTemplate
   (template-id [template])
   (propose [template g node-id data opts]))
+
+(defprotocol RewriteOperator
+  (rewrite-operator-id [operator])
+  (run-rewrite [operator g node-ids opts]))
 
 (defrecord ValueTemplate [id propose-fn]
   RewriteTemplate
@@ -15,29 +20,36 @@
   (propose [_ g node-id data opts]
     (propose-fn g node-id data opts)))
 
-(defn proposal
-  "Build a structured rewrite proposal result."
-  ([]
-   (proposal []))
-  ([candidates]
-   (proposal candidates {} []))
-  ([candidates resource trace]
-   {:candidates (vec (remove nil? candidates))
-    :resource (or resource {})
-    :trace (vec trace)}))
-
-(defn candidate-proposal
-  [candidate]
-  (proposal (cond-> [] candidate (conj candidate))))
-
 (defn value-template
-  "Create a local value-node rewrite template.
-
-  `propose-fn` receives `g`, `node-id`, the node's plain data, and local search
-  opts. It returns a structured proposal result.
-  "
+  "Create a local value-node rewrite template."
   [id propose-fn]
   (->ValueTemplate id propose-fn))
+
+(defn value-node-ids
+  [g node-ids]
+  (->> node-ids
+       distinct
+       (filter #(graph/value-node? (graph/node g %)))
+       vec))
+
+(defn parallel-mapv
+  [f xs]
+  (let [xs (vec xs)]
+    (if (< (count xs) 2)
+      (mapv f xs)
+      (let [n-threads (max 1 (min (count xs)
+                                  (.availableProcessors (Runtime/getRuntime))))
+            pool (Executors/newFixedThreadPool n-threads)
+            tasks (mapv (fn [x]
+                          (reify Callable
+                            (call [_]
+                              (f x))))
+                        xs)]
+        (try
+          (mapv #(.get %) (.invokeAll pool tasks))
+          (finally
+            (.shutdown pool)
+            (.awaitTermination pool 5 TimeUnit/SECONDS)))))))
 
 (defn- node-data
   [g node-id]
@@ -146,28 +158,25 @@
 
 (defn- brange-candidate
   [g node-id xs _opts]
-  (candidate-proposal
-   (when (and (arithmetic-range? xs)
-              (>= (count xs) 2))
-     (candidate g node-id op/brange [(first xs) (count xs)] :brange))))
+  (when (and (arithmetic-range? xs)
+             (>= (count xs) 2))
+    (candidate g node-id op/brange [(first xs) (count xs)] :brange)))
 
 (defn- repeat-candidate
   [g node-id xs _opts]
-  (candidate-proposal
-   (when (and (vector? xs)
-              (>= (count xs) 2)
-              (apply = xs))
-     (candidate g node-id op/repeat [(first xs) (count xs)] :repeat))))
+  (when (and (vector? xs)
+             (>= (count xs) 2)
+             (apply = xs))
+    (candidate g node-id op/repeat [(first xs) (count xs)] :repeat)))
 
 (defn- concat-candidates
   [g node-id xs _opts]
-  (proposal
-   (when (and (vector? xs)
-              (>= (count xs) 4))
-     (for [split (range 1 (count xs))]
-       (candidate g node-id op/concat [(subvec xs 0 split)
-                                       (subvec xs split)]
-                  :concat)))))
+  (when (and (vector? xs)
+             (>= (count xs) 4))
+    (for [split (range 1 (count xs))]
+      (candidate g node-id op/concat [(subvec xs 0 split)
+                                      (subvec xs split)]
+                 :concat))))
 
 (defn- affine-sequence
   [xs]
@@ -185,22 +194,20 @@
 
 (defn- scale-mult-candidate
   [g node-id xs _opts]
-  (candidate-proposal
-   (when-let [{:keys [start step n base]} (affine-sequence xs)]
-     (when (and (zero? start)
-                (not= 1 step)
-                (not (zero? step)))
-       (candidate g node-id op/mult [base step] :scale-mult (scale-mult-dl step n))))))
+  (when-let [{:keys [start step n base]} (affine-sequence xs)]
+    (when (and (zero? start)
+               (not= 1 step)
+               (not (zero? step)))
+      (candidate g node-id op/mult [base step] :scale-mult (scale-mult-dl step n)))))
 
 (defn- affine-candidate
   [g node-id xs _opts]
-  (candidate-proposal
-   (when-let [{:keys [start step n scaled]} (affine-sequence xs)]
-     (when-not (or (zero? start)
-                   (arithmetic-range? xs))
-       (candidate g node-id op/add [scaled start] :affine-add (affine-add-dl start step n))))))
+  (when-let [{:keys [start step n scaled]} (affine-sequence xs)]
+    (when-not (or (zero? start)
+                  (arithmetic-range? xs))
+      (candidate g node-id op/add [scaled start] :affine-add (affine-add-dl start step n)))))
 
-(defn- primitive-templates
+(defn primitive-templates
   []
   [(value-template :brange brange-candidate)
    (value-template :repeat repeat-candidate)
@@ -214,37 +221,25 @@
     x
     (throw (ex-info "Expected RewriteTemplate" {:template x}))))
 
-(defn- configured-templates
-  [{:keys [extra-templates]}]
-  (cond-> (vec (primitive-templates))
-    (seq extra-templates) (into (map ensure-template extra-templates))))
-
-(defn- proposal-result?
+(defn- result-candidates
   [result]
-  (and (map? result)
-       (vector? (:candidates result))
-       (map? (:resource result))
-       (vector? (:trace result))))
+  (cond
+    (nil? result) []
+    (map? result) [result]
+    (sequential? result) result
+    :else (throw (ex-info "RewriteTemplate returned invalid candidate result"
+                          {:result result}))))
 
-(defn- require-proposal-result!
-  [template result]
-  (when-not (proposal-result? result)
-    (throw (ex-info "RewriteTemplate must return a proposal result"
-                    {:template-id (template-id template)
-                     :result result})))
-  result)
-
-(defn- template-result
-  [g node-id data opts template]
-  (let [id (template-id template)
-        result (require-proposal-result!
-                template
-                (propose template g node-id data opts))
-        proposed (vec (remove nil? (:candidates result)))
+(defn- run-template
+  [g node-id data opts rewrite-operator-id template]
+  (let [template-id (template-id template)
+        proposed (vec (remove nil? (result-candidates (propose template g node-id data opts))))
         accepted (->> proposed
                       (filter neg-delta?)
-                      (mapv #(assoc % :template-id id)))]
-    {:template-id id
+                      (mapv #(assoc %
+                                    :rewrite-operator-id rewrite-operator-id
+                                    :template-id template-id)))]
+    {:template-id template-id
      :candidates accepted
      :resource {:templates-considered 1
                 :candidates-proposed (count proposed)
@@ -252,45 +247,72 @@
                 :candidates-rejected (- (count proposed) (count accepted))}
      :trace [{:kind :template-proposal
               :node-id node-id
-              :template-id id
+              :rewrite-operator-id rewrite-operator-id
+              :template-id template-id
               :candidate-count (count proposed)
-              :accepted-count (count accepted)
-              :resource (:resource result)
-              :trace (:trace result)}]}))
+              :accepted-count (count accepted)}]}))
 
 (defn- sum-resource
   [results k]
   (reduce + 0 (map #(get-in % [:resource k] 0) results)))
 
-(defn proposal-for-node
-  ([g node-id]
-   (proposal-for-node g node-id {}))
-  ([g node-id opts]
-   (let [n (graph/node g node-id)
-         data (node-data g node-id)]
-     (if-not (and (graph/value-node? n) (some? data))
-       {:node-id node-id
-        :candidates []
-        :resource {:nodes-considered 0
-                   :templates-considered 0
-                   :candidates-proposed 0
-                   :candidates-accepted 0
-                   :candidates-rejected 0}
-        :trace []}
-       (let [results (mapv #(template-result g node-id data opts %)
-                           (configured-templates opts))
-             candidates (->> results
-                             (mapcat :candidates)
-                             (sort-by (juxt :after :delta (comp str :reason)))
-                             vec)]
-         {:node-id node-id
-          :candidates candidates
-          :resource {:nodes-considered 1
-                     :templates-considered (sum-resource results :templates-considered)
-                     :candidates-proposed (sum-resource results :candidates-proposed)
-                     :candidates-accepted (count candidates)
-                     :candidates-rejected (sum-resource results :candidates-rejected)}
-          :trace (vec (mapcat :trace results))})))))
+(defn- template-node-result
+  [g node-id opts rewrite-operator-id templates]
+  (let [data (node-data g node-id)
+        results (mapv #(run-template g node-id data opts rewrite-operator-id %)
+                      templates)
+        candidates (->> results
+                        (mapcat :candidates)
+                        (sort-by (juxt :after :delta (comp str :reason)))
+                        vec)]
+    {:node-id node-id
+     :candidates candidates
+     :resource {:nodes-considered 1
+                :templates-considered (sum-resource results :templates-considered)
+                :candidates-proposed (sum-resource results :candidates-proposed)
+                :candidates-accepted (count candidates)
+                :candidates-rejected (sum-resource results :candidates-rejected)}
+     :trace (vec (mapcat :trace results))}))
+
+(defrecord TemplateRewriteOperator [id templates]
+  RewriteOperator
+  (rewrite-operator-id [_]
+    id)
+  (run-rewrite [_ g node-ids opts]
+    (let [items (value-node-ids g node-ids)
+          templates (mapv ensure-template templates)
+          node-fn #(template-node-result g % opts id templates)
+          node-results (if (:parallel? opts)
+                         (parallel-mapv node-fn items)
+                         (mapv node-fn items))
+          candidates (->> node-results
+                          (mapcat :candidates)
+                          (sort-by (juxt :after :delta (comp str :node-id) (comp str :reason)))
+                          vec)
+          resource {:rewrite-operators-considered 1
+                    :nodes-considered (sum-resource node-results :nodes-considered)
+                    :templates-considered (sum-resource node-results :templates-considered)
+                    :candidates-proposed (sum-resource node-results :candidates-proposed)
+                    :candidates-accepted (count candidates)
+                    :candidates-rejected (sum-resource node-results :candidates-rejected)}]
+      {:rewrite-operator-id id
+       :node-ids items
+       :candidates candidates
+       :resource resource
+       :trace (into [{:kind :rewrite-operator
+                      :rewrite-operator-id id
+                      :resource resource}]
+                    (mapcat :trace node-results))})))
+
+(defn template-operator
+  ([templates]
+   (template-operator :template-sweep templates))
+  ([id templates]
+   (->TemplateRewriteOperator id (mapv ensure-template templates))))
+
+(defn primitive-template-operator
+  []
+  (template-operator :primitive-templates (primitive-templates)))
 
 (defn- validate-node-ref!
   [g parent-id node-id]

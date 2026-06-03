@@ -19,7 +19,7 @@
     [0 1 data]))
 
 (def square-range-enumerator
-  (enum/enumerative-template
+  (enum/enumerative-operator
    {:id :bounded-enum
     :reason :bounded-enum
     :operators [{:op :brange :arity 2}
@@ -34,13 +34,13 @@
         exhaustive (search/exhaustive-converge
                     g
                     {:parallel? false
-                     :extra-templates [square-range-enumerator]})
+                     :rewrite-operators [square-range-enumerator]})
         bounded (search/bounded-converge
                  g
                  [:out]
                  {:parallel? true
                   :re-eval-budget 8
-                  :extra-templates [square-range-enumerator]})]
+                  :rewrite-operators [square-range-enumerator]})]
     (is (= :fixed-point (:stopped exhaustive)))
     (is (= :bounded-enum (-> exhaustive :history first :reason)))
     (is (= [:mult [:brange 0 6] [:brange 0 6]]
@@ -51,7 +51,7 @@
 
 (deftest enumeration-depth-bound-limits-candidates
   (let [g (one-target-graph [0 1 4 9 16 25])
-        shallow (enum/enumerative-template
+        shallow (enum/enumerative-operator
                  {:id :shallow-enum
                   :reason :shallow-enum
                   :operators [{:op :brange :arity 2}
@@ -59,8 +59,10 @@
                   :literal-values square-literals
                   :max-depth 1
                   :max-generated 200})
-        candidates (:candidates (search/rewrite-search g [:out] {:parallel? false
-                                                         :extra-templates [shallow]}))]
+        search-result (search/rewrite-search g [:out] {:parallel? false
+                                                   :rewrite-operators [shallow]})
+        candidates (:candidates search-result)]
+    (is (pos? (get-in search-result [:resource :generated-expressions])))
     (is (not-any? #(= :shallow-enum (:reason %)) candidates))))
 
 
@@ -78,7 +80,7 @@
                 [:square :range]
                 {:parallel? false
                  :re-eval-budget 1
-                 :extra-templates [square-range-enumerator]})
+                 :rewrite-operators [square-range-enumerator]})
         first-candidate (first (:history result))
         selected-op-id (first (mdl/selected-operators (:graph result) :square))
         selected-op-node (graph/node (:graph result) selected-op-id)]
@@ -95,7 +97,7 @@
     (is (pos? (get-in first-candidate [:resource :generated-expressions])))))
 
 (def cycle-guard-enumerator
-  (enum/enumerative-template
+  (enum/enumerative-operator
    {:id :cycle-guard-enum
     :reason :cycle-guard-enum
     :operators [{:op :add :arity 2}]
@@ -120,7 +122,7 @@
                      [:child]
                      {:parallel? false
                       :local-node-ids [:child :root]
-                      :extra-templates [cycle-guard-enumerator]}))]
+                      :rewrite-operators [cycle-guard-enumerator]}))]
     (is (not (rewrite/reusable-child-node? g :child :root)))
     (is (rewrite/reusable-child-node? g :root :child))
     (is (nil? (rewrite/candidate-from-refs

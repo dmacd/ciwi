@@ -183,7 +183,7 @@
     (rewrite/value-ref (:value expr))))
 
 (defn- candidate-for-expression
-  [g node-id reason resource expr]
+  [g node-id rewrite-operator-id reason resource expr]
   (when (= :op (:kind expr))
     (when-let [candidate (rewrite/candidate-from-refs g
                                                        node-id
@@ -192,41 +192,81 @@
                                                        reason
                                                        (:dl expr))]
       (assoc candidate
+             :rewrite-operator-id rewrite-operator-id
              :expression (:form expr)
              :enum-depth (:depth expr)
              :resource resource))))
 
-(defn enumerative-template
-  "Create a bounded local enumerative rewrite template.
+(defn- sum-resource
+  [results k]
+  (reduce + 0 (map #(get-in % [:resource k] 0) results)))
 
-  Required option: `:operators`, a collection of maps like `{:op :brange
-  :arity 2}`. Bounds are controlled by `:max-depth`, `:max-generated`, and
-  `:beam-width`. `:literal-values` may be a collection or `(fn [data] ...)`.
-  "
+(defn- node-result
+  [g node-id search-opts {:keys [id reason use-local-nodes?] :as opts}]
+  (let [data (graph/value-data g node-id)
+        node-exprs (when-not (= false use-local-nodes?)
+                     (for [local-id (distinct (:local-node-ids search-opts))
+                           :when (rewrite/reusable-child-node? g node-id local-id)]
+                       (node-expr g local-id)))
+        {:keys [expressions resource]} (enumeration-result data
+                                                           (assoc opts
+                                                                  :seed-expressions
+                                                                  node-exprs))
+        proposed (->> expressions
+                      (filter #(= data (:value %)))
+                      (keep #(candidate-for-expression g node-id id reason resource %))
+                      vec)
+        accepted (filterv rewrite/neg-delta? proposed)]
+    {:node-id node-id
+     :candidates accepted
+     :resource (assoc resource
+                      :nodes-considered 1
+                      :candidates-proposed (count proposed)
+                      :candidates-accepted (count accepted)
+                      :candidates-rejected (- (count proposed) (count accepted)))
+     :trace [{:kind :bounded-enumeration
+              :node-id node-id
+              :rewrite-operator-id id
+              :matched-expressions (count proposed)
+              :accepted-count (count accepted)
+              :resource resource}]}))
+
+(defrecord EnumerativeRewriteOperator [id reason opts]
+  rewrite/RewriteOperator
+  (rewrite-operator-id [_]
+    id)
+  (run-rewrite [_ g node-ids search-opts]
+    (let [items (rewrite/value-node-ids g node-ids)
+          opts (assoc opts
+                      :id id
+                      :reason reason)
+          node-fn #(node-result g % search-opts opts)
+          node-results (if (:parallel? search-opts)
+                         (rewrite/parallel-mapv node-fn items)
+                         (mapv node-fn items))
+          candidates (->> node-results
+                          (mapcat :candidates)
+                          (sort-by (juxt :after :delta (comp str :node-id) (comp str :reason)))
+                          vec)
+          resource {:rewrite-operators-considered 1
+                    :nodes-considered (sum-resource node-results :nodes-considered)
+                    :candidates-proposed (sum-resource node-results :candidates-proposed)
+                    :candidates-accepted (count candidates)
+                    :candidates-rejected (sum-resource node-results :candidates-rejected)
+                    :generated-expressions (sum-resource node-results :generated-expressions)}]
+      {:rewrite-operator-id id
+       :node-ids items
+       :candidates candidates
+       :resource resource
+       :trace (into [{:kind :rewrite-operator
+                      :rewrite-operator-id id
+                      :resource resource}]
+                    (mapcat :trace node-results))})))
+
+(defn enumerative-operator
+  "Create a bounded local enumerative rewrite operator."
   [{:keys [id reason]
     :or {id :enumerative
          reason :enumerative}
     :as opts}]
-  (rewrite/value-template
-   id
-   (fn [g node-id data search-opts]
-     (let [node-exprs (when-not (= false (:use-local-nodes? opts))
-                        (for [local-id (distinct (:local-node-ids search-opts))
-                              :when (rewrite/reusable-child-node? g node-id local-id)]
-                          (node-expr g local-id)))
-           {:keys [expressions resource]} (enumeration-result data
-                                                              (assoc opts
-                                                                     :seed-expressions
-                                                                     node-exprs))
-           candidates (->> expressions
-                           (filter #(= data (:value %)))
-                           (keep #(candidate-for-expression g node-id reason resource %))
-                           vec)]
-       (rewrite/proposal
-        candidates
-        resource
-        [{:kind :bounded-enumeration
-          :node-id node-id
-          :template-id id
-          :matched-expressions (count candidates)
-          :resource resource}])))))
+  (->EnumerativeRewriteOperator id reason opts))
