@@ -11,6 +11,7 @@
             [ciwi.fix-test]
             [ciwi.graph-test]
             [ciwi.graph-rewrite-test]
+            [ciwi.hashing-test]
             [ciwi.library-test]
             [ciwi.mdl-test]
             [ciwi.operator-test]
@@ -33,6 +34,7 @@
                                              'ciwi.fix-test
                                              'ciwi.graph-test
                                              'ciwi.graph-rewrite-test
+                                             'ciwi.hashing-test
                                              'ciwi.library-test
                                              'ciwi.mdl-test
                                              'ciwi.operator-test

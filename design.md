@@ -86,6 +86,15 @@ Root-summed `graph-dl` also charges a selected shared sub-DAG once per root; a
 future global shared-DAG minimizer should account for selected shared structure
 only once across the projected solution.
 
+`ciwi.hashing` provides deterministic ordering and positive stable hashes for
+native Clojure data. It ports the useful part of Python WILLIAM's stable hashing
+tests while staying Clojure-native: nils, booleans, numbers, strings, keywords,
+symbols, vectors, lists, sets, maps, records, and classes receive type-aware
+recursive keys. Value description length uses this ordering for maps and sets so
+DL is independent of hash-map or set iteration order. The same API is intended
+for later library persistence, successful-history deduplication, and learned
+template/composite identity.
+
 ## Rewrite Model
 
 A rewrite is explicit data:

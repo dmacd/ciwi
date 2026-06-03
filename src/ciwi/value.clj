@@ -1,4 +1,5 @@
-(ns ciwi.value)
+(ns ciwi.value
+  (:require [ciwi.hashing :as hashing]))
 
 (defrecord Value [data name spec permeable? dummy?])
 
@@ -65,13 +66,15 @@
     (keyword? x) (desc-len-data (name x))
     (vector? x) (double (sequential-dl x))
     (sequential? x) (double (sequential-dl (vec x)))
-    (set? x) (double (sequential-dl (sort-by pr-str x)))
+    (set? x) (double (sequential-dl (hashing/sort-anything x)))
     (map? x) (double (+ (elias-discrete (count x))
                         (reduce + 0.0
-                                (map (fn [[k v]]
+                                     (map (fn [[k v]]
                                        (+ (desc-len-data k)
                                           (desc-len-data v)))
-                                     (sort-by (comp pr-str key) x)))))
+                                     (sort (fn [[left _] [right _]]
+                                             (hashing/stable-compare left right))
+                                           x)))))
     :else (double (+ (elias-discrete (count (pr-str x)))
                      (* 8 (count (pr-str x)))))))
 
