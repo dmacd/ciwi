@@ -63,13 +63,22 @@
                                          {:parallel? false
                                           :rewrite-operators [shallow]}))
         deep-result (search/exhaustive-converge g {:parallel? false
-                                                   :rewrite-operators [deep]})]
+                                                   :rewrite-operators [deep]})
+        first-candidate (first (:history deep-result))]
     (is (empty? shallow-candidates))
-    (is (= :deep-graph-edit (-> deep-result :history first :rewrite-operator-id)))
-    (is (= :mult (-> deep-result :history first :reason)))
+    (is (= :deep-graph-edit (:rewrite-operator-id first-candidate)))
+    (is (= :mult (:reason first-candidate)))
+    (is (= [:mult]
+           (mapv :reason (:history deep-result))))
+    (is (= [:edit :edit]
+           (mapv :kind (:child-refs first-candidate))))
+    (is (= [:brange :brange]
+           (mapv #(get-in % [:op :id]) (:child-refs first-candidate))))
+    (is (= [[(rewrite/value-ref 0) (rewrite/value-ref 6)]
+            [(rewrite/value-ref 0) (rewrite/value-ref 6)]]
+           (mapv :child-refs (:child-refs first-candidate))))
     (is (= [:mult [:brange 0 6] [:brange 0 6]]
-           (mdl/selected-expression (:graph deep-result) :out)))
-    (is (<= 2 (count (:history deep-result))))))
+           (mdl/selected-expression (:graph deep-result) :out)))))
 
 (defn- square-with-range-graph
   []
@@ -201,11 +210,18 @@
                                           :re-eval-budget 8
                                           :local-node-ids [:out :scores :base]
                                           :rewrite-operators [rewrite-op]
-                                          :max-steps 5})]
+                                          :max-steps 5})
+        first-candidate (first (:history bounded))]
     (is (= (:dl exhaustive) (:dl bounded)))
     (is (= :fixed-point (:stopped bounded)))
-    (is (= [:setitem :lessthan]
+    (is (= [:setitem]
            (mapv :reason (:history bounded))))
+    (is (= [:node :edit :value]
+           (mapv :kind (:child-refs first-candidate))))
+    (is (= :lessthan
+           (get-in first-candidate [:child-refs 1 :op :id])))
+    (is (= [(rewrite/node-ref :scores) (rewrite/value-ref 2)]
+           (get-in first-candidate [:child-refs 1 :child-refs])))
     (is (= [:setitem [:repeat "--------" 4]
             [:lessthan [:brange 0 4] 2]
             ["xxxxxxxx" "xxxxxxxx"]]

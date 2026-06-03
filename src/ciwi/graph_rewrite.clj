@@ -95,7 +95,7 @@
          :value value
          :dl dl
          :depth (inc (reduce max 0 (map :depth operands)))
-         :ref (rewrite/value-ref value)
+         :ref (rewrite/edit-ref operator (mapv :ref operands) value dl)
          :form (edit-form operator operands)}))))
 
 (defn- product

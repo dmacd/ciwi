@@ -69,6 +69,14 @@
   {:kind :node
    :node-id node-id})
 
+(defn edit-ref
+  [operator child-refs value dl]
+  {:kind :edit
+   :op operator
+   :child-refs (vec child-refs)
+   :value value
+   :dl dl})
+
 (defn reusable-child-node?
   "True when `child-id` can be reused under `parent-id` without creating a cycle."
   [g parent-id child-id]
@@ -85,13 +93,15 @@
   (case (:kind ref)
     :value true
     :node (reusable-child-node? g parent-id (:node-id ref))
+    :edit (every? #(usable-child-ref? g parent-id %) (:child-refs ref))
     false))
 
 (defn- ref-dl
   [g ref]
   (case (:kind ref)
     :value (value/desc-len (value/value (:value ref)))
-    :node (:dl (mdl/node-dl g (:node-id ref)))))
+    :node (:dl (mdl/node-dl g (:node-id ref)))
+    :edit (:dl ref)))
 
 (defn- refs-dl
   [g operator child-refs]
@@ -326,20 +336,35 @@
                      :node-id node-id})))
   node-id)
 
+(declare add-option-from-refs)
+
+(defn- add-ref-child
+  [g parent-id child-id ref]
+  (case (:kind ref)
+    :node
+    [g (validate-node-ref! g parent-id (:node-id ref))]
+
+    :value
+    [(graph/add-value g child-id (:value ref)) child-id]
+
+    :edit
+    (let [g (graph/add-value g child-id (:value ref))
+          [g _] (add-option-from-refs g child-id (:op ref) (:child-refs ref))]
+      [g child-id])))
+
 (defn- add-option-from-refs
   [g parent-id op child-refs]
+  (when-not (every? #(usable-child-ref? g parent-id %) child-refs)
+    (throw (ex-info "Rewrite child refs are not usable under parent"
+                    {:parent-id parent-id
+                     :child-refs child-refs})))
   (let [op-id (graph/unique-id g (keyword (str (name parent-id) "-" (name (:id op)))))
         [g child-ids]
         (reduce (fn [[acc ids] [idx ref]]
-                  (case (:kind ref)
-                    :node
-                    [acc (conj ids (validate-node-ref! acc parent-id (:node-id ref)))]
-
-                    :value
-                    (let [child-id (graph/unique-id acc
-                                                    (keyword (str (name op-id) "-arg" idx)))]
-                      [(graph/add-value acc child-id (:value ref))
-                       (conj ids child-id)])))
+                  (let [child-id (graph/unique-id acc
+                                                  (keyword (str (name op-id) "-arg" idx)))
+                        [acc child-id] (add-ref-child acc parent-id child-id ref)]
+                    [acc (conj ids child-id)]))
                 [g []]
                 (map-indexed vector child-refs))]
     [(graph/add-operator g op-id op parent-id child-ids) op-id]))

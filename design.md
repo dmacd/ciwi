@@ -102,12 +102,15 @@ A rewrite is explicit data:
 ```
 
 `child-refs` are normalized local graph edit operands. `{:kind :value ...}`
-materializes a fresh child value node. `{:kind :node ...}` reuses an existing
+materializes a fresh raw child value node. `{:kind :node ...}` reuses an existing
 local value node, including repeated references to the same child for DAG-style
-sharing. Node refs are valid only when they keep the value dependency graph
-acyclic. Applying the rewrite does not replace or destroy the original value. It
-adds a new operator option under that value. The original raw value remains
-available, and MDL decides whether the new option is better.
+sharing. `{:kind :edit ...}` is a generated child edit: applying the parent
+rewrite materializes that child value and recursively attaches the child's own
+operator option under it. Node refs inside nested edit refs are checked against
+the original parent so a generated local DAG cannot introduce a cycle. Applying
+the rewrite does not replace or destroy the original value. It adds a new
+operator option under that value. The original raw value remains available, and
+MDL decides whether the new option is better.
 
 `ciwi.delayed-builder` covers the complementary graph-construction path used by
 Python WILLIAM's delayed DAG builder tests. It attaches a selected graph element
@@ -311,10 +314,12 @@ enumerates local edits directly:
 The same depth, generation, and beam controls apply: `:max-depth`,
 `:max-generated`, and `:beam-width`. Depth greater than one means generated edit
 outputs can become operands for later generated edits. If such a generated edit
-is used as a child, the emitted graph candidate uses a fresh value ref for that
-child; later bounded passes can compress that child value through ordinary local
-rewrites. If an existing local node is cheapest for a value, the candidate keeps
-a `{:kind :node ...}` ref, preserving DAG sharing.
+is used as a child, the emitted graph candidate keeps a nested `{:kind :edit
+...}` ref for that child. Applying the candidate then materializes the whole
+local generated edit DAG in one graph transform instead of requiring later passes
+to rediscover each intermediate. If an existing local node is cheapest for a
+value, the candidate keeps a `{:kind :node ...}` ref, preserving DAG sharing with
+the already materialized neighborhood.
 
 Graph-edit candidates carry `:edit-form`, `:edit-depth`, and candidate-local
 resource metadata. Operator traces include generated edit count, matched edit
@@ -324,13 +329,14 @@ proposal mechanisms. Item edits such as `setitem` are handled by the same direct
 edit machinery: literal seeds supply bounded indices/items, while local node
 seeds let a candidate reuse an already-compressed source vector instead of
 materializing a duplicate child. When a generated edit, such as a `lessthan`
-mask, is used as a child of another generated edit, the first applied rewrite
-materializes that intermediate value. Repeated bounded passes can then compress
-that intermediate into its own subgraph, yielding the same selected structure as
-an exhaustive pass while keeping each edit local. Length-derived edits are tested
-with dummy input values when the input is intended to be supplied/free; otherwise
-the local MDL scorer will correctly prefer a tiny raw integer length over charging
-the whole source vector through `len`.
+mask, is used as a child of another generated edit, the accepted parent rewrite
+keeps that nested edit ref and installs both edits together. Repeated bounded
+passes are still useful for independently discovered local structure, but nested
+refs avoid throwing away known successful search structure at candidate emission
+time. Length-derived edits are tested with dummy input values when the input is
+intended to be supplied/free; otherwise the local MDL scorer will correctly
+prefer a tiny raw integer length over charging the whole source vector through
+`len`.
 
 ## Numeric Search Operators
 
