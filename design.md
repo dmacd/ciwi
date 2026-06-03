@@ -299,6 +299,15 @@ to this local enumerator. `ciwi.enumerator/count-trees` mirrors Python
 Wunderbaum's pure tree-counting helper for estimating typed expansion sizes from
 plain spec transition maps.
 
+`ciwi.enumerator/effective-dl` ports the small Dirichlet-process posterior
+predictive score from Python WILLIAM's DAG enumerator. Given a candidate's prior
+DL, usage count, and total usage count, it returns a deterministic
+usage-adjusted DL that equals the prior when counts are zero and gets cheaper as
+a candidate is reused. The helper `rank-usage-biased-items` keeps this as pure
+data transformation over maps with `:dl` and `:count`. That is the reusable piece
+needed for later amortized proposal ranking; it does not couple local graph
+rewriting to Python's mutable DAG heap.
+
 ## Graph-Edit Enumeration
 
 `ciwi.graph-rewrite` is the graph-native bounded rewrite operator. Instead of

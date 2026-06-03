@@ -55,6 +55,57 @@
                 specs
                 indices))))
 
+(def char-len-threshold
+  "Characteristic DL after which successful reuse starts dominating the prior."
+  5.0)
+
+(def default-concentration
+  (Math/pow 2.0 char-len-threshold))
+
+(defn effective-dl
+  "Usage-biased effective description length.
+
+  With zero usage counts this equals `base-dl`. Positive counts shorten the
+  effective length using the same Dirichlet-process posterior predictive score
+  as Python WILLIAM's DAG enumerator, without adding random tie noise.
+  "
+  ([base-dl count total-count]
+   (effective-dl base-dl count total-count default-concentration))
+  ([base-dl count total-count concentration]
+   (let [base-dl (double base-dl)
+         count (double count)
+         total-count (double total-count)
+         concentration (double concentration)
+         base-mass (Math/pow 2.0 (- base-dl))]
+     (- (value/log2 (+ total-count concentration))
+        (value/log2 (+ count (* concentration base-mass)))))))
+
+(defn usage-biased-items
+  "Annotate candidate maps with `:effective-dl` from their `:dl` and `:count`."
+  ([items]
+   (usage-biased-items items {}))
+  ([items {:keys [concentration]
+           :or {concentration default-concentration}}]
+   (let [items (vec items)
+         total-count (reduce + 0.0 (map #(double (get % :count 0)) items))]
+     (mapv (fn [item]
+             (assoc item
+                    :effective-dl
+                    (effective-dl (:dl item)
+                                  (get item :count 0)
+                                  total-count
+                                  concentration)))
+           items))))
+
+(defn rank-usage-biased-items
+  "Return items in deterministic usage-biased priority order."
+  ([items]
+   (rank-usage-biased-items items {}))
+  ([items opts]
+   (->> (usage-biased-items items opts)
+        (sort-by (juxt :effective-dl :dl #(pr-str (:id %))))
+        vec)))
+
 (defn- cartesian-product
   [xss]
   (if (empty? xss)
