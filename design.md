@@ -181,6 +181,13 @@ way to express DAG-style composites such as `x*x + y` without porting Python's
 sexpr parser. Non-input leaves in a placeholder template are captured as
 constants.
 
+`ciwi.fix/fix-first` is the Clojure equivalent of Python WILLIAM's `Fix`
+operator. It captures the first input of any runtime `Operator` and returns a
+new runtime `Operator`, charging the captured value in the returned operator's
+DL. The higher-order `ciwi.fix/operator` lets Clojure graph literals produce
+fixed operators directly, so tests can cover the old sexpr use case without
+adopting the Python parser or mutable composite clone path.
+
 Local template rules still implement `ciwi.rewrite/RewriteTemplate`, but the
 search layer no longer treats templates as the top-level unit. Search composes
 `ciwi.rewrite/RewriteOperator` values. `rewrite/template-operator` wraps any
