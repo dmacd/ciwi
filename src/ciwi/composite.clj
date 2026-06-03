@@ -188,6 +188,49 @@
                          values))))
              distinct)))))
 
+(defn- leaf-input-index
+  [input-groups]
+  (into {}
+        (for [[input-idx leaf-idxs] (map-indexed vector input-groups)
+              leaf-idx leaf-idxs]
+          [leaf-idx input-idx])))
+
+(defn- symbolic-key
+  [g root leaves input-groups input-index-transform]
+  (let [leaf-position (zipmap leaves (range))
+        leaf->input (leaf-input-index input-groups)]
+    (letfn [(key* [id trace]
+              (if (contains? trace id)
+                [:cycle]
+                (let [n (graph/node g id)
+                      trace (conj trace id)]
+                  (cond
+                    (graph/value-node? n)
+                    (if-let [leaf-idx (get leaf-position id)]
+                      (if-let [input-idx (get leaf->input leaf-idx)]
+                        [:input (input-index-transform input-idx)]
+                        [:constant (graph/value-data g id)])
+                      (if-let [op-id (first (:options n))]
+                        (key* op-id trace)
+                        [:constant (graph/value-data g id)]))
+
+                    (graph/operator-node? n)
+                    (let [operator (:operator n)
+                          child-keys (mapv #(key* % trace) (:children n))
+                          child-keys (if (:commutative? operator)
+                                       (vec (sort-by pr-str child-keys))
+                                       child-keys)]
+                      [:op (:id operator) child-keys])
+
+                    :else nil))))]
+      (key* root #{}))))
+
+(defn- composite-commutative?
+  [g root leaves input-groups]
+  (and (= 2 (count input-groups))
+       (= (symbolic-key g root leaves input-groups identity)
+          (symbolic-key g root leaves input-groups {0 1, 1 0}))))
+
 (defn operator
   "Create a graph-backed composite Operator from a Clojure graph literal.
 
@@ -214,7 +257,7 @@
      (op/operator
       {:id id
        :conditions conditions
-       :commutative? false
+       :commutative? (composite-commutative? graph root leaves input-groups)
        :dl dl
        :call (fn [inputs]
                (call-composite graph root leaves input-groups constant-indices inputs))

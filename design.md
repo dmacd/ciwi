@@ -179,7 +179,10 @@ instead of reconstructing Python sexprs.
 Composite operators are graph-backed `ciwi.operator/Operator` values. A
 composite captures a CIWI graph, its root, and optionally a set of constant leaf
 indices. Calls and inverses run through the existing propagation engine, while
-the public operator interface remains the same as primitive operators.
+the public operator interface remains the same as primitive operators. Two-input
+composites infer `:commutative?` by comparing the symbolic graph before and
+after swapping input placeholders; this uses operator-level commutativity and
+does not depend on sample literal equality.
 
 Composite literals support `[:input id sample]` placeholders. Reusing an input id
 ties multiple graph leaves to one operator argument, which gives CIWI a native

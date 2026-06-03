@@ -75,3 +75,50 @@
                                        (value/value 42)
                                        []
                                        []))))))
+
+
+(deftest dag-shaped-composites-match-python-execution-cases
+  (let [dag0 (sut/operator :dag0
+                           [:mult [:input :x 2]
+                            [:input :x 2]])
+        dag1 (sut/operator :dag1
+                           [:add [:mult [:input :x 2]
+                                  [:input :x 2]]
+                            [:input :x 2]])
+        dag2 (sut/operator :dag2
+                           [:add [:mult [:input :x 2]
+                                  [:input :x 2]]
+                            [:input :y 3]])
+        dag3 (sut/operator :dag3
+                           [:add [:mult [:input :x 2]
+                                  [:input :y 3]]
+                            [:mult [:input :x 2]
+                             [:input :y 3]]])]
+    (is (= 225
+           (value/datum (op/apply-op dag0 [(value/value 15)]))))
+    (is (= 30
+           (value/datum (op/apply-op dag1 [(value/value 5)]))))
+    (is (= 32
+           (value/datum (op/apply-op dag2 [(value/value 5)
+                                           (value/value 7)]))))
+    (is (= 70
+           (value/datum (op/apply-op dag3 [(value/value 5)
+                                           (value/value 7)]))))
+    (is (= [[7]]
+           (data-results (op/invert-op dag2
+                                       (value/value 32)
+                                       [(value/value 5)]
+                                       [0]))))))
+
+(deftest composite-commutativity-is-inferred-symbolically
+  (let [plus (sut/operator :plus [:add [:input :x 0] [:input :y 0]])
+        times (sut/operator :times [:mult [:input :x 0] [:input :y 0]])
+        minus (sut/operator :minus [:sub [:input :x 0] [:input :y 0]])
+        square-plus-y (sut/operator :square-plus-y
+                                    [:add [:mult [:input :x 0]
+                                           [:input :x 0]]
+                                     [:input :y 0]])]
+    (is (:commutative? plus))
+    (is (:commutative? times))
+    (is (not (:commutative? minus)))
+    (is (not (:commutative? square-plus-y)))))
