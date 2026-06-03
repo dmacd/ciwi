@@ -42,3 +42,61 @@
         mem (sut/memory {:out -3})
         result (first (sut/propagate g mem))]
     (is (= 3 (:data (sut/value-at result :x))))))
+
+
+(defn affine-graph
+  []
+  (-> (graph/empty-graph)
+      (graph/add-value :out nil)
+      (graph/add-value :scaled nil)
+      (graph/add-value :range nil)
+      (graph/add-value :range-start nil)
+      (graph/add-value :n nil)
+      (graph/add-value :step nil)
+      (graph/add-value :start nil)
+      (graph/add-operator :make-range op/brange :range [:range-start :n])
+      (graph/add-operator :scale op/mult :scaled [:range :step])
+      (graph/add-operator :shift op/add :out [:scaled :start])))
+
+(deftest nil-memory-values-are-treated-as-unknowns
+  (let [g (add-graph)
+        missing-left (first (sut/propagate g
+                                           (sut/memory {:left nil
+                                                        :right 5})
+                                           {:partial? true}))
+        nil-output (first (sut/propagate g
+                                         (sut/memory {:out nil
+                                                      :right 5})
+                                         {:partial? true}))]
+    (is (nil? (sut/value-at missing-left :out)))
+    (is (nil? (sut/value-at nil-output :left)))
+    (is (nil? (:data (sut/value-at nil-output :out))))))
+
+(deftest propagates-nested-affine-graph-upward
+  (let [g (affine-graph)
+        mem (sut/memory {:range-start 0
+                         :n 4
+                         :step 3
+                         :start 2})
+        result (first (sut/propagate g mem))]
+    (is (= [0 1 2 3]
+           (:data (sut/value-at result :range))))
+    (is (= [0 3 6 9]
+           (:data (sut/value-at result :scaled))))
+    (is (= [2 5 8 11]
+           (:data (sut/value-at result :out))))))
+
+(deftest propagates-nested-affine-graph-downward
+  (let [g (affine-graph)
+        mem (sut/memory {:out [2 5 8 11]
+                         :start 2
+                         :step 3})
+        result (first (sut/propagate g mem))]
+    (is (= [0 3 6 9]
+           (:data (sut/value-at result :scaled))))
+    (is (= [0 1 2 3]
+           (:data (sut/value-at result :range))))
+    (is (= 0
+           (:data (sut/value-at result :range-start))))
+    (is (= 4
+           (:data (sut/value-at result :n))))))

@@ -40,6 +40,15 @@ The graph is still WILLIAM's bipartite shape:
 Unlike Python WILLIAM, graph nodes are maps inside an immutable `Graph` record.
 Edges are ids, not object references. A rewrite returns a new graph.
 
+## Propagation
+
+Propagation treats an entry whose value data is `nil` as unknown, matching
+Python WILLIAM's `Value(None)` behavior. Such entries may be present in memory
+for shape/spec bookkeeping, but they do not trigger upward execution or downward
+inversion. Nested propagation still branches over operators that can fire, and
+partial propagation can return the best currently known memory when no remaining
+operator is executable.
+
 ## Description Length
 
 `ciwi.mdl/node-dl` computes the best local description for a value node:

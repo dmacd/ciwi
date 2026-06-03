@@ -22,6 +22,10 @@
   [mem id]
   (some-> mem (get id) :value))
 
+(defn known-value?
+  [mem id]
+  (some? (value/datum (value-at mem id))))
+
 (defn- remember
   [mem id x]
   (assoc mem id (entry false x)))
@@ -30,7 +34,7 @@
   [g mem op-id]
   (let [{:keys [operator parent children]} (graph/node g op-id)]
     (when (and (not (contains? mem parent))
-               (every? #(contains? mem %) children))
+               (every? #(known-value? mem %) children))
       (let [inputs (mapv #(value-at mem %) children)
             output (operator/apply-op operator inputs)]
         [(-> mem
@@ -48,11 +52,11 @@
   [g mem op-id cond]
   (let [{:keys [operator parent children]} (graph/node g op-id)
         output (value-at mem parent)]
-    (when output
+    (when (some? (value/datum output))
       (let [cond-input-ids (mapv children cond)
             inf-ids (vec (inferable-children children cond))]
         (when (and (seq inf-ids)
-                   (every? #(contains? mem %) cond-input-ids)
+                   (every? #(known-value? mem %) cond-input-ids)
                    (every? #(not (contains? mem %)) inf-ids)
                    (= (count (distinct inf-ids)) (count inf-ids)))
           (let [cond-inputs (mapv #(value-at mem %) cond-input-ids)]
