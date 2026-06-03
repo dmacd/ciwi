@@ -46,6 +46,26 @@ unlock a graph compression, propagation, search, or learned-artifact behavior.
 | Library helper routines | Not direct parity targets | Index/edit helper logic is folded into operators or rewrite rules only when needed for compression behavior. |
 | Rendering, AIM tracking, classification, canvas filling, JIT/Rust internals | Deferred / out of scope for current core | These should be revisited only after the compression core requires them. |
 
+`ciwi.alice` is the task-level proof harness for this parity claim. It defines
+small `CompressionTask` and `TaskDomain` records, builds task graphs from target
+and optional free values, runs exhaustive and bounded compression, and reports
+initial DL, compressed DL, compression rate, selected target expressions,
+resources, and threshold status. Alice parity tests use selected expressions and
+bounded-vs-exhaustive agreement as evidence; they do not assert private helper
+routine behavior or exact Python floating DL constants.
+
+Current Alice-style behavior coverage:
+
+| Alice task class | CIWI proof status | Remaining gap |
+| --- | --- | --- |
+| arithmetic range / affine / negated range | Covered in `ciwi.alice-test` | None for Clojure-native vectors under current operators. |
+| constant repeat | Covered in `ciwi.alice-test` | Alternating motif repeat, such as Python's `simple_repeat`, needs a tile/motif operator or learned composite. |
+| setitem with observed/compressible mask | Covered in `ciwi.alice-test` | One-shot generated-mask Alice tasks need tighter task-level search budgets or a specialized proposal path. |
+| insert/repeat and sparse sprinkling sequences | Not covered | Needs insert/partition compression behavior as graph rewrites or learned templates. |
+| cumsum/increasing-run sequences | Not covered | Needs cumsum/diff-style operators or learned recurrent composites. |
+| scalar/vector regression | Partially covered below Alice through optimizer tests | Needs optimizer-backed graph compression wired into `ciwi.alice`. |
+| matrix regression / classification | Not covered at Alice level | Needs dot/sum/sub/threshold/free-value optimization integrated with task search. |
+
 ## Graph Model
 
 The graph is still WILLIAM's bipartite shape:
@@ -407,3 +427,8 @@ expressions derived from the MDL choice tree.
 Bottleneck-style tests now assert that exhaustive compression and repeated
 bounded local compression converge to the same selected expressions for simple
 range, repetition, and affine sequence cases.
+
+`ciwi.alice/run-task-comparison` lifts those loops to Alice-style tasks by
+running both modes over the same task graph and comparing selected target
+expressions and global DL. This is the near-term proof surface for matching
+Python Alice/WILLIAM behavior before adding new learned-library phases.
