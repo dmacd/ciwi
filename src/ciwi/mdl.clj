@@ -37,9 +37,38 @@
                     best))))]
       (best-value id #{}))))
 
+(defn- choice-dl
+  [g choice seen-value-ids]
+  (let [value-id (:node-id choice)]
+    (if (contains? seen-value-ids value-id)
+      [seen-value-ids 0.0]
+      (let [seen-value-ids (conj seen-value-ids value-id)]
+        (case (:kind choice)
+          :raw
+          [seen-value-ids
+           (value/desc-len (get-in g [:nodes value-id :value]))]
+
+          :operator
+          (let [op-node (graph/node g (:op-id choice))
+                op-dl (:dl (:operator op-node))
+                [seen-value-ids child-dl]
+                (reduce (fn [[seen total] child-choice]
+                          (let [[seen child-dl] (choice-dl g child-choice seen)]
+                            [seen (+ total child-dl)]))
+                        [seen-value-ids 0.0]
+                        (:child-choices choice))]
+            [seen-value-ids (+ op-dl child-dl)]))))))
+
 (defn graph-dl
+  "Return the selected graph DL across all roots, charging shared selected value
+  nodes once."
   [g]
-  (reduce + 0.0 (map #(:dl (node-dl g %)) (graph/roots g))))
+  (second
+   (reduce (fn [[seen total] root-id]
+             (let [[seen root-dl] (choice-dl g (:choice (node-dl g root-id)) seen)]
+               [seen (+ total root-dl)]))
+           [#{} 0.0]
+           (graph/roots g))))
 
 (defn selected-operators
   [g id]

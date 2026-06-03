@@ -28,6 +28,24 @@ operators. Larger WILLIAM domains such as canvas geometry, type unification,
 classification, and rendering should be layered on top after the rewrite engine
 stabilizes.
 
+## Compression Behavior Parity
+
+CIWI tracks Python WILLIAM parity at the level of compression behavior, not
+routine-by-routine compatibility. Helper functions are ported only when they
+unlock a graph compression, propagation, search, or learned-artifact behavior.
+
+| Python WILLIAM area | CIWI status | Notes |
+| --- | --- | --- |
+| Values, operators, inverses, propagation | Covered for numeric and sequence cores | Implemented with Clojure-native data and conservative inverses. NumPy-specific helper paths are intentionally not parity targets. |
+| Bottleneck / minimum description selection | Covered for local values and shared-root graphs | `node-dl` selects the best local value description. `graph-dl` charges selected shared value nodes once across roots. |
+| Exhaustive compression reference loop | Covered for primitive, composite, and graph-edit rewrites | Used as the reference behavior for bounded incremental convergence tests. |
+| Bounded local incremental compression | Covered for ranges, affine sequences, composites, setitem, generated masks, length-derived shapes, and nested local edit DAGs | Search cost is controlled by target set, neighborhood budget, rewrite operators, depth, beam width, and generated-edit limits. |
+| Composite operators and Fix | Covered for graph-backed composites, repeated inputs, constants, symbolic commutativity, inversion, and loaded definitions | This is the path for learned library elements to look native at runtime. |
+| DAG/input enumeration support | Partially covered as search infrastructure | Input tuple order, tree counting, node tuple enumeration, and usage-biased effective DL are present because they inform proposal search. Python's mutable DAG heap is not a direct target. |
+| Optimizers | Partially covered | Ported for comparison through a search-operator interface. Future numeric search can be replaced by graph rewrite, gradient, or specialized subgraph mechanisms. |
+| Library helper routines | Not direct parity targets | Index/edit helper logic is folded into operators or rewrite rules only when needed for compression behavior. |
+| Rendering, AIM tracking, classification, canvas filling, JIT/Rust internals | Deferred / out of scope for current core | These should be revisited only after the compression core requires them. |
+
 ## Graph Model
 
 The graph is still WILLIAM's bipartite shape:
@@ -82,9 +100,9 @@ selection, but expressed as a memoized pure dynamic program. Current parity test
 assert selected structure, selected operator order, alternative-option choice,
 and relative DL behavior. They intentionally do not assert Python's exact
 floating DL constants because CIWI uses a simpler Clojure-native data codec.
-Root-summed `graph-dl` also charges a selected shared sub-DAG once per root; a
-future global shared-DAG minimizer should account for selected shared structure
-only once across the projected solution.
+`ciwi.mdl/graph-dl` projects the selected descriptions from all graph roots and
+charges each selected value node once, so shared selected sub-DAGs reduce global
+DL across a set of roots instead of being charged once per root.
 
 `ciwi.hashing` provides deterministic ordering and positive stable hashes for
 native Clojure data. It ports the useful part of Python WILLIAM's stable hashing

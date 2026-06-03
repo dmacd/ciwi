@@ -76,7 +76,7 @@
     (is (= #{:range :raw-large}
            (set (graph/roots g))))))
 
-(deftest local-node-dl-double-counts-selected-shared-children
+(deftest graph-dl-charges-selected-shared-children-once
   (let [g0 (-> (graph/empty-graph)
                (graph/add-value :left 1000)
                (graph/add-value :right 1001)
@@ -88,9 +88,9 @@
                (graph/add-operator :a-concat op/concat :a [:shared :left])
                (graph/add-operator :b-concat op/concat :b [:shared :right]))
         shared-dl (:dl (sut/node-dl g2 :shared))
-        roots-dl (+ (:dl (sut/node-dl g2 :a))
-                    (:dl (sut/node-dl g2 :b)))
-        ideal-shared-dl (+ (:dl (:operator (graph/node g2 :a-concat)))
+        root-summed-dl (+ (:dl (sut/node-dl g2 :a))
+                          (:dl (sut/node-dl g2 :b)))
+        shared-graph-dl (+ (:dl (:operator (graph/node g2 :a-concat)))
                            (:dl (:operator (graph/node g2 :b-concat)))
                            shared-dl
                            (value/desc-len (value/value 1000))
@@ -100,6 +100,6 @@
              (sut/selected-expression g2 :a)))
       (is (= [:concat [:brange 0 8] 1001]
              (sut/selected-expression g2 :b))))
-    (testing "current root-summed MDL charges the selected shared node once per root"
-      (is (= (sut/graph-dl g2) roots-dl))
-      (is (= (+ ideal-shared-dl shared-dl) roots-dl)))))
+    (testing "graph-level MDL charges the selected shared node once"
+      (is (= shared-graph-dl (sut/graph-dl g2)))
+      (is (= (+ shared-graph-dl shared-dl) root-summed-dl)))))
