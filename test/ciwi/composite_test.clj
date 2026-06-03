@@ -232,3 +232,15 @@
                                        [(value/value [0 1 2 3])
                                         (value/value 2)]
                                        [1 2]))))))
+
+
+(deftest composite-length-derived-base-feeds-setitem
+  (let [patch (sut/operator :length-derived-threshold-patch
+                            [:setitem [:repeat "-" [:len [:input :scores [0 1 2 3]]]]
+                             [:lessthan [:input :scores [0 1 2 3]]
+                              [:input :threshold 2]]
+                             [:input :items ["x" "x"]]])]
+    (is (= ["x" "x" "-" "-"]
+           (value/datum (op/apply-op patch [(value/value [0 1 2 3])
+                                            (value/value 2)
+                                            (value/value ["x" "x"])]))))))

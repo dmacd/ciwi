@@ -189,3 +189,36 @@
            (:data (sut/value-at down :base))))
     (is (= ["x" "x"]
            (:data (sut/value-at down :items))))))
+
+
+(defn length-derived-threshold-patch-graph
+  []
+  (-> (graph/empty-graph)
+      (graph/add-value :out nil)
+      (graph/add-value :scores nil)
+      (graph/add-value :n nil)
+      (graph/add-value :base nil)
+      (graph/add-value :threshold nil)
+      (graph/add-value :mask nil)
+      (graph/add-value :items nil)
+      (graph/add-value :fill "-")
+      (graph/add-operator :len-scores op/len :n [:scores])
+      (graph/add-operator :make-base op/repeat :base [:fill :n])
+      (graph/add-operator :mask-op op/lessthan :mask [:scores :threshold])
+      (graph/add-operator :patch op/setitem :out [:base :mask :items])))
+
+(deftest propagates-length-derived-base-into-setitem
+  (let [g (length-derived-threshold-patch-graph)
+        result (first (sut/propagate g
+                                     (sut/memory {:scores [0 1 2 3]
+                                                  :fill "-"
+                                                  :threshold 2
+                                                  :items ["x" "x"]})))]
+    (is (= 4
+           (:data (sut/value-at result :n))))
+    (is (= ["-" "-" "-" "-"]
+           (:data (sut/value-at result :base))))
+    (is (= [true true false false]
+           (:data (sut/value-at result :mask))))
+    (is (= ["x" "x" "-" "-"]
+           (:data (sut/value-at result :out))))))

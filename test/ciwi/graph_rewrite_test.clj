@@ -5,6 +5,7 @@
             [ciwi.operator :as op]
             [ciwi.rewrite :as rewrite]
             [ciwi.search :as search]
+            [ciwi.value :as value]
             [clojure.test :refer [deftest is]]))
 
 (defn- one-target-graph
@@ -207,6 +208,51 @@
            (mapv :reason (:history bounded))))
     (is (= [:setitem [:repeat "--------" 4]
             [:lessthan [:brange 0 4] 2]
+            ["xxxxxxxx" "xxxxxxxx"]]
+           (mdl/selected-expression (:graph bounded) :out)))
+    (is (= (mdl/selected-expression (:graph exhaustive) :out)
+           (mdl/selected-expression (:graph bounded) :out)))))
+
+
+(defn- length-derived-edit-graph
+  []
+  (-> (graph/empty-graph)
+      (graph/add-value :scores (value/value [0 1 2 3] {:dummy? true}))
+      (graph/add-value :n 4)
+      (graph/add-value :base ["--------" "--------" "--------" "--------"])
+      (graph/add-value :mask [true true false false])
+      (graph/add-value :out ["xxxxxxxx" "xxxxxxxx" "--------" "--------"])))
+
+(deftest graph-rewrite-compresses-length-derived-base-from-input
+  (let [g (length-derived-edit-graph)
+        rewrite-op (graph-rewrite/graph-rewrite-operator
+                    {:id :length-derived-edit
+                     :operators [{:op :len :arity 1}
+                                 {:op :repeat :arity 2}
+                                 {:op :lessthan :arity 2}
+                                 {:op :setitem :arity 3}]
+                     :literal-values ["--------" 2 ["xxxxxxxx" "xxxxxxxx"]]
+                     :max-depth 1
+                     :max-generated 1000
+                     :beam-width 128})
+        exhaustive (search/exhaustive-converge g {:parallel? false
+                                                  :local-node-ids [:out :scores :n :base :mask]
+                                                  :rewrite-operators [rewrite-op]
+                                                  :max-steps 8})
+        bounded (search/bounded-converge g [:out :scores :n :base :mask]
+                                         {:parallel? true
+                                          :re-eval-budget 8
+                                          :local-node-ids [:out :scores :n :base :mask]
+                                          :rewrite-operators [rewrite-op]
+                                          :max-steps 8})]
+    (is (= (:dl exhaustive) (:dl bounded)))
+    (is (= :fixed-point (:stopped bounded)))
+    (is (= [:len :lessthan :repeat :setitem]
+           (mapv :reason (:history bounded))))
+    (is (= [:len [0 1 2 3]]
+           (mdl/selected-expression (:graph bounded) :n)))
+    (is (= [:setitem [:repeat "--------" [:len [0 1 2 3]]]
+            [:lessthan [0 1 2 3] 2]
             ["xxxxxxxx" "xxxxxxxx"]]
            (mdl/selected-expression (:graph bounded) :out)))
     (is (= (mdl/selected-expression (:graph exhaustive) :out)

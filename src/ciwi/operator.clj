@@ -280,6 +280,13 @@
                (when (= 1 (count condition))
                  (logical-scalar-inverses logical-or-call output (first cond-inputs))))}))
 
+(def len
+  (operator
+   {:id :len
+    :conditions [[0]]
+    :call (fn [[x]]
+            (count x))}))
+
 (def brange
   (operator
    {:id :brange
@@ -415,6 +422,7 @@
    :not logical-not
    :and logical-and
    :or logical-or
+   :len len
    :brange brange
    :repeat repeat
    :concat concat

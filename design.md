@@ -56,15 +56,17 @@ pure forward and inverse functions. The current sequence-edit set includes
 `getitem` and `setitem` for Clojure sequences/vectors with nonnegative integer
 indices, explicit index vectors, and boolean masks. Their inverses return
 partially known source templates using `nil`, `""`, or `false` as lightweight
-missing sentinels depending on value type. Boolean/comparison primitives
-`lessthan`, `equal`, `not`, `and`, and `or` use Clojure-native scalar/vector
-broadcasting helpers so masks can be produced by ordinary subgraphs. Their
-inverses stay conservative: comparison constraints verify known inputs, equality
-only solves the all-true case, and logical inverses are currently scalar. This
-is enough for the core WILLIAM sequence and mask rewrite tests without importing
-Python/NumPy slicing semantics. Shape-rich indexing should be added later as
-data-driven operators or composed rewrite rules rather than hidden mutable array
-behavior.
+missing sentinels depending on value type. `len` is a forward-only shape
+primitive for counted Clojure values; it is used to derive local sizes without
+inventing a sequence from a length during downward propagation. Boolean/comparison
+primitives `lessthan`, `equal`, `not`, `and`, and `or` use Clojure-native
+scalar/vector broadcasting helpers so masks can be produced by ordinary
+subgraphs. Their inverses stay conservative: comparison constraints verify known
+inputs, equality only solves the all-true case, and logical inverses are currently
+scalar. This is enough for the core WILLIAM sequence and mask rewrite tests
+without importing Python/NumPy slicing semantics. Shape-rich indexing should be
+added later as data-driven operators or composed rewrite rules rather than hidden
+mutable array behavior.
 
 ## Description Length
 
@@ -325,7 +327,10 @@ materializing a duplicate child. When a generated edit, such as a `lessthan`
 mask, is used as a child of another generated edit, the first applied rewrite
 materializes that intermediate value. Repeated bounded passes can then compress
 that intermediate into its own subgraph, yielding the same selected structure as
-an exhaustive pass while keeping each edit local.
+an exhaustive pass while keeping each edit local. Length-derived edits are tested
+with dummy input values when the input is intended to be supplied/free; otherwise
+the local MDL scorer will correctly prefer a tiny raw integer length over charging
+the whole source vector through `len`.
 
 ## Numeric Search Operators
 

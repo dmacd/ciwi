@@ -26,6 +26,9 @@
   (is (= [[3 3]] (raw-inversions sut/brange [3 4 5] [] [])))
   (is (= [:x :x :x] (:data (sut/apply-op sut/repeat [(value/value :x) (value/value 3)]))))
   (is (= [[:x 3]] (raw-inversions sut/repeat [:x :x :x] [] [])))
+  (is (= 4 (:data (sut/apply-op sut/len [(value/value [:a :b :c :d])]))))
+  (is (= 6 (:data (sut/apply-op sut/len [(value/value "abcdef")]))))
+  (is (empty? (raw-inversions sut/len 4 [[:a :b :c :d]] [0])))
   (is (= [[[3 4]]] (raw-inversions sut/concat [1 2 3 4] [[1 2]] [0])))
   (is (= [[[1 2]]] (raw-inversions sut/concat [1 2 3 4] [[3 4]] [1]))))
 
