@@ -68,7 +68,7 @@ Current Alice-style behavior coverage:
 | arithmetic range / affine / negated range | Covered in `ciwi.alice-test` | None for Clojure-native vectors under current operators. |
 | constant and motif repeat | Covered in `ciwi.alice-test` | None for the current vector/string motif repeat operator. |
 | insert/repeat sequences | Covered for repeated runs in `ciwi.alice-test` | Sparse sprinkling and deeper nested insert decompositions need larger parity fixtures. |
-| cumsum/increasing-run sequences | Operator covered; task parity pending | Needs Alice-level fixtures for cumulative/increasing-run compression. |
+| cumsum/increasing-run sequences | Covered for cumulative sequence fixtures in `ciwi.alice-test` | Full Python `increasing_runs` scale/shape still needs a larger parity fixture. |
 | scalar/vector regression | Partially covered below Alice through optimizer tests | Needs optimizer-backed graph compression wired into `ciwi.alice`. |
 | matrix regression / classification | Not covered at Alice level | Needs dot/sum/sub/threshold/free-value optimization integrated with task search. |
 
