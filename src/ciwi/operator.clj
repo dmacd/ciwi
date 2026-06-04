@@ -132,17 +132,6 @@
       (apply str (clojure.core/repeat n motif))
       (vec (apply clojure.core/concat (clojure.core/repeat n (vec motif)))))))
 
-(defn- motif-tiles?
-  [output motif-len]
-  (let [n (count output)]
-    (loop [idx motif-len]
-      (cond
-        (= idx n) true
-        (= (nth output idx)
-           (nth output (mod idx motif-len)))
-        (recur (inc idx))
-        :else false))))
-
 (defn repeated-motif
   "Return `[repetitions motif]` for the shortest motif that exactly tiles output."
   [output]
@@ -155,9 +144,9 @@
         (first
          (for [motif-len (range 1 (inc n))
                :when (zero? (mod n motif-len))
-               :when (motif-tiles? output motif-len)
                :let [reps (/ n motif-len)
-                     motif (prefix-motif output motif-len)]]
+                     motif (prefix-motif output motif-len)]
+               :when (= output (repeat-call reps motif))]
            [reps motif]))))))
 
 (defn- repeat-inversions

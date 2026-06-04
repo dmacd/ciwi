@@ -129,8 +129,6 @@
      (scale-mult-dl step n)
      (value/desc-len (value/value start))))
 
-(declare edit-ref-from)
-
 (defn candidate-from-refs
   "Build a scored rewrite candidate from normalized child refs."
   ([g node-id operator child-refs reason]
@@ -165,15 +163,8 @@
   [xs]
   (and (vector? xs)
        (seq xs)
-       (let [start (first xs)]
-         (loop [idx 0
-                remaining xs]
-           (if (seq remaining)
-             (let [x (first remaining)]
-               (and (integer? x)
-                    (= x (+ start idx))
-                    (recur (inc idx) (rest remaining))))
-             true)))))
+       (every? integer? xs)
+       (= xs (vec (range (first xs) (+ (first xs) (count xs)))))))
 
 (defn- brange-candidate
   [g node-id xs _opts]
@@ -189,60 +180,43 @@
       (when (> reps 1)
         (candidate g node-id op/repeat [reps motif] :repeat)))))
 
+(defn- concat-candidates
+  [g node-id xs _opts]
+  (when (and (vector? xs)
+             (>= (count xs) 4))
+    (for [split (range 1 (count xs))]
+      (candidate g node-id op/concat [(subvec xs 0 split)
+                                      (subvec xs split)]
+                 :concat))))
+
 (defn- affine-sequence
   [xs]
   (when (and (vector? xs)
              (>= (count xs) 3)
-             (number? (first xs))
-             (number? (second xs)))
+             (every? number? xs))
     (let [start (first xs)
           step (- (second xs) start)]
-      (when (loop [idx 0
-                   remaining xs]
-              (if (seq remaining)
-                (let [x (first remaining)]
-                  (and (number? x)
-                       (= x (+ start (* step idx)))
-                       (recur (inc idx) (rest remaining))))
-                true))
+      (when (= xs (mapv #(+ start (* step %)) (range (count xs))))
         {:start start
          :step step
-         :n (count xs)}))))
+         :n (count xs)
+         :base (vec (range (count xs)))
+         :scaled (mapv #(* step %) (range (count xs)))}))))
 
 (defn- scale-mult-candidate
   [g node-id xs _opts]
-  (when-let [{:keys [start step n]} (affine-sequence xs)]
+  (when-let [{:keys [start step n base]} (affine-sequence xs)]
     (when (and (zero? start)
                (not= 1 step)
                (not (zero? step)))
-      (candidate-from-refs g
-                           node-id
-                           op/mult
-                           [(edit-ref-from op/brange
-                                           [(value-ref 0) (value-ref n)]
-                                           (vec (range n)))
-                            (value-ref step)]
-                           :scale-mult
-                           (scale-mult-dl step n)))))
+      (candidate g node-id op/mult [base step] :scale-mult (scale-mult-dl step n)))))
 
 (defn- affine-candidate
   [g node-id xs _opts]
-  (when-let [{:keys [start step n]} (affine-sequence xs)]
+  (when-let [{:keys [start step n scaled]} (affine-sequence xs)]
     (when-not (or (zero? start)
                   (arithmetic-range? xs))
-      (candidate-from-refs g
-                           node-id
-                           op/add
-                           [(edit-ref-from op/mult
-                                           [(edit-ref-from op/brange
-                                                           [(value-ref 0)
-                                                            (value-ref n)]
-                                                           (vec (range n)))
-                                            (value-ref step)]
-                                           (mapv #(* step %) (range n)))
-                            (value-ref start)]
-                           :affine-add
-                           (affine-add-dl start step n)))))
+      (candidate g node-id op/add [scaled start] :affine-add (affine-add-dl start step n)))))
 
 (defn- ref-form
   [ref]
@@ -348,11 +322,9 @@
              (seq xs)
              (every? number? xs))
     (let [source (mapv - xs)]
-      (when-let [source-ref (simple-local-ref source)]
-        (when (structured-ref? source-ref)
-          (candidate-from-refs g node-id op/map-op [(value-ref :negate)
-                                                    source-ref]
-                               :map-negate))))))
+      (candidate-from-refs g node-id op/map-op [(value-ref :negate)
+                                                (local-ref source)]
+                           :map-negate))))
 
 (defn- insert-candidates
   [g node-id xs _opts]
@@ -370,7 +342,8 @@
    (value-template :affine-add affine-candidate)
    (value-template :cumsum cumsum-candidate)
    (value-template :map-negate map-negate-candidate)
-   (value-template :insert insert-candidates)])
+   (value-template :insert insert-candidates)
+   (value-template :concat concat-candidates)])
 
 (defn- ensure-template
   [x]
