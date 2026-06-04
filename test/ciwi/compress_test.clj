@@ -18,7 +18,7 @@
     (is (= [:brange 0 8] (get-in result [:selected :out])))
     (is (= [:brange] (mapv :reason (:history result))))))
 
-(deftest affine-sequence-compresses-through-recursive-selected-children
+(deftest affine-sequence-compresses-through-generated-child-edits
   (let [g (one-target [2 5 8 11 14 17])
         exhaustive (sut/compress-exhaustive g {:parallel? false})
         bounded (sut/compress-bounded g [:out] {:parallel? true
@@ -30,7 +30,7 @@
            (get-in exhaustive [:selected :out])))
     (is (= (get-in exhaustive [:selected :out])
            (get-in bounded [:selected :out])))
-    (is (= [:affine-add :scale-mult :brange]
+    (is (= [:affine-add]
            (mapv :reason (:history exhaustive))))))
 
 (deftest bounded-compression-over-target-set-matches-exhaustive-selected-solutions

@@ -58,6 +58,11 @@
                (take 500 (cycle [87 62]))
                (repeat 610 164))))
 
+(defn- insert-repeat3-content-indices
+  []
+  (vec (concat (range 101)
+               (range 102 600 2))))
+
 (defn- repeat-with-noise-target
   []
   (vec (concat (repeat 100 45)
@@ -90,6 +95,10 @@
                  (concat (repeat x 123) [64]))
                (range 500))))
 
+(defn- increasing-run-marker-indices
+  []
+  (mapv #(/ (* % (+ % 3)) 2) (range 500)))
+
 (defn- map-negate-target
   []
   (vec (map - (range 1000))))
@@ -102,7 +111,8 @@
     :python-threshold-rate 94.0
     :ciwi-threshold-rate 1.0
     :python-serial-ms 1061
-    :observed-ciwi-ms 834
+    :observed-ciwi-ms 78
+    :ciwi-compression-rate 99.636156
     :required #{:repeat}
     :exact [:repeat 500 [140 -50]]}
    {:name "insert_repeat"
@@ -112,7 +122,8 @@
     :python-threshold-rate 92.0
     :ciwi-threshold-rate 1.0
     :python-serial-ms 51
-    :observed-ciwi-ms 151
+    :observed-ciwi-ms 12
+    :ciwi-compression-rate 98.611733
     :required #{:insert :repeat}
     :exact [:insert [:brange 0 100] 45 [:repeat 250 [87]]]}
    {:name "insert_repeat2"
@@ -122,7 +133,8 @@
     :python-threshold-rate 92.0
     :ciwi-threshold-rate 1.0
     :python-serial-ms 44
-    :observed-ciwi-ms 562
+    :observed-ciwi-ms 17
+    :ciwi-compression-rate 98.943455
     :required #{:insert :repeat}
     :forbidden #{:cumsum}
     :exact [:insert [:brange 0 35]
@@ -135,9 +147,16 @@
     :python-threshold-rate 93.0
     :ciwi-threshold-rate 1.0
     :python-serial-ms 10677
-    :observed-ciwi-ms 2101
+    :observed-ciwi-ms 57
+    :ciwi-compression-rate 68.028790
     :required #{:insert :repeat}
-    :forbidden #{:cumsum}}
+    :forbidden #{:cumsum}
+    :exact-fn (fn []
+                [:insert [:brange 0 600]
+                 [:insert (insert-repeat3-content-indices)
+                  [:insert [:brange 0 100] 45 [:repeat 250 [87]]]
+                  [:repeat 250 [62]]]
+                 [:repeat 610 [164]]])}
    {:name "repeat_with_noise"
     :status :covered
     :length 501
@@ -145,7 +164,8 @@
     :python-threshold-rate 90.0
     :ciwi-threshold-rate 1.0
     :python-serial-ms 6
-    :observed-ciwi-ms 248
+    :observed-ciwi-ms 7
+    :ciwi-compression-rate 99.103288
     :required #{:insert :repeat}
     :exact [:insert [100] -1 [:repeat 500 [45]]]}
    {:name "simply_linear"
@@ -155,26 +175,36 @@
     :python-threshold-rate 97.0
     :ciwi-threshold-rate 1.0
     :python-serial-ms 12
-    :observed-ciwi-ms 3057
+    :observed-ciwi-ms 90
+    :ciwi-compression-rate 99.785287
     :required #{:brange :mult :add}
     :exact [:add [:mult [:brange 0 1000] 6] -18]}
    {:name "sprinkled"
-    :status :performance-gap
+    :status :covered
     :length 10000
     :target-fn sprinkled-target
     :python-threshold-rate 75.0
     :python-serial-ms 6
-    :observed-ciwi-ms 83556
+    :ciwi-threshold-rate 1.0
+    :observed-ciwi-ms 62
+    :ciwi-compression-rate 93.074107
     :required #{:insert :repeat}
-    :performance-note "Full-scale target compresses structurally, but generic CIWI comparison takes roughly 84s versus Python's roughly 6ms bounded worker."}
+    :exact-fn (fn []
+                [:insert python-sprinkled-indices 1 [:repeat 9900 [0]]])}
    {:name "increasing_runs"
-    :status :performance-gap
+    :status :covered
     :length 125250
     :target-fn increasing-runs-target
     :python-threshold-rate 99.9
     :python-serial-ms 88
+    :ciwi-threshold-rate 1.0
+    :observed-ciwi-ms 514
+    :ciwi-compression-rate 99.274754
     :required #{:insert :repeat}
-    :performance-note "Full-scale target did not finish in the generic CIWI comparison timeout; Python's bounded worker completes in roughly 88ms."}
+    :exact-fn (fn []
+                [:insert (increasing-run-marker-indices)
+                 64
+                 [:repeat 124750 [123]]])}
    {:name "map_negate"
     :status :covered
     :length 1000
@@ -182,7 +212,8 @@
     :python-threshold-rate 98.0
     :ciwi-threshold-rate 1.0
     :python-serial-ms 12
-    :observed-ciwi-ms 2013
+    :observed-ciwi-ms 37
+    :ciwi-compression-rate 99.826700
     :required #{:brange :mult}
     :exact [:mult [:brange 0 1000] -1]}])
 
@@ -204,23 +235,31 @@
   (is (= (set sut/basic-operator-ids)
          (set (keys sut/basic-operator-registry)))))
 
+(defn- exact-solution
+  [{:keys [exact exact-fn]}]
+  (or exact
+      (some-> exact-fn (apply []))))
+
 (deftest alice-python-sequence-parity-matrix-is-explicit
   (is (= ["simple_repeat" "insert_repeat" "insert_repeat2" "insert_repeat3"
           "repeat_with_noise" "simply_linear" "sprinkled" "increasing_runs"
           "map_negate"]
          (mapv :name python-sequence-parity-cases)))
-  (is (= #{:covered :performance-gap}
+  (is (= #{:covered}
          (set (map :status python-sequence-parity-cases))))
-  (doseq [{:keys [name status length target-fn python-threshold-rate
-                  performance-note]} python-sequence-parity-cases]
+  (doseq [{:keys [name length target-fn python-threshold-rate python-serial-ms
+                  observed-ciwi-ms ciwi-compression-rate] :as case}
+          python-sequence-parity-cases]
     (testing name
       (is (= length (count (target-fn))))
       (is (number? python-threshold-rate))
-      (when (= :performance-gap status)
-        (is (seq performance-note))))))
+      (is (number? python-serial-ms))
+      (is (number? observed-ciwi-ms))
+      (is (number? ciwi-compression-rate))
+      (is (some? (exact-solution case))))))
 
 (deftest alice-mirrors-python-sequence-task-compression
-  (doseq [{:keys [name required forbidden exact] :as case}
+  (doseq [{:keys [name required forbidden] :as case}
           (filter covered-parity-case? python-sequence-parity-cases)]
     (testing name
       (let [task (task-from-parity-case case)
@@ -236,8 +275,7 @@
         (is (set/subset? required selected-ops))
         (when (seq forbidden)
           (is (empty? (set/intersection forbidden selected-ops))))
-        (when exact
-          (is (= exact selected)))))))
+        (is (= (exact-solution case) selected))))))
 
 
 (deftest alice-domain-runs-task-comparisons
