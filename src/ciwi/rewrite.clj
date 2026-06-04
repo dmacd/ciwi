@@ -180,15 +180,6 @@
       (when (> reps 1)
         (candidate g node-id op/repeat [reps motif] :repeat)))))
 
-(defn- concat-candidates
-  [g node-id xs _opts]
-  (when (and (vector? xs)
-             (>= (count xs) 4))
-    (for [split (range 1 (count xs))]
-      (candidate g node-id op/concat [(subvec xs 0 split)
-                                      (subvec xs split)]
-                 :concat))))
-
 (defn- affine-sequence
   [xs]
   (when (and (vector? xs)
@@ -316,16 +307,6 @@
       (when (structured-ref? diff-ref)
         (candidate-from-refs g node-id op/cumsum [diff-ref] :cumsum)))))
 
-(defn- map-negate-candidate
-  [g node-id xs _opts]
-  (when (and (vector? xs)
-             (seq xs)
-             (every? number? xs))
-    (let [source (mapv - xs)]
-      (candidate-from-refs g node-id op/map-op [(value-ref :negate)
-                                                (local-ref source)]
-                           :map-negate))))
-
 (defn- insert-candidates
   [g node-id xs _opts]
   (for [[indices content rest] (op/partition-by-frequency xs)]
@@ -341,9 +322,7 @@
    (value-template :scale-mult scale-mult-candidate)
    (value-template :affine-add affine-candidate)
    (value-template :cumsum cumsum-candidate)
-   (value-template :map-negate map-negate-candidate)
-   (value-template :insert insert-candidates)
-   (value-template :concat concat-candidates)])
+   (value-template :insert insert-candidates)])
 
 (defn- ensure-template
   [x]

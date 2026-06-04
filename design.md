@@ -53,10 +53,9 @@ initial DL, compressed DL, compression rate, selected target expressions,
 resources, and threshold status. Alice parity tests use selected expressions and
 bounded-vs-exhaustive agreement as evidence; they do not assert private helper
 routine behavior or exact Python floating DL constants. The sequence parity
-matrix now uses Python `test_alice.py` target sizes. Rows that are too slow for
-the default CIWI test run are marked as `:performance-gap`; they keep the
-full-size Python target generator and are not replaced by scaled-down fixtures.
-The detailed task-by-task status and timing matrix lives in
+matrix now uses Python `test_alice.py` target sizes. Rows that are too slow or
+less compressive are tracked explicitly rather than replaced by scaled-down
+fixtures. The detailed task-by-task status, solution, and timing matrix lives in
 `alice-test-parity.md`.
 
 The Alice parity operator basis is the one used by Python
@@ -73,8 +72,8 @@ Current Alice-style behavior coverage:
 | arithmetic range / affine / negated range | Covered at Python sequence scale for `simply_linear` and `map_negate` in `ciwi.alice-test` | None for Clojure-native vectors under current operators. |
 | motif repeat | Covered at Python sequence scale for `simple_repeat` in `ciwi.alice-test` | None for the current vector/string motif repeat operator. |
 | insert/repeat sequences | Covered at Python sequence scale for `insert_repeat`, `insert_repeat2`, `insert_repeat3`, and `repeat_with_noise` in `ciwi.alice-test` | `insert_repeat3` gets the right local edit family but weaker CIWI DL compression than Python's threshold because the nested alternating content is not yet compressed as strongly. |
-| sparse sprinkling | Full Python-scale target is represented exactly in `ciwi.alice-test` but marked `:performance-gap` | CIWI's generic exhaustive/bounded comparison compressed the row structurally in about 84s, while Python WILLIAM's bounded Alice worker completed the same row in about 6ms. This is a performance bug in local sparse insert scoring, not an acceptable parity result. |
-| increasing-run sequences | Full Python-scale target is represented exactly in `ciwi.alice-test` but marked `:performance-gap` | CIWI's generic comparison did not finish within the probe timeout, while Python WILLIAM's bounded Alice worker completed the same row in about 88ms. The missing piece is a bounded local rewrite path that proposes `insert` over a repeated rest plus a compressed index subgraph without scoring large raw child vectors. |
+| sparse sprinkling | Full Python-scale target is represented exactly in `ciwi.alice-test`; current CIWI solution is `insert` over repeated rest | The prior 84s runtime was caused by a CIWI-only unconditioned `concat` split template. That template was removed because Python `Concat` only supports conditioned inverses. CIWI still runs slower than Python on this row. |
+| increasing-run sequences | Full Python-scale target is represented exactly in `ciwi.alice-test`; current CIWI solution is `insert` over repeated rest | CIWI now runs but leaves the marker positions raw. Python compresses that child with a double-`cumsum` subgraph. Remaining runtime is dominated by legitimate `Repeat`/`CumSum` inversion scans. |
 | scalar/vector regression | Partially covered below Alice through optimizer tests | Needs optimizer-backed graph compression wired into `ciwi.alice`. |
 | matrix regression / classification | Not covered at Alice level | Needs dot/sum/sub/threshold/free-value optimization integrated with task search. |
 
@@ -248,13 +247,15 @@ The first templates are intentionally simple but useful for proving the loop:
 - motif repetitions: `(repeat repetitions motif)`
 - insertion partitions: `(insert indices content rest)`
 - cumulative sequences: `(cumsum diffs)`
-- negated maps: `(map :negate source)`
-- sequence concatenation: `(concat left right)`
 - scaled ranges: `(mult (brange 0 stop) step)`
 - affine sequences: `(add (mult (brange 0 stop) step) start)`
 
 Each template can be detected from a local value. Templates are intentionally
 small local candidate rules; search sees them through `rewrite/template-operator`.
+`map` and `concat` remain Alice-basis operators, but the primitive template
+sweep does not invent unconditioned `map :negate` or arbitrary `concat` splits:
+Python `Map` requires a conditioned callable and Python `Concat` requires one
+conditioned side.
 Children introduced by one rewrite can themselves be rewritten in later bounded
 passes, which is the basic mechanism used by the convergence tests.
 

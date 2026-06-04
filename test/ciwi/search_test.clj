@@ -47,6 +47,18 @@
                     (= :brange (:template-id %)))
               (:trace result)))))
 
+(deftest primitive-search-does-not-invent-unconditioned-concat-splits
+  (let [g (one-target-graph [1 2 3 4 5 6 7 8])
+        result (sut/rewrite-search g [:out] {:parallel? false})]
+    (is (not-any? #(= :concat (:reason %)) (:candidates result)))
+    (is (not-any? #(= :concat (:template-id %)) (:trace result)))))
+
+(deftest primitive-search-does-not-invent-unconditioned-map-negate
+  (let [g (one-target-graph [0 -1 -2 -3 -4])
+        result (sut/rewrite-search g [:out] {:parallel? false})]
+    (is (not-any? #(= :map-negate (:reason %)) (:candidates result)))
+    (is (not-any? #(= :map-negate (:template-id %)) (:trace result)))))
+
 (deftest bounded-converge-records-step-and-terminal-resource
   (let [g (one-target-graph [0 1 2 3 4 5 6 7])
         result (sut/bounded-converge g [:out] {:parallel? false

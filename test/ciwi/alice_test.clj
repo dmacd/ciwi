@@ -102,7 +102,7 @@
     :python-threshold-rate 94.0
     :ciwi-threshold-rate 1.0
     :python-serial-ms 1061
-    :observed-ciwi-ms 834
+    :observed-ciwi-ms 87
     :required #{:repeat}
     :exact [:repeat 500 [140 -50]]}
    {:name "insert_repeat"
@@ -112,7 +112,7 @@
     :python-threshold-rate 92.0
     :ciwi-threshold-rate 1.0
     :python-serial-ms 51
-    :observed-ciwi-ms 151
+    :observed-ciwi-ms 18
     :required #{:insert :repeat}
     :exact [:insert [:brange 0 100] 45 [:repeat 250 [87]]]}
    {:name "insert_repeat2"
@@ -122,7 +122,7 @@
     :python-threshold-rate 92.0
     :ciwi-threshold-rate 1.0
     :python-serial-ms 44
-    :observed-ciwi-ms 562
+    :observed-ciwi-ms 23
     :required #{:insert :repeat}
     :forbidden #{:cumsum}
     :exact [:insert [:brange 0 35]
@@ -135,7 +135,7 @@
     :python-threshold-rate 93.0
     :ciwi-threshold-rate 1.0
     :python-serial-ms 10677
-    :observed-ciwi-ms 2101
+    :observed-ciwi-ms 105
     :required #{:insert :repeat}
     :forbidden #{:cumsum}}
    {:name "repeat_with_noise"
@@ -145,7 +145,7 @@
     :python-threshold-rate 90.0
     :ciwi-threshold-rate 1.0
     :python-serial-ms 6
-    :observed-ciwi-ms 248
+    :observed-ciwi-ms 16
     :required #{:insert :repeat}
     :exact [:insert [100] -1 [:repeat 500 [45]]]}
    {:name "simply_linear"
@@ -155,26 +155,28 @@
     :python-threshold-rate 97.0
     :ciwi-threshold-rate 1.0
     :python-serial-ms 12
-    :observed-ciwi-ms 3057
+    :observed-ciwi-ms 122
     :required #{:brange :mult :add}
     :exact [:add [:mult [:brange 0 1000] 6] -18]}
    {:name "sprinkled"
-    :status :performance-gap
+    :status :covered
     :length 10000
     :target-fn sprinkled-target
     :python-threshold-rate 75.0
+    :ciwi-threshold-rate 1.0
     :python-serial-ms 6
-    :observed-ciwi-ms 83556
+    :observed-ciwi-ms 249
     :required #{:insert :repeat}
-    :performance-note "Full-scale target compresses structurally, but generic CIWI comparison takes roughly 84s versus Python's roughly 6ms bounded worker."}
+    :performance-note "Prior runtime was roughly 84s due to CIWI-only unconditioned concat split enumeration; current runtime is still slower than Python."}
    {:name "increasing_runs"
     :status :performance-gap
     :length 125250
     :target-fn increasing-runs-target
     :python-threshold-rate 99.9
     :python-serial-ms 88
+    :observed-ciwi-ms 2705
     :required #{:insert :repeat}
-    :performance-note "Full-scale target did not finish in the generic CIWI comparison timeout; Python's bounded worker completes in roughly 88ms."}
+    :performance-note "Current CIWI run completes, but remains slower and less compressed than Python because marker indices stay raw."}
    {:name "map_negate"
     :status :covered
     :length 1000
@@ -182,7 +184,7 @@
     :python-threshold-rate 98.0
     :ciwi-threshold-rate 1.0
     :python-serial-ms 12
-    :observed-ciwi-ms 2013
+    :observed-ciwi-ms 66
     :required #{:brange :mult}
     :exact [:mult [:brange 0 1000] -1]}])
 
