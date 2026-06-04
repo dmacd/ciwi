@@ -286,14 +286,23 @@
   [ref]
   (= :edit (:kind ref)))
 
+(defn- cheaper-than-raw?
+  [ref raw-ref]
+  (and ref
+       (<= (ref-estimated-dl ref)
+           (ref-estimated-dl raw-ref))))
+
 (defn- local-ref
   ([x]
    (local-ref x 4))
   ([x depth]
-   (cheapest-ref [(brange-ref x)
-                  (repeat-ref x)
-                  (insert-ref x depth)
-                  (value-ref x)])))
+   (let [raw-ref (value-ref x)
+         cheap-structure (cheapest-ref [(brange-ref x)
+                                        (repeat-ref x)])]
+     (if (cheaper-than-raw? cheap-structure raw-ref)
+       cheap-structure
+       (cheapest-ref [(insert-ref x depth)
+                      raw-ref])))))
 
 (defn- vector-diff
   [xs]

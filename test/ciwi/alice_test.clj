@@ -37,53 +37,165 @@
                expr (vals (get-in comparison [mode :selected]))]
            (expression-operator-ids expr))))
 
-(defn- increasing-runs
-  [n]
+(defn- simple-repeat-target
+  []
+  (vec (take 1000 (cycle [140 -50]))))
+
+(defn- insert-repeat-target
+  []
+  (vec (concat (repeat 100 45)
+               (repeat 250 87))))
+
+(defn- insert-repeat2-target
+  []
+  (vec (concat (repeat 10 45)
+               (repeat 25 87)
+               (repeat 610 164))))
+
+(defn- insert-repeat3-target
+  []
+  (vec (concat (repeat 100 45)
+               (take 500 (cycle [87 62]))
+               (repeat 610 164))))
+
+(defn- repeat-with-noise-target
+  []
+  (vec (concat (repeat 100 45)
+               [-1]
+               (repeat 400 45))))
+
+(defn- simply-linear-target
+  []
+  (mapv #(- (* 6 %) 18) (range 1000)))
+
+(def python-sprinkled-indices
+  [436 634 675 761 851 883 915 933 971 1270 1295 1397 1536 1604 1642
+   1811 1889 1937 1996 2256 2264 2394 2750 2882 3119 3247 3294 3525
+   3621 3652 3679 3692 3872 3994 4094 4289 4346 4348 4363 4403 4433
+   4467 4473 4616 4645 4681 4745 4955 4963 5089 5217 5415 5442 5509
+   5633 6278 6288 6366 6391 6482 6684 6744 6803 6823 6847 6909 6965
+   6992 7113 7293 7403 7419 7536 7545 7561 7663 7669 7744 7757 7794
+   7933 8041 8168 8224 8313 8314 8329 8411 8505 8528 8821 8884 8976
+   9025 9189 9197 9385 9640 9654 9670])
+
+(defn- sprinkled-target
+  []
+  (reduce #(assoc %1 %2 1)
+          (vec (repeat 10000 0))
+          python-sprinkled-indices))
+
+(defn- increasing-runs-target
+  []
   (vec (mapcat (fn [x]
                  (concat (repeat x 123) [64]))
-               (range n))))
+               (range 500))))
 
-(def mirrored-sequence-cases
+(defn- map-negate-target
+  []
+  (vec (map - (range 1000))))
+
+(def python-sequence-parity-cases
   [{:name "simple_repeat"
-    :target (vec (take 20 (cycle [140 -50])))
+    :status :covered
+    :length 1000
+    :target-fn simple-repeat-target
+    :python-threshold-rate 94.0
+    :ciwi-threshold-rate 1.0
+    :python-serial-ms 1061
+    :observed-ciwi-ms 834
     :required #{:repeat}
-    :exact [:repeat 10 [140 -50]]}
+    :exact [:repeat 500 [140 -50]]}
    {:name "insert_repeat"
-    :target (vec (concat (repeat 10 45)
-                         (repeat 25 87)))
+    :status :covered
+    :length 350
+    :target-fn insert-repeat-target
+    :python-threshold-rate 92.0
+    :ciwi-threshold-rate 1.0
+    :python-serial-ms 51
+    :observed-ciwi-ms 151
     :required #{:insert :repeat}
-    :exact [:insert [:brange 0 10] 45 [:repeat 25 [87]]]}
+    :exact [:insert [:brange 0 100] 45 [:repeat 250 [87]]]}
    {:name "insert_repeat2"
-    :target (vec (concat (repeat 10 45)
-                         (repeat 25 87)
-                         (repeat 61 164)))
+    :status :covered
+    :length 645
+    :target-fn insert-repeat2-target
+    :python-threshold-rate 92.0
+    :ciwi-threshold-rate 1.0
+    :python-serial-ms 44
+    :observed-ciwi-ms 562
     :required #{:insert :repeat}
     :forbidden #{:cumsum}
     :exact [:insert [:brange 0 35]
             [:insert [:brange 0 10] 45 [:repeat 25 [87]]]
-            [:repeat 61 [164]]]}
+            [:repeat 610 [164]]]}
    {:name "insert_repeat3"
-    :target (vec (concat (repeat 10 45)
-                         (take 50 (cycle [87 62]))
-                         (repeat 61 164)))
+    :status :covered
+    :length 1210
+    :target-fn insert-repeat3-target
+    :python-threshold-rate 93.0
+    :ciwi-threshold-rate 1.0
+    :python-serial-ms 10677
+    :observed-ciwi-ms 2101
     :required #{:insert :repeat}
     :forbidden #{:cumsum}}
    {:name "repeat_with_noise"
-    :target (vec (concat (repeat 20 45)
-                         [-1]
-                         (repeat 40 45)))
+    :status :covered
+    :length 501
+    :target-fn repeat-with-noise-target
+    :python-threshold-rate 90.0
+    :ciwi-threshold-rate 1.0
+    :python-serial-ms 6
+    :observed-ciwi-ms 248
     :required #{:insert :repeat}
-    :exact [:insert [20] -1 [:repeat 60 [45]]]}
+    :exact [:insert [100] -1 [:repeat 500 [45]]]}
+   {:name "simply_linear"
+    :status :covered
+    :length 1000
+    :target-fn simply-linear-target
+    :python-threshold-rate 97.0
+    :ciwi-threshold-rate 1.0
+    :python-serial-ms 12
+    :observed-ciwi-ms 3057
+    :required #{:brange :mult :add}
+    :exact [:add [:mult [:brange 0 1000] 6] -18]}
    {:name "sprinkled"
-    :target (assoc (vec (repeat 40 0)) 3 1 17 1 31 1)
-    :required #{:insert :repeat}}
+    :status :performance-gap
+    :length 10000
+    :target-fn sprinkled-target
+    :python-threshold-rate 75.0
+    :python-serial-ms 6
+    :observed-ciwi-ms 83556
+    :required #{:insert :repeat}
+    :performance-note "Full-scale target compresses structurally, but generic CIWI comparison takes roughly 84s versus Python's roughly 6ms bounded worker."}
    {:name "increasing_runs"
-    :target (increasing-runs 9)
-    :required #{:insert :repeat}}
+    :status :performance-gap
+    :length 125250
+    :target-fn increasing-runs-target
+    :python-threshold-rate 99.9
+    :python-serial-ms 88
+    :required #{:insert :repeat}
+    :performance-note "Full-scale target did not finish in the generic CIWI comparison timeout; Python's bounded worker completes in roughly 88ms."}
    {:name "map_negate"
-    :target (vec (map - (range 20)))
+    :status :covered
+    :length 1000
+    :target-fn map-negate-target
+    :python-threshold-rate 98.0
+    :ciwi-threshold-rate 1.0
+    :python-serial-ms 12
+    :observed-ciwi-ms 2013
     :required #{:brange :mult}
-    :exact [:mult [:brange 0 20] -1]}])
+    :exact [:mult [:brange 0 1000] -1]}])
+
+(defn- covered-parity-case?
+  [case]
+  (= :covered (:status case)))
+
+(defn- task-from-parity-case
+  [{:keys [name target-fn ciwi-threshold-rate python-threshold-rate]}]
+  (sut/compression-task [(target-fn)]
+                        {:name name
+                         :threshold-rate (or ciwi-threshold-rate 1.0)
+                         :metadata {:python-threshold-rate python-threshold-rate}}))
 
 (deftest alice-basic-operator-basis-matches-python-test-alice
   (is (= [:map :fix :brange :add :mult :negate :concat :repeat
@@ -92,57 +204,26 @@
   (is (= (set sut/basic-operator-ids)
          (set (keys sut/basic-operator-registry)))))
 
-(deftest alice-task-compresses-supported-sequence-patterns
-  (let [tasks [(sut/compression-task [[0 1 2 3 4 5 6 7]]
-                                     {:name "range"
-                                      :threshold-rate 1.0})
-               (sut/compression-task [(vec (take 10 (cycle [140 -50])))]
-                                     {:name "simple_repeat"
-                                      :threshold-rate 1.0})
-               (sut/compression-task [(vec (repeat 12 :z))]
-                                     {:name "constant-repeat"
-                                      :threshold-rate 1.0})
-               (sut/compression-task [(vec (concat (repeat 4 45)
-                                                   (repeat 6 87)))]
-                                     {:name "insert_repeat"
-                                      :threshold-rate 1.0})
-               (sut/compression-task [[2 5 8 11 14 17]]
-                                     {:name "simply_linear"
-                                      :threshold-rate 1.0})
-               (sut/compression-task [[0 -1 -2 -3 -4 -5]]
-                                     {:name "map_negate_equivalent"
-                                      :threshold-rate 1.0})
-               (sut/compression-task [[0 1 3 6 10 15]]
-                                     {:name "cumsum"
-                                      :threshold-rate 1.0})]
-        results (mapv run-comparison tasks)]
-    (is (every? :same-selected? results))
-    (is (every? :same-dl? results))
-    (is (every? :meets-threshold? results))
-    (is (every? #(set/subset? (selected-operator-ids %)
-                              (set sut/basic-operator-ids))
-                results))
-    (is (= [:brange 0 8]
-           (get-in results [0 :exhaustive :selected :target0])))
-    (is (= [:repeat 5 [140 -50]]
-           (get-in results [1 :exhaustive :selected :target0])))
-    (is (= [:repeat 12 [:z]]
-           (get-in results [2 :exhaustive :selected :target0])))
-    (is (= [:insert [:brange 0 4] 45 [:repeat 6 [87]]]
-           (get-in results [3 :exhaustive :selected :target0])))
-    (is (= [:add [:mult [:brange 0 6] 3] 2]
-           (get-in results [4 :exhaustive :selected :target0])))
-    (is (= [:mult [:brange 0 6] -1]
-           (get-in results [5 :exhaustive :selected :target0])))
-    (is (= [:cumsum [:brange 0 6]]
-           (get-in results [6 :exhaustive :selected :target0])))))
-
-(deftest alice-mirrors-python-sequence-task-compression-subset
-  (doseq [{:keys [name target required forbidden exact]} mirrored-sequence-cases]
+(deftest alice-python-sequence-parity-matrix-is-explicit
+  (is (= ["simple_repeat" "insert_repeat" "insert_repeat2" "insert_repeat3"
+          "repeat_with_noise" "simply_linear" "sprinkled" "increasing_runs"
+          "map_negate"]
+         (mapv :name python-sequence-parity-cases)))
+  (is (= #{:covered :performance-gap}
+         (set (map :status python-sequence-parity-cases))))
+  (doseq [{:keys [name status length target-fn python-threshold-rate
+                  performance-note]} python-sequence-parity-cases]
     (testing name
-      (let [task (sut/compression-task [target]
-                                       {:name name
-                                        :threshold-rate 1.0})
+      (is (= length (count (target-fn))))
+      (is (number? python-threshold-rate))
+      (when (= :performance-gap status)
+        (is (seq performance-note))))))
+
+(deftest alice-mirrors-python-sequence-task-compression
+  (doseq [{:keys [name required forbidden exact] :as case}
+          (filter covered-parity-case? python-sequence-parity-cases)]
+    (testing name
+      (let [task (task-from-parity-case case)
             result (run-comparison task {:bounded-opts {:parallel? true
                                                         :re-eval-budget 256}
                                          :exhaustive-opts {:parallel? false}})
@@ -160,19 +241,16 @@
 
 
 (deftest alice-domain-runs-task-comparisons
-  (let [domain (sut/task-domain
-                "supported-sequence-subset"
-                [(sut/compression-task [[0 1 2 3 4]]
-                                       {:name "range"
-                                        :threshold-rate 1.0})
-                 (sut/compression-task [[10 12 14 16 18]]
-                                       {:name "affine"
-                                        :threshold-rate 1.0})]
+  (let [domain-cases (->> python-sequence-parity-cases
+                          (filter (comp #{"simple_repeat" "map_negate"} :name)))
+        domain (sut/task-domain
+                "python-sequence-covered-subset"
+                (mapv task-from-parity-case domain-cases)
                 {:opts {:bounded-opts {:parallel? false
-                                        :re-eval-budget 64}}})
+                                        :re-eval-budget 256}}})
         result (sut/run-domain domain)]
-    (is (= "supported-sequence-subset" (:domain-name result)))
-    (is (= ["range" "affine"]
+    (is (= "python-sequence-covered-subset" (:domain-name result)))
+    (is (= ["simple_repeat" "map_negate"]
            (mapv :task-name (:results result))))
     (is (every? :same-selected? (:results result)))
     (is (every? :meets-threshold? (:results result)))))

@@ -424,13 +424,15 @@
               indices (keep-indexed (fn [idx x]
                                       (when (selected? x) idx))
                                     values)
+              rest-count (get value-counts rest-value)
               content (filterv selected? values)
               rest (filterv (complement selected?) values)
               content (if (and (seq content) (apply = content))
                         (first content)
                         content)
               rest (if (string? output) (apply str rest) rest)]
-          (when (seq indices)
+          (when (and (> rest-count 1)
+                     (seq indices))
             [[(vec indices) content rest]]))))))
 
 (def add
