@@ -201,9 +201,9 @@
       (graph/add-value :threshold nil)
       (graph/add-value :mask nil)
       (graph/add-value :items nil)
-      (graph/add-value :fill "-")
+      (graph/add-value :fill ["-"])
       (graph/add-operator :len-scores op/len :n [:scores])
-      (graph/add-operator :make-base op/repeat :base [:fill :n])
+      (graph/add-operator :make-base op/repeat :base [:n :fill])
       (graph/add-operator :mask-op op/lessthan :mask [:scores :threshold])
       (graph/add-operator :patch op/setitem :out [:base :mask :items])))
 
@@ -211,7 +211,7 @@
   (let [g (length-derived-threshold-patch-graph)
         result (first (sut/propagate g
                                      (sut/memory {:scores [0 1 2 3]
-                                                  :fill "-"
+                                                  :fill ["-"]
                                                   :threshold 2
                                                   :items ["x" "x"]})))]
     (is (= 4

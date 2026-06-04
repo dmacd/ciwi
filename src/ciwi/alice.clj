@@ -1,10 +1,23 @@
 (ns ciwi.alice
   (:require [ciwi.compress :as compress]
+            [ciwi.fix :as fix]
             [ciwi.graph :as graph]
-            [ciwi.mdl :as mdl]))
+            [ciwi.mdl :as mdl]
+            [ciwi.operator :as op]))
 
 (defrecord CompressionTask [name targets threshold-rate free-values solutions metadata])
 (defrecord TaskDomain [name tasks opts metadata])
+
+(def basic-operator-registry
+  "Operator basis used by the Alice parity harness, matching test_alice.py."
+  (assoc (select-keys op/registry
+                      [:map :brange :add :mult :negate :concat :repeat
+                       :getitem :insert :cumsum :lessthan :equal])
+         :fix fix/operator))
+
+(def basic-operator-ids
+  [:map :fix :brange :add :mult :negate :concat :repeat
+   :getitem :insert :cumsum :lessthan :equal])
 
 (defn compression-task
   [targets {:keys [name threshold-rate free-values solutions metadata]

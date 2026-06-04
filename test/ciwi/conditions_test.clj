@@ -40,7 +40,7 @@
   (let [{add-g :graph add-root :root} (dsl/from-expr [:add 1 2])
         {neg-g :graph neg-root :root} (dsl/from-expr [:negate 1])
         {cat-g :graph cat-root :root} (dsl/from-expr [:concat [:brange 0 3]
-                                                      [:repeat :z 2]])]
+                                                      [:repeat 2 [:z]]])]
     (is (= [[0] [1]]
            (sut/get-conditions add-g add-root)))
     (is (= [[]]

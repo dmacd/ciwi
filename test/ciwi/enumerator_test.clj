@@ -38,7 +38,7 @@
 
 
 (deftest node-tuple-enumerator-uses-breadth-first-value-order
-  (let [{:keys [graph root]} (dsl/from-expr [:concat [:brange 0 3] [:repeat :x 2]])
+  (let [{:keys [graph root]} (dsl/from-expr [:concat [:brange 0 3] [:repeat 2 [:x]]])
         tuples (sut/node-tuples graph root {:max-tuple-len 2
                                            :max-results 6})
         values (mapv (fn [item]

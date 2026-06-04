@@ -39,7 +39,7 @@ unlock a graph compression, propagation, search, or learned-artifact behavior.
 | Values, operators, inverses, propagation | Covered for numeric and sequence cores | Implemented with Clojure-native data and conservative inverses. NumPy-specific helper paths are intentionally not parity targets. |
 | Bottleneck / minimum description selection | Covered for local values and shared-root graphs | `node-dl` selects the best local value description. `graph-dl` charges selected shared value nodes once across roots. |
 | Exhaustive compression reference loop | Covered for primitive, composite, and graph-edit rewrites | Used as the reference behavior for bounded incremental convergence tests. |
-| Bounded local incremental compression | Covered for ranges, affine sequences, composites, setitem, generated masks, length-derived shapes, and nested local edit DAGs | Search cost is controlled by target set, neighborhood budget, rewrite operators, depth, beam width, and generated-edit limits. |
+| Bounded local incremental compression | Covered for ranges, affine sequences, motif repeats, insert/repeat sequences, composites, generated masks, length-derived shapes, and nested local edit DAGs | Search cost is controlled by target set, neighborhood budget, rewrite operators, depth, beam width, and generated-edit limits. |
 | Composite operators and Fix | Covered for graph-backed composites, repeated inputs, constants, symbolic commutativity, inversion, and loaded definitions | This is the path for learned library elements to look native at runtime. |
 | DAG/input enumeration support | Partially covered as search infrastructure | Input tuple order, tree counting, node tuple enumeration, and usage-biased effective DL are present because they inform proposal search. Python's mutable DAG heap is not a direct target. |
 | Optimizers | Partially covered | Ported for comparison through a search-operator interface. Future numeric search can be replaced by graph rewrite, gradient, or specialized subgraph mechanisms. |
@@ -54,15 +54,21 @@ resources, and threshold status. Alice parity tests use selected expressions and
 bounded-vs-exhaustive agreement as evidence; they do not assert private helper
 routine behavior or exact Python floating DL constants.
 
+The Alice parity operator basis is the one used by Python
+`william/tests/test_alice.py`: `Map`, `Fix`, `BRange`, `Add`, `Mult`,
+`Negate`, `Concat`, `Repeat`, `GetItem`, `Insert`, `CumSum`, `LessThan`, and
+`Equal`. CIWI exposes this as `ciwi.alice/basic-operator-registry`. Existing
+operators outside that basis, such as `setitem`, remain available for graph
+rewrite infrastructure tests but are not used to claim `test_alice.py` parity.
+
 Current Alice-style behavior coverage:
 
 | Alice task class | CIWI proof status | Remaining gap |
 | --- | --- | --- |
 | arithmetic range / affine / negated range | Covered in `ciwi.alice-test` | None for Clojure-native vectors under current operators. |
-| constant repeat | Covered in `ciwi.alice-test` | Alternating motif repeat, such as Python's `simple_repeat`, needs a tile/motif operator or learned composite. |
-| setitem with observed/compressible mask | Covered in `ciwi.alice-test` | One-shot generated-mask Alice tasks need tighter task-level search budgets or a specialized proposal path. |
-| insert/repeat and sparse sprinkling sequences | Not covered | Needs insert/partition compression behavior as graph rewrites or learned templates. |
-| cumsum/increasing-run sequences | Not covered | Needs cumsum/diff-style operators or learned recurrent composites. |
+| constant and motif repeat | Covered in `ciwi.alice-test` | None for the current vector/string motif repeat operator. |
+| insert/repeat sequences | Covered for repeated runs in `ciwi.alice-test` | Sparse sprinkling and deeper nested insert decompositions need larger parity fixtures. |
+| cumsum/increasing-run sequences | Operator covered; task parity pending | Needs Alice-level fixtures for cumulative/increasing-run compression. |
 | scalar/vector regression | Partially covered below Alice through optimizer tests | Needs optimizer-backed graph compression wired into `ciwi.alice`. |
 | matrix regression / classification | Not covered at Alice level | Needs dot/sum/sub/threshold/free-value optimization integrated with task search. |
 
@@ -90,21 +96,26 @@ operator is executable.
 ## Core Operators
 
 Primitive operators are ordinary immutable `ciwi.operator/Operator` records with
-pure forward and inverse functions. The current sequence-edit set includes
-`getitem` and `setitem` for Clojure sequences/vectors with nonnegative integer
-indices, explicit index vectors, and boolean masks. Their inverses return
-partially known source templates using `nil`, `""`, or `false` as lightweight
-missing sentinels depending on value type. `len` is a forward-only shape
-primitive for counted Clojure values; it is used to derive local sizes without
-inventing a sequence from a length during downward propagation. Boolean/comparison
-primitives `lessthan`, `equal`, `not`, `and`, and `or` use Clojure-native
-scalar/vector broadcasting helpers so masks can be produced by ordinary
-subgraphs. Their inverses stay conservative: comparison constraints verify known
-inputs, equality only solves the all-true case, and logical inverses are currently
-scalar. This is enough for the core WILLIAM sequence and mask rewrite tests
-without importing Python/NumPy slicing semantics. Shape-rich indexing should be
-added later as data-driven operators or composed rewrite rules rather than hidden
-mutable array behavior.
+pure forward and inverse functions. The Alice parity basis uses Python
+`test_alice.py` semantics where `brange` is `(start stop)` and `repeat` is
+`(repetitions motif)`, so `[1 5 1 5]` is `[:repeat 2 [1 5]]`, not a scalar
+fill operator. `map` accepts an operator keyword/record as its callable child,
+`insert` partitions output into inserted indices/content/rest, and `cumsum`
+inverts by first differences.
+
+The broader current sequence-edit set also includes `setitem` for Clojure
+sequences/vectors with nonnegative integer indices, explicit index vectors, and
+boolean masks. Its inverses return partially known source templates using
+`nil`, `""`, or `false` as lightweight missing sentinels depending on value
+type. `len` is a forward-only shape primitive for counted Clojure values; it is
+used to derive local sizes without inventing a sequence from a length during
+downward propagation. Boolean/comparison primitives `lessthan`, `equal`, `not`,
+`and`, and `or` use Clojure-native scalar/vector broadcasting helpers so masks
+can be produced by ordinary subgraphs. Their inverses stay conservative:
+comparison constraints verify known inputs, equality only solves the all-true
+case, and logical inverses are currently scalar. Shape-rich indexing should be
+added later as data-driven operators or composed rewrite rules rather than
+hidden mutable array behavior.
 
 ## Description Length
 
@@ -227,11 +238,14 @@ after applying the rewrite. Fixed-point runs also retain `:terminal-search` and
 
 The first templates are intentionally simple but useful for proving the loop:
 
-- arithmetic integer ranges: `(brange start n)`
-- constant repetitions: `(repeat value n)`
+- arithmetic integer ranges: `(brange start stop)`
+- motif repetitions: `(repeat repetitions motif)`
+- insertion partitions: `(insert indices content rest)`
+- cumulative sequences: `(cumsum diffs)`
+- negated maps: `(map :negate source)`
 - sequence concatenation: `(concat left right)`
-- scaled ranges: `(mult (brange 0 n) step)`
-- affine sequences: `(add (mult (brange 0 n) step) start)`
+- scaled ranges: `(mult (brange 0 stop) step)`
+- affine sequences: `(add (mult (brange 0 stop) step) start)`
 
 Each template can be detected from a local value. Templates are intentionally
 small local candidate rules; search sees them through `rewrite/template-operator`.
@@ -245,7 +259,7 @@ built from Clojure data:
 
 ```clojure
 [:add 3 4]
-[:concat [:brange 0 3] [:repeat :x 2]]
+[:concat [:brange 0 3] [:repeat 2 [:x]]]
 ```
 
 A vector or list is an operator form only when its head resolves through the

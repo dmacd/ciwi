@@ -12,7 +12,7 @@
 
 (deftest nested-data-builds-compressible-graph
   (let [{:keys [graph root]} (sut/from-expr [:concat [:brange 0 3]
-                                             [:repeat :x 2]])]
+                                             [:repeat 2 [:x]]])]
     (is (= [0 1 2 :x :x] (get-in graph [:nodes root :value :data])))
     (is (= 3 (count (graph/operator-ids graph))))
     (is (= [:concat :brange :repeat]

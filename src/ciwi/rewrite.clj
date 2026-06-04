@@ -114,8 +114,8 @@
      (reduce + 0.0 (map (comp value/desc-len value/value) children))))
 
 (defn- brange-dl
-  [start n]
-  (raw-children-dl op/brange [start n]))
+  [start stop]
+  (raw-children-dl op/brange [start stop]))
 
 (defn- scale-mult-dl
   [step n]
@@ -170,14 +170,15 @@
   [g node-id xs _opts]
   (when (and (arithmetic-range? xs)
              (>= (count xs) 2))
-    (candidate g node-id op/brange [(first xs) (count xs)] :brange)))
+    (candidate g node-id op/brange [(first xs) (inc (last xs))] :brange)))
 
 (defn- repeat-candidate
   [g node-id xs _opts]
-  (when (and (vector? xs)
-             (>= (count xs) 2)
-             (apply = xs))
-    (candidate g node-id op/repeat [(first xs) (count xs)] :repeat)))
+  (when (and (or (vector? xs) (string? xs))
+             (>= (count xs) 2))
+    (when-let [[reps motif] (op/repeated-motif xs)]
+      (when (> reps 1)
+        (candidate g node-id op/repeat [reps motif] :repeat)))))
 
 (defn- concat-candidates
   [g node-id xs _opts]
@@ -217,12 +218,67 @@
                   (arithmetic-range? xs))
       (candidate g node-id op/add [scaled start] :affine-add (affine-add-dl start step n)))))
 
+(defn- local-ref
+  [x]
+  (cond
+    (and (arithmetic-range? x) (>= (count x) 2))
+    (edit-ref op/brange
+              [(value-ref (first x))
+               (value-ref (inc (last x)))]
+              x
+              (brange-dl (first x) (inc (last x))))
+
+    (and (or (vector? x) (string? x))
+         (>= (count x) 2))
+    (if-let [[reps motif] (op/repeated-motif x)]
+      (if (> reps 1)
+        (edit-ref op/repeat
+                  [(value-ref reps) (value-ref motif)]
+                  x
+                  (raw-children-dl op/repeat [reps motif]))
+        (value-ref x))
+      (value-ref x))
+
+    :else
+    (value-ref x)))
+
+(defn- vector-diff
+  [xs]
+  (when (and (vector? xs) (every? number? xs))
+    (vec (map - xs (cons 0 xs)))))
+
+(defn- cumsum-candidate
+  [g node-id xs _opts]
+  (when-let [diffs (vector-diff xs)]
+    (candidate-from-refs g node-id op/cumsum [(local-ref diffs)] :cumsum)))
+
+(defn- map-negate-candidate
+  [g node-id xs _opts]
+  (when (and (vector? xs)
+             (seq xs)
+             (every? number? xs))
+    (let [source (mapv - xs)]
+      (candidate-from-refs g node-id op/map-op [(value-ref :negate)
+                                                (local-ref source)]
+                           :map-negate))))
+
+(defn- insert-candidates
+  [g node-id xs _opts]
+  (for [[indices content rest] (op/partition-by-frequency xs)]
+    (candidate-from-refs g node-id op/insert [(local-ref indices)
+                                              (local-ref content)
+                                              (local-ref rest)]
+                         :insert)))
+
 (defn primitive-templates
   []
   [(value-template :brange brange-candidate)
    (value-template :repeat repeat-candidate)
    (value-template :scale-mult scale-mult-candidate)
    (value-template :affine-add affine-candidate)
+   (value-template :cumsum cumsum-candidate)
+   (value-template :map-negate map-negate-candidate)
+   (value-template :insert insert-candidates)
    (value-template :concat concat-candidates)])
 
 (defn- ensure-template

@@ -150,7 +150,7 @@
   (let [g (-> (graph/empty-graph)
               (graph/add-value :base ["-" "-" "-" "-" "-"])
               (graph/add-value :out ["-" "-" "-" "-" "x"]))]
-    (first (graph/add-derived-option g :base op/repeat ["-" 5]))))
+    (first (graph/add-derived-option g :base op/repeat [5 ["-"]]))))
 
 (deftest graph-rewrite-enumerates-local-setitem-edits-with-node-reuse
   (let [g (item-edit-graph)
@@ -176,7 +176,7 @@
             (rewrite/value-ref 4)
             (rewrite/value-ref "x")]
            (:child-refs first-candidate)))
-    (is (= [:setitem [:repeat "-" 5] 4 "x"]
+    (is (= [:setitem [:repeat 5 ["-"]] 4 "x"]
            (mdl/selected-expression (:graph bounded) :out)))
     (is (= (mdl/selected-expression (:graph exhaustive) :out)
            (mdl/selected-expression (:graph bounded) :out)))))
@@ -189,7 +189,7 @@
                (graph/add-value :base ["--------" "--------" "--------" "--------"])
                (graph/add-value :out ["xxxxxxxx" "xxxxxxxx" "--------" "--------"]))
         g1 (first (graph/add-derived-option g0 :scores op/brange [0 4]))]
-    (first (graph/add-derived-option g1 :base op/repeat ["--------" 4]))))
+    (first (graph/add-derived-option g1 :base op/repeat [4 ["--------"]]))))
 
 (deftest graph-rewrite-compresses-generated-setitem-mask-locally
   (let [g (generated-mask-edit-graph)
@@ -222,7 +222,7 @@
            (get-in first-candidate [:child-refs 1 :op :id])))
     (is (= [(rewrite/node-ref :scores) (rewrite/value-ref 2)]
            (get-in first-candidate [:child-refs 1 :child-refs])))
-    (is (= [:setitem [:repeat "--------" 4]
+    (is (= [:setitem [:repeat 4 ["--------"]]
             [:lessthan [:brange 0 4] 2]
             ["xxxxxxxx" "xxxxxxxx"]]
            (mdl/selected-expression (:graph bounded) :out)))
@@ -247,7 +247,7 @@
                                  {:op :repeat :arity 2}
                                  {:op :lessthan :arity 2}
                                  {:op :setitem :arity 3}]
-                     :literal-values ["--------" 2 ["xxxxxxxx" "xxxxxxxx"]]
+                     :literal-values [["--------"] 2 ["xxxxxxxx" "xxxxxxxx"]]
                      :max-depth 1
                      :max-generated 1000
                      :beam-width 128})
@@ -267,7 +267,7 @@
            (mapv :reason (:history bounded))))
     (is (= [:len [0 1 2 3]]
            (mdl/selected-expression (:graph bounded) :n)))
-    (is (= [:setitem [:repeat "--------" [:len [0 1 2 3]]]
+    (is (= [:setitem [:repeat [:len [0 1 2 3]] ["--------"]]
             [:lessthan [0 1 2 3] 2]
             ["xxxxxxxx" "xxxxxxxx"]]
            (mdl/selected-expression (:graph bounded) :out)))

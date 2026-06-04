@@ -22,10 +22,27 @@
   (is (= [[3]] (raw-inversions sut/negate -3 [] []))))
 
 (deftest sequence-operators-run-forward-and-backward
-  (is (= [3 4 5] (:data (sut/apply-op sut/brange [(value/value 3) (value/value 3)]))))
-  (is (= [[3 3]] (raw-inversions sut/brange [3 4 5] [] [])))
-  (is (= [:x :x :x] (:data (sut/apply-op sut/repeat [(value/value :x) (value/value 3)]))))
-  (is (= [[:x 3]] (raw-inversions sut/repeat [:x :x :x] [] [])))
+  (is (= [3 4 5] (:data (sut/apply-op sut/brange [(value/value 3) (value/value 6)]))))
+  (is (= [[3 6]] (raw-inversions sut/brange [3 4 5] [] [])))
+  (is (= [:x :x :x] (:data (sut/apply-op sut/repeat [(value/value 3) (value/value [:x])]))))
+  (is (= [1 5 1 5 1 5]
+         (:data (sut/apply-op sut/repeat [(value/value 3) (value/value [1 5])]))))
+  (is (= [[3 [:x]]] (raw-inversions sut/repeat [:x :x :x] [] [])))
+  (is (= [[[1 5]]] (raw-inversions sut/repeat [1 5 1 5 1 5] [3] [0])))
+  (is (= [[3]] (raw-inversions sut/repeat [1 5 1 5 1 5] [[1 5]] [1])))
+  (is (= [0 -1 -2] (:data (sut/apply-op sut/map-op [(value/value :negate)
+                                                     (value/value [0 1 2])]))))
+  (is (= [[[0 1 2]]] (raw-inversions sut/map-op [0 -1 -2] [:negate] [0])))
+  (is (= [0 1 3 6 10] (:data (sut/apply-op sut/cumsum [(value/value [0 1 2 3 4])]))))
+  (is (= [[[0 1 2 3 4]]] (raw-inversions sut/cumsum [0 1 3 6 10] [] [])))
+  (is (= [4 2 13 6 13 13]
+         (:data (sut/apply-op sut/insert [(value/value [2 4 5])
+                                          (value/value 13)
+                                          (value/value [4 2 6])]))))
+  (is (= [[["b" "e"] ["a" "c" "d"]]]
+         (raw-inversions sut/insert ["a" "b" "c" "d" "e"] [[1 4]] [0])))
+  (is (= [[[1 4] ["a" "c" "d"]]]
+         (raw-inversions sut/insert ["a" "b" "c" "d" "b"] ["b"] [1])))
   (is (= 4 (:data (sut/apply-op sut/len [(value/value [:a :b :c :d])]))))
   (is (= 6 (:data (sut/apply-op sut/len [(value/value "abcdef")]))))
   (is (empty? (raw-inversions sut/len 4 [[:a :b :c :d]] [0])))

@@ -46,6 +46,6 @@
       (is (= (select-keys (:selected exhaustive) [:range :repeat :affine])
              (:selected bounded)))
       (is (= [:brange 0 5] (get-in bounded [:selected :range])))
-      (is (= [:repeat :z 4] (get-in bounded [:selected :repeat])))
+      (is (= [:repeat 4 [:z]] (get-in bounded [:selected :repeat])))
       (is (= [:add [:mult [:brange 0 5] 2] 10]
              (get-in bounded [:selected :affine]))))))

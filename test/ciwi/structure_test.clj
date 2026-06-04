@@ -9,11 +9,11 @@
   (dsl/from-expr expr))
 
 (deftest clojure-graph-literals-round-trip-as-data
-  (let [{:keys [graph root]} (built [:concat [:brange 0 3] [:repeat :x 2]])
+  (let [{:keys [graph root]} (built [:concat [:brange 0 3] [:repeat 2 [:x]]])
         data (dsl/to-data graph)
         graph' (dsl/from-data data)]
     (is (= data (dsl/to-data graph')))
-    (is (= [:concat [:brange 0 3] [:repeat :x 2]]
+    (is (= [:concat [:brange 0 3] [:repeat 2 [:x]]]
            (dsl/to-expr graph root)))
     (is (= (mdl/selected-operators graph root)
            (mdl/selected-operators graph' root)))))
@@ -28,8 +28,8 @@
     (is (graph/resembles? g3 r3 g4 r4 {:check-values? false}))))
 
 (deftest depth-leaves-and-subgraph-match-structure-expectations
-  (let [{:keys [graph root]} (built [:concat [:brange 0 3] [:repeat :x 2]])
+  (let [{:keys [graph root]} (built [:concat [:brange 0 3] [:repeat 2 [:x]]])
         {sub-g :graph sub-root :root} (built [:brange 0 3])]
     (is (= 2 (graph/depth graph root)))
-    (is (= [0 3 :x 2] (graph/leaves-data graph root)))
+    (is (= [0 3 2 [:x]] (graph/leaves-data graph root)))
     (is (graph/subgraph? sub-g sub-root graph root))))
