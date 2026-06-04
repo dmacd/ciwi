@@ -218,29 +218,82 @@
                   (arithmetic-range? xs))
       (candidate g node-id op/add [scaled start] :affine-add (affine-add-dl start step n)))))
 
-(defn- local-ref
+(defn- ref-form
+  [ref]
+  (case (:kind ref)
+    :value (:value ref)
+    :edit (into [(:id (:op ref))] (map ref-form (:child-refs ref)))
+    :node [:node (:node-id ref)]))
+
+(defn- ref-estimated-dl
+  [ref]
+  (case (:kind ref)
+    :value (value/desc-len (value/value (:value ref)))
+    :edit (:dl ref)
+    :node 0.0))
+
+(defn- edit-ref-from
+  [operator child-refs value]
+  (edit-ref operator
+            child-refs
+            value
+            (+ (:dl operator)
+               (reduce + 0.0 (map ref-estimated-dl child-refs)))))
+
+(defn- cheapest-ref
+  [refs]
+  (first (sort-by (juxt ref-estimated-dl #(pr-str (ref-form %)))
+                  (remove nil? refs))))
+
+(declare local-ref)
+
+(defn- brange-ref
   [x]
-  (cond
-    (and (arithmetic-range? x) (>= (count x) 2))
-    (edit-ref op/brange
-              [(value-ref (first x))
-               (value-ref (inc (last x)))]
-              x
-              (brange-dl (first x) (inc (last x))))
+  (when (and (arithmetic-range? x) (>= (count x) 2))
+    (edit-ref-from op/brange
+                   [(value-ref (first x))
+                    (value-ref (inc (last x)))]
+                   x)))
 
-    (and (or (vector? x) (string? x))
-         (>= (count x) 2))
-    (if-let [[reps motif] (op/repeated-motif x)]
-      (if (> reps 1)
-        (edit-ref op/repeat
-                  [(value-ref reps) (value-ref motif)]
-                  x
-                  (raw-children-dl op/repeat [reps motif]))
-        (value-ref x))
-      (value-ref x))
+(defn- repeat-ref
+  [x]
+  (when (and (or (vector? x) (string? x))
+             (>= (count x) 2))
+    (when-let [[reps motif] (op/repeated-motif x)]
+      (when (> reps 1)
+        (edit-ref-from op/repeat
+                       [(value-ref reps) (value-ref motif)]
+                       x)))))
 
-    :else
-    (value-ref x)))
+(defn- insert-ref
+  [x depth]
+  (when (pos? depth)
+    (cheapest-ref
+     (for [[indices content rest] (op/partition-by-frequency x)]
+       (edit-ref-from op/insert
+                      [(local-ref indices (dec depth))
+                       (local-ref content (dec depth))
+                       (local-ref rest (dec depth))]
+                      x)))))
+
+(defn- simple-local-ref
+  [x]
+  (cheapest-ref [(brange-ref x)
+                 (repeat-ref x)
+                 (value-ref x)]))
+
+(defn- structured-ref?
+  [ref]
+  (= :edit (:kind ref)))
+
+(defn- local-ref
+  ([x]
+   (local-ref x 4))
+  ([x depth]
+   (cheapest-ref [(brange-ref x)
+                  (repeat-ref x)
+                  (insert-ref x depth)
+                  (value-ref x)])))
 
 (defn- vector-diff
   [xs]
@@ -250,7 +303,9 @@
 (defn- cumsum-candidate
   [g node-id xs _opts]
   (when-let [diffs (vector-diff xs)]
-    (candidate-from-refs g node-id op/cumsum [(local-ref diffs)] :cumsum)))
+    (let [diff-ref (simple-local-ref diffs)]
+      (when (structured-ref? diff-ref)
+        (candidate-from-refs g node-id op/cumsum [diff-ref] :cumsum)))))
 
 (defn- map-negate-candidate
   [g node-id xs _opts]

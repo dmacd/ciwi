@@ -1,7 +1,7 @@
 (ns ciwi.alice-test
   (:require [ciwi.alice :as sut]
             [clojure.set :as set]
-            [clojure.test :refer [deftest is]]))
+            [clojure.test :refer [deftest is testing]]))
 
 (defn- run-comparison
   ([task]
@@ -36,6 +36,54 @@
          (for [mode [:exhaustive :bounded]
                expr (vals (get-in comparison [mode :selected]))]
            (expression-operator-ids expr))))
+
+(defn- increasing-runs
+  [n]
+  (vec (mapcat (fn [x]
+                 (concat (repeat x 123) [64]))
+               (range n))))
+
+(def mirrored-sequence-cases
+  [{:name "simple_repeat"
+    :target (vec (take 20 (cycle [140 -50])))
+    :required #{:repeat}
+    :exact [:repeat 10 [140 -50]]}
+   {:name "insert_repeat"
+    :target (vec (concat (repeat 10 45)
+                         (repeat 25 87)))
+    :required #{:insert :repeat}
+    :exact [:insert [:brange 0 10] 45 [:repeat 25 [87]]]}
+   {:name "insert_repeat2"
+    :target (vec (concat (repeat 10 45)
+                         (repeat 25 87)
+                         (repeat 61 164)))
+    :required #{:insert :repeat}
+    :forbidden #{:cumsum}
+    :exact [:insert [:brange 0 35]
+            [:insert [:brange 0 10] 45 [:repeat 25 [87]]]
+            [:repeat 61 [164]]]}
+   {:name "insert_repeat3"
+    :target (vec (concat (repeat 10 45)
+                         (take 50 (cycle [87 62]))
+                         (repeat 61 164)))
+    :required #{:insert :repeat}
+    :forbidden #{:cumsum}}
+   {:name "repeat_with_noise"
+    :target (vec (concat (repeat 20 45)
+                         [-1]
+                         (repeat 40 45)))
+    :required #{:insert :repeat}
+    :exact [:insert [20] -1 [:repeat 60 [45]]]}
+   {:name "sprinkled"
+    :target (assoc (vec (repeat 40 0)) 3 1 17 1 31 1)
+    :required #{:insert :repeat}}
+   {:name "increasing_runs"
+    :target (increasing-runs 9)
+    :required #{:insert :repeat}}
+   {:name "map_negate"
+    :target (vec (map - (range 20)))
+    :required #{:brange :mult}
+    :exact [:mult [:brange 0 20] -1]}])
 
 (deftest alice-basic-operator-basis-matches-python-test-alice
   (is (= [:map :fix :brange :add :mult :negate :concat :repeat
@@ -88,6 +136,27 @@
            (get-in results [5 :exhaustive :selected :target0])))
     (is (= [:cumsum [:brange 0 6]]
            (get-in results [6 :exhaustive :selected :target0])))))
+
+(deftest alice-mirrors-python-sequence-task-compression-subset
+  (doseq [{:keys [name target required forbidden exact]} mirrored-sequence-cases]
+    (testing name
+      (let [task (sut/compression-task [target]
+                                       {:name name
+                                        :threshold-rate 1.0})
+            result (run-comparison task {:bounded-opts {:parallel? true
+                                                        :re-eval-budget 256}
+                                         :exhaustive-opts {:parallel? false}})
+            selected (get-in result [:exhaustive :selected :target0])
+            selected-ops (selected-operator-ids result)]
+        (is (:same-selected? result))
+        (is (:same-dl? result))
+        (is (:meets-threshold? result))
+        (is (set/subset? selected-ops (set sut/basic-operator-ids)))
+        (is (set/subset? required selected-ops))
+        (when (seq forbidden)
+          (is (empty? (set/intersection forbidden selected-ops))))
+        (when exact
+          (is (= exact selected)))))))
 
 
 (deftest alice-domain-runs-task-comparisons
