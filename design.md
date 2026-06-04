@@ -53,9 +53,12 @@ initial DL, compressed DL, compression rate, selected target expressions,
 resources, and threshold status. Alice parity tests use selected expressions and
 bounded-vs-exhaustive agreement as evidence; they do not assert private helper
 routine behavior or exact Python floating DL constants. The sequence parity
-matrix now uses Python `test_alice.py` target sizes. Rows that are too slow or
-less compressive are tracked explicitly rather than replaced by scaled-down
-fixtures. The detailed task-by-task status, solution, and timing matrix lives in
+matrix now uses Python `test_alice.py` target sizes. The core Alice enum path is
+currently marked pending: by default CIWI installs no rewrite operators, so the
+Alice harness cannot accidentally prove parity with local recognizer templates.
+The immediate roadmap is to port Python Wunderbaum/Alice directly first, before
+adding CIWI-specific local bounded rewrite behavior. The detailed task-by-task
+status, Python solution data, and prior opt-in recognizer baseline live in
 `alice-test-parity.md`.
 
 The Alice parity operator basis is the one used by Python
@@ -69,11 +72,11 @@ Current Alice-style behavior coverage:
 
 | Alice task class | CIWI proof status | Remaining gap |
 | --- | --- | --- |
-| arithmetic range / affine / negated range | Covered at Python sequence scale for `simply_linear` and `map_negate` in `ciwi.alice-test` | None for Clojure-native vectors under current operators. |
-| motif repeat | Covered at Python sequence scale for `simple_repeat` in `ciwi.alice-test` | None for the current vector/string motif repeat operator. |
-| insert/repeat sequences | Covered at Python sequence scale for `insert_repeat`, `insert_repeat2`, `insert_repeat3`, and `repeat_with_noise` in `ciwi.alice-test` | `insert_repeat3` gets the right local edit family but weaker CIWI DL compression than Python's threshold because the nested alternating content is not yet compressed as strongly. |
-| sparse sprinkling | Full Python-scale target is represented exactly in `ciwi.alice-test`; current CIWI solution is `insert` over repeated rest | The prior 84s runtime was caused by a CIWI-only unconditioned `concat` split template. That template was removed because Python `Concat` only supports conditioned inverses. CIWI still runs slower than Python on this row. |
-| increasing-run sequences | Full Python-scale target is represented exactly in `ciwi.alice-test`; current CIWI solution is `insert` over repeated rest | CIWI now runs but leaves the marker positions raw. Python compresses that child with a double-`cumsum` subgraph. Remaining runtime is dominated by legitimate `Repeat`/`CumSum` inversion scans. |
+| arithmetic range / affine / negated range | Target cases represented at Python scale; core enum pending | Previous opt-in recognizer runs compressed these, but that is not Alice parity. The next proof needs operator-DAG enumeration over `brange`, `mult`, `add`, and related inverses. |
+| motif repeat | Target case represented at Python scale; core enum pending | Previous opt-in recognizer runs found the motif repeat directly. The core enum must derive it from the Alice operator basis under resource bounds. |
+| insert/repeat sequences | Target cases represented at Python scale; core enum pending | Needs the same `insert`/`repeat`/child-compression search Python Alice performs, without local value recognizer shortcuts. |
+| sparse sprinkling | Full Python-scale target represented exactly; core enum pending | The prior 84s runtime was caused by a CIWI-only unconditioned `concat` split template. That template was removed because Python `Concat` only supports conditioned inverses; recognizer timing is now only a baseline. |
+| increasing-run sequences | Full Python-scale target represented exactly; core enum pending | Python compresses marker positions with a double-`cumsum` subgraph. CIWI needs bounded operator-DAG enumeration to reproduce that behavior. |
 | scalar/vector regression | Partially covered below Alice through optimizer tests | Needs optimizer-backed graph compression wired into `ciwi.alice`. |
 | matrix regression / classification | Not covered at Alice level | Needs dot/sum/sub/threshold/free-value optimization integrated with task search. |
 
@@ -211,7 +214,10 @@ narrow so it can be replaced with reducers, agents, virtual-thread executors,
 or core.async workers without changing rewrite semantics.
 
 `ciwi.search/rewrite-search` composes explicit `ciwi.rewrite/RewriteOperator`
-values and returns structured search data rather than a bare candidate vector:
+values and returns structured search data rather than a bare candidate vector.
+If `:rewrite-operators` is omitted, the operator set is empty. Callers must opt
+into recognizers, graph-edit enumeration, or future Alice/Wunderbaum enumeration
+explicitly:
 
 ```clojure
 {:rewrite-operator-ids [:primitive-templates :bounded-enum]
@@ -239,7 +245,7 @@ full search result, per-step resource accounting, trace data, and DL before and
 after applying the rewrite. Fixed-point runs also retain `:terminal-search` and
 `:terminal-resource` for the final no-candidate search.
 
-## Current Rewrite Templates
+## Opt-In Local Recognizer Templates
 
 The first templates are intentionally simple but useful for proving the loop:
 
@@ -252,6 +258,8 @@ The first templates are intentionally simple but useful for proving the loop:
 
 Each template can be detected from a local value. Templates are intentionally
 small local candidate rules; search sees them through `rewrite/template-operator`.
+They are disabled by default and are not used to claim Alice parity. Tests that
+exercise them pass `(rewrite/primitive-template-operator)` explicitly.
 `map` and `concat` remain Alice-basis operators, but the primitive template
 sweep does not invent unconditioned `map :negate` or arbitrary `concat` splits:
 Python `Map` requires a conditioned callable and Python `Concat` requires one
@@ -375,6 +383,48 @@ a candidate is reused. The helper `rank-usage-biased-items` keeps this as pure
 data transformation over maps with `:dl` and `:count`. That is the reusable piece
 needed for later amortized proposal ranking; it does not couple local graph
 rewriting to Python's mutable DAG heap.
+
+## Wunderbaum Roadmap
+
+Python WILLIAM's Wunderbaum is the mechanism CIWI still needs for core Alice
+parity. It is not a local value recognizer. It is an operator-DAG enumeration
+and propagation path: enumerate candidate DAG shapes from the Alice operator
+basis under resource bounds, respect each operator's conditions/inverses, reuse
+conditioned or local values where possible, delay materializing graph nodes until
+a candidate is selected, and score candidates by graph DL.
+
+The existing `ciwi.enumerative-rewrite` and `ciwi.graph-rewrite` namespaces are
+useful infrastructure, but they are not a Wunderbaum port. They enumerate
+forward expressions or graph edits from configured operands and literals.
+
+The high-level plan is deliberately staged:
+
+1. Port Python Wunderbaum as directly as possible. Preserve the Python concepts
+   before imposing CIWI's local bounded rewrite shape: operator/count inputs,
+   elements indexed by conditioned specs, node-tuple enumeration, delayed DAG
+   build, propagation/inversion, bottleneck scoring, and the Alice task loop.
+   The operator registry must be injected as a dependency; no Wunderbaum layer
+   should default to or hardcode `ciwi.alice/basic-operator-registry`. This phase
+   may expose a task-level API rather than a polished `RewriteOperator` if that
+   keeps parity clearer.
+2. Drive that port against the relevant Python parity tests at Python scale.
+   Failures in this phase are translation gaps, not opportunities to add
+   recognizer shortcuts. Fixes should land in Wunderbaum, Alice orchestration,
+   basic operators/inverses, propagation, delayed building, bottleneck/MDL, or
+   graph data structures as appropriate.
+3. After parity is credible, adapt the working Wunderbaum core into CIWI's local
+   resource-bounded rewrite model. At that point it should become a first-class
+   `RewriteOperator` that respects focused nodes, caller-supplied local
+   neighborhoods, explicit operator registries, and resource budgets such as
+   frontier pops, materializations, candidate count, propagation work, and local
+   graph edit size.
+
+Outer loops for library compression, template extraction, amortization, or
+learned proposal biasing stay outside both the parity port and the later local
+rewrite operator. They may produce new composites or new rewrite
+operators/templates later, but a single Alice task search remains graph
+compression under the supplied operator set and resource controls for that
+phase.
 
 ## Graph-Edit Enumeration
 

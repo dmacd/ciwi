@@ -1,6 +1,5 @@
 (ns ciwi.alice-test
   (:require [ciwi.alice :as sut]
-            [clojure.set :as set]
             [clojure.test :refer [deftest is testing]]))
 
 (defn- run-comparison
@@ -9,33 +8,6 @@
                                                  :re-eval-budget 64}}))
   ([task opts]
    (sut/run-task-comparison task opts)))
-
-(defn- expression-operator-ids
-  [expr]
-  (cond
-    (and (vector? expr)
-         (seq expr)
-         (contains? sut/basic-operator-registry (first expr)))
-    (apply set/union
-           #{(first expr)}
-           (map expression-operator-ids (rest expr)))
-
-    (sequential? expr)
-    (apply set/union #{} (map expression-operator-ids expr))
-
-    (contains? sut/basic-operator-registry expr)
-    #{expr}
-
-    :else
-    #{}))
-
-(defn- selected-operator-ids
-  [comparison]
-  (apply set/union
-         #{}
-         (for [mode [:exhaustive :bounded]
-               expr (vals (get-in comparison [mode :selected]))]
-           (expression-operator-ids expr))))
 
 (defn- simple-repeat-target
   []
@@ -96,101 +68,97 @@
 
 (def python-sequence-parity-cases
   [{:name "simple_repeat"
-    :status :covered
+    :status :pending-core-enum
     :length 1000
     :target-fn simple-repeat-target
     :python-threshold-rate 94.0
     :ciwi-threshold-rate 1.0
     :python-serial-ms 1061
-    :observed-ciwi-ms 87
+    :recognizer-ciwi-ms 87
     :required #{:repeat}
-    :exact [:repeat 500 [140 -50]]}
+    :recognizer-solution [:repeat 500 [140 -50]]}
    {:name "insert_repeat"
-    :status :covered
+    :status :pending-core-enum
     :length 350
     :target-fn insert-repeat-target
     :python-threshold-rate 92.0
     :ciwi-threshold-rate 1.0
     :python-serial-ms 51
-    :observed-ciwi-ms 18
+    :recognizer-ciwi-ms 18
     :required #{:insert :repeat}
-    :exact [:insert [:brange 0 100] 45 [:repeat 250 [87]]]}
+    :recognizer-solution [:insert [:brange 0 100] 45 [:repeat 250 [87]]]}
    {:name "insert_repeat2"
-    :status :covered
+    :status :pending-core-enum
     :length 645
     :target-fn insert-repeat2-target
     :python-threshold-rate 92.0
     :ciwi-threshold-rate 1.0
     :python-serial-ms 44
-    :observed-ciwi-ms 23
+    :recognizer-ciwi-ms 23
     :required #{:insert :repeat}
     :forbidden #{:cumsum}
-    :exact [:insert [:brange 0 35]
-            [:insert [:brange 0 10] 45 [:repeat 25 [87]]]
-            [:repeat 610 [164]]]}
+    :recognizer-solution [:insert [:brange 0 35]
+                          [:insert [:brange 0 10] 45 [:repeat 25 [87]]]
+                          [:repeat 610 [164]]]}
    {:name "insert_repeat3"
-    :status :covered
+    :status :pending-core-enum
     :length 1210
     :target-fn insert-repeat3-target
     :python-threshold-rate 93.0
     :ciwi-threshold-rate 1.0
     :python-serial-ms 10677
-    :observed-ciwi-ms 105
+    :recognizer-ciwi-ms 105
     :required #{:insert :repeat}
     :forbidden #{:cumsum}}
    {:name "repeat_with_noise"
-    :status :covered
+    :status :pending-core-enum
     :length 501
     :target-fn repeat-with-noise-target
     :python-threshold-rate 90.0
     :ciwi-threshold-rate 1.0
     :python-serial-ms 6
-    :observed-ciwi-ms 16
+    :recognizer-ciwi-ms 16
     :required #{:insert :repeat}
-    :exact [:insert [100] -1 [:repeat 500 [45]]]}
+    :recognizer-solution [:insert [100] -1 [:repeat 500 [45]]]}
    {:name "simply_linear"
-    :status :covered
+    :status :pending-core-enum
     :length 1000
     :target-fn simply-linear-target
     :python-threshold-rate 97.0
     :ciwi-threshold-rate 1.0
     :python-serial-ms 12
-    :observed-ciwi-ms 122
+    :recognizer-ciwi-ms 122
     :required #{:brange :mult :add}
-    :exact [:add [:mult [:brange 0 1000] 6] -18]}
+    :recognizer-solution [:add [:mult [:brange 0 1000] 6] -18]}
    {:name "sprinkled"
-    :status :covered
+    :status :pending-core-enum
     :length 10000
     :target-fn sprinkled-target
     :python-threshold-rate 75.0
     :ciwi-threshold-rate 1.0
     :python-serial-ms 6
-    :observed-ciwi-ms 249
+    :recognizer-ciwi-ms 249
     :required #{:insert :repeat}
     :performance-note "Prior runtime was roughly 84s due to CIWI-only unconditioned concat split enumeration; current runtime is still slower than Python."}
    {:name "increasing_runs"
-    :status :performance-gap
+    :status :pending-core-enum
     :length 125250
     :target-fn increasing-runs-target
     :python-threshold-rate 99.9
     :python-serial-ms 88
-    :observed-ciwi-ms 2705
+    :recognizer-ciwi-ms 2705
     :required #{:insert :repeat}
     :performance-note "Current CIWI run completes, but remains slower and less compressed than Python because marker indices stay raw."}
    {:name "map_negate"
-    :status :covered
+    :status :pending-core-enum
     :length 1000
     :target-fn map-negate-target
     :python-threshold-rate 98.0
     :ciwi-threshold-rate 1.0
     :python-serial-ms 12
-    :observed-ciwi-ms 66
+    :recognizer-ciwi-ms 66
     :required #{:brange :mult}
-    :exact [:mult [:brange 0 1000] -1]}])
-
-(defn- covered-parity-case?
-  [case]
-  (= :covered (:status case)))
+    :recognizer-solution [:mult [:brange 0 1000] -1]}])
 
 (defn- task-from-parity-case
   [{:keys [name target-fn ciwi-threshold-rate python-threshold-rate]}]
@@ -211,48 +179,53 @@
           "repeat_with_noise" "simply_linear" "sprinkled" "increasing_runs"
           "map_negate"]
          (mapv :name python-sequence-parity-cases)))
-  (is (= #{:covered :performance-gap}
+  (is (= #{:pending-core-enum}
          (set (map :status python-sequence-parity-cases))))
   (doseq [{:keys [name status length target-fn python-threshold-rate
-                  performance-note]} python-sequence-parity-cases]
+                  python-serial-ms recognizer-ciwi-ms performance-note]}
+          python-sequence-parity-cases]
     (testing name
       (is (= length (count (target-fn))))
+      (is (= :pending-core-enum status))
       (is (number? python-threshold-rate))
-      (when (= :performance-gap status)
-        (is (seq performance-note))))))
+      (is (number? python-serial-ms))
+      (is (number? recognizer-ciwi-ms))
+      (when (seq performance-note)
+        (is (string? performance-note))))))
 
-(deftest alice-mirrors-python-sequence-task-compression
-  (doseq [{:keys [name required forbidden exact] :as case}
-          (filter covered-parity-case? python-sequence-parity-cases)]
-    (testing name
-      (let [task (task-from-parity-case case)
-            result (run-comparison task {:bounded-opts {:parallel? true
-                                                        :re-eval-budget 256}
-                                         :exhaustive-opts {:parallel? false}})
-            selected (get-in result [:exhaustive :selected :target0])
-            selected-ops (selected-operator-ids result)]
-        (is (:same-selected? result))
-        (is (:same-dl? result))
-        (is (:meets-threshold? result))
-        (is (set/subset? selected-ops (set sut/basic-operator-ids)))
-        (is (set/subset? required selected-ops))
-        (when (seq forbidden)
-          (is (empty? (set/intersection forbidden selected-ops))))
-        (when exact
-          (is (= exact selected)))))))
+(deftest alice-default-search-does-not-use-recognizer-templates
+  (let [case (first python-sequence-parity-cases)
+        task (task-from-parity-case case)
+        result (run-comparison task {:bounded-opts {:parallel? true
+                                                    :re-eval-budget 256}
+                                     :exhaustive-opts {:parallel? false}})
+        expected-target ((:target-fn case))]
+    (is (:same-selected? result))
+    (is (:same-dl? result))
+    (is (false? (:meets-threshold? result)))
+    (is (= expected-target (get-in result [:exhaustive :selected :target0])))
+    (is (= expected-target (get-in result [:bounded :selected :target0])))
+    (is (empty? (get-in result [:exhaustive :result :history])))
+    (is (empty? (get-in result [:bounded :result :history])))
+    (is (zero? (get-in result [:exhaustive :resource :rewrite-operators-considered])))
+    (is (zero? (get-in result [:bounded :resource :rewrite-operators-considered])))))
 
 
 (deftest alice-domain-runs-task-comparisons
   (let [domain-cases (->> python-sequence-parity-cases
                           (filter (comp #{"simple_repeat" "map_negate"} :name)))
         domain (sut/task-domain
-                "python-sequence-covered-subset"
+                "python-sequence-pending-core-enum-subset"
                 (mapv task-from-parity-case domain-cases)
                 {:opts {:bounded-opts {:parallel? false
                                         :re-eval-budget 256}}})
         result (sut/run-domain domain)]
-    (is (= "python-sequence-covered-subset" (:domain-name result)))
+    (is (= "python-sequence-pending-core-enum-subset" (:domain-name result)))
     (is (= ["simple_repeat" "map_negate"]
            (mapv :task-name (:results result))))
     (is (every? :same-selected? (:results result)))
-    (is (every? :meets-threshold? (:results result)))))
+    (is (not-any? :meets-threshold? (:results result)))
+    (is (every? #(zero? (get-in % [:exhaustive :resource :rewrite-operators-considered]))
+                (:results result)))
+    (is (every? #(zero? (get-in % [:bounded :resource :rewrite-operators-considered]))
+                (:results result)))))

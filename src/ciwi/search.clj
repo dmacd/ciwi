@@ -15,9 +15,7 @@
 
 (defn- configured-rewrite-operators
   [{:keys [rewrite-operators]}]
-  (if (seq rewrite-operators)
-    (mapv ensure-rewrite-operator rewrite-operators)
-    [(rewrite/primitive-template-operator)]))
+  (mapv ensure-rewrite-operator (or rewrite-operators [])))
 
 (defn rewrite-search
   "Run composed rewrite operators over local value nodes."

@@ -12,10 +12,27 @@
   (-> (graph/empty-graph)
       (graph/add-value :out x)))
 
+(defn recognizer-opts
+  ([] (recognizer-opts {}))
+  ([opts]
+   (assoc opts :rewrite-operators [(rewrite/primitive-template-operator)])))
+
+(deftest rewrite-search-has-no-default-recognizer-templates
+  (let [g (one-target-graph [0 1 2 3 4 5 6 7])
+        result (sut/rewrite-search g [:out] {:parallel? false})]
+    (is (empty? (:rewrite-operator-ids result)))
+    (is (empty? (:candidates result)))
+    (is (empty? (:trace result)))
+    (is (zero? (get-in result [:resource :rewrite-operators-considered])))
+    (is (zero? (get-in result [:resource :nodes-considered])))
+    (is (zero? (get-in result [:resource :templates-considered])))))
+
 (deftest exhaustive-rewrite-compresses-arithmetic-range
   (let [g (one-target-graph [0 1 2 3 4 5 6 7])
         before (mdl/graph-dl g)
-        {:keys [graph history stopped]} (sut/exhaustive-converge g {:parallel? true})]
+        {:keys [graph history stopped]} (sut/exhaustive-converge
+                                          g
+                                          (recognizer-opts {:parallel? true}))]
     (is (= :fixed-point stopped))
     (is (= [:brange] (mapv :reason history)))
     (is (< (mdl/graph-dl graph) before))
@@ -23,9 +40,14 @@
 
 (deftest bounded-rewrites-converge-to-exhaustive-result
   (let [g (one-target-graph [0 1 2 3 4 5 6 7])
-        exhaustive (sut/exhaustive-converge g {:parallel? false})
-        bounded (sut/bounded-converge g [:out] {:parallel? true
-                                                :re-eval-budget 4})]
+        exhaustive (sut/exhaustive-converge
+                    g
+                    (recognizer-opts {:parallel? false}))
+        bounded (sut/bounded-converge
+                 g
+                 [:out]
+                 (recognizer-opts {:parallel? true
+                                   :re-eval-budget 4}))]
     (is (= (:dl exhaustive) (:dl bounded)))
     (is (= (mapv :reason (:history exhaustive))
            (mapv :reason (:history bounded))))
@@ -34,7 +56,7 @@
 
 (deftest rewrite-search-returns-structured-resource-and-trace
   (let [g (one-target-graph [0 1 2 3 4 5 6 7])
-        result (sut/rewrite-search g [:out] {:parallel? false})
+        result (sut/rewrite-search g [:out] (recognizer-opts {:parallel? false}))
         best (first (:candidates result))]
     (is (= :brange (:reason best)))
     (is (= :brange (:template-id best)))
@@ -49,20 +71,23 @@
 
 (deftest primitive-search-does-not-invent-unconditioned-concat-splits
   (let [g (one-target-graph [1 2 3 4 5 6 7 8])
-        result (sut/rewrite-search g [:out] {:parallel? false})]
+        result (sut/rewrite-search g [:out] (recognizer-opts {:parallel? false}))]
     (is (not-any? #(= :concat (:reason %)) (:candidates result)))
     (is (not-any? #(= :concat (:template-id %)) (:trace result)))))
 
 (deftest primitive-search-does-not-invent-unconditioned-map-negate
   (let [g (one-target-graph [0 -1 -2 -3 -4])
-        result (sut/rewrite-search g [:out] {:parallel? false})]
+        result (sut/rewrite-search g [:out] (recognizer-opts {:parallel? false}))]
     (is (not-any? #(= :map-negate (:reason %)) (:candidates result)))
     (is (not-any? #(= :map-negate (:template-id %)) (:trace result)))))
 
 (deftest bounded-converge-records-step-and-terminal-resource
   (let [g (one-target-graph [0 1 2 3 4 5 6 7])
-        result (sut/bounded-converge g [:out] {:parallel? false
-                                               :re-eval-budget 4})
+        result (sut/bounded-converge
+                g
+                [:out]
+                (recognizer-opts {:parallel? false
+                                  :re-eval-budget 4}))
         first-step (first (:steps result))]
     (is (= 1 (count (:history result))))
     (is (= 1 (count (:steps result))))
@@ -77,9 +102,14 @@
 
 (deftest repeated-bounded-local-rewrites-reach-fixed-point
   (let [g (one-target-graph [0 1 2 3 4 5 6 7 8 9])
-        exhaustive (sut/exhaustive-converge g {:parallel? false})
-        bounded (sut/bounded-converge g [:out] {:parallel? true
-                                                :re-eval-budget 8})]
+        exhaustive (sut/exhaustive-converge
+                    g
+                    (recognizer-opts {:parallel? false}))
+        bounded (sut/bounded-converge
+                 g
+                 [:out]
+                 (recognizer-opts {:parallel? true
+                                   :re-eval-budget 8}))]
     (is (= (:dl exhaustive) (:dl bounded)))
     (is (= :fixed-point (:stopped bounded)))
     (is (seq (:history bounded)))))
@@ -89,9 +119,14 @@
   (let [g (-> (graph/empty-graph)
               (graph/add-value :range [0 1 2 3 4 5])
               (graph/add-value :flat [9 9 9 9 9 9]))
-        exhaustive (sut/exhaustive-converge g {:parallel? false})
-        bounded (sut/bounded-converge g [:range :flat] {:parallel? true
-                                                        :re-eval-budget 1})]
+        exhaustive (sut/exhaustive-converge
+                    g
+                    (recognizer-opts {:parallel? false}))
+        bounded (sut/bounded-converge
+                 g
+                 [:range :flat]
+                 (recognizer-opts {:parallel? true
+                                   :re-eval-budget 1}))]
     (is (= (:dl exhaustive) (:dl bounded)))
     (is (= (mdl/selected-operators (:graph exhaustive) :range)
            (mdl/selected-operators (:graph bounded) :range)))
