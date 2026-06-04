@@ -426,6 +426,19 @@ operators/templates later, but a single Alice task search remains graph
 compression under the supplied operator set and resource controls for that
 phase.
 
+The first CIWI Wunderbaum slice lives in `ciwi.wunderbaum`. It intentionally
+stays outside `ciwi.search/RewriteOperator` for now. It already has the pieces
+needed to validate the translation path in isolation: injected operator
+registry, operator/count declarations with explicit input/output specs,
+Python-style generalized conditions, effective operator DL from usage counts,
+graph-wide node-tuple enumeration, delayed DAG build, operator inversion, and
+MDL-selected materialized results. `ciwi.alice-wunderbaum` adds the first
+Alice-facing runner over that core with an explicit declaration table for the
+Python `test_alice.py` operator basis. The runner still requires an injected
+registry and does not change the default `ciwi.alice` no-recognizer harness.
+This is not yet the full Python Alice loop, does not run the numeric optimizer,
+and does not impose local bounded rewrite semantics.
+
 ## Graph-Edit Enumeration
 
 `ciwi.graph-rewrite` is the graph-native bounded rewrite operator. Instead of

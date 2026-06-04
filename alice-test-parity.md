@@ -91,3 +91,11 @@ Wunderbaum into the local resource-bounded rewrite model. The bounded version
 can then become a `RewriteOperator` that respects focused neighborhoods,
 resource budgets, and incremental/local graph edit constraints. Until then,
 recognizer-template results remain a baseline only, not parity evidence.
+
+Current implementation checkpoint: `ciwi.wunderbaum` contains the first
+task-level frontier/materialization slice with injected registries,
+operator/count declarations, conditioned-spec indexing, delayed graph building,
+operator inversion, and MDL-selected yielded graphs. `ciwi.alice-wunderbaum`
+adds an explicit Alice-basis declaration table and a separate runner over that
+core. It is not wired into the default `ciwi.alice` harness, and the
+Python-scale Alice rows above remain pending.

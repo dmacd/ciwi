@@ -118,18 +118,15 @@
         (sort-by (comp pr-str first))
         vec)])
 
-(defn- unseen?
-  [seen result]
-  (let [k (result-key result)]
-    (cond
-      (nil? seen) true
-      (instance? clojure.lang.IAtom seen)
-      (let [already? (contains? @seen k)]
-        (when-not already?
-          (swap! seen conj k)
-          true))
-      (set? seen) (not (contains? seen k))
-      :else true)))
+(defn- dedupe-results
+  [seen results]
+  (reduce (fn [[seen emitted] result]
+            (let [k (result-key result)]
+              (if (contains? seen k)
+                [seen emitted]
+                [(conj seen k) (conj emitted result)])))
+          [(or seen #{}) []]
+          results))
 
 (defn- forward-build
   [g memory {:keys [operator arity]} positions]
@@ -182,6 +179,31 @@
                :root output-id
                :operator-id op-id})))))))
 
+(defn- raw-delayed-dag-build
+  [build-info elements-by-key {:keys [registry]
+                               :or {registry op/registry}}]
+  (let [element (selected-element build-info elements-by-key registry)
+        positions (position-map (:gen-cond element) (:conditioned-nodes build-info))
+        g (:graph build-info)
+        memory (:memory build-info)
+        results (if (contains? positions :output)
+                  (inverse-builds g memory element positions)
+                  (when-let [result (forward-build g memory element positions)]
+                    [result]))]
+    (vec results)))
+
+(defn delayed-dag-build-with-seen
+  "Like `delayed-dag-build`, but returns the updated functional seen set."
+  ([build-info elements-by-key seen]
+   (delayed-dag-build-with-seen build-info elements-by-key seen {}))
+  ([build-info elements-by-key seen opts]
+   (let [[seen results] (dedupe-results seen
+                                        (raw-delayed-dag-build build-info
+                                                               elements-by-key
+                                                               opts))]
+     {:seen seen
+      :results results})))
+
 (defn delayed-dag-build
   "Attach one delayed graph element to the conditioned nodes in `build-info`.
 
@@ -192,19 +214,11 @@
   DAG-shared inputs such as `mult(d, d)`.
   "
   ([build-info elements-by-key]
-   (delayed-dag-build build-info elements-by-key nil {}))
+   (raw-delayed-dag-build build-info elements-by-key {}))
   ([build-info elements-by-key seen]
    (delayed-dag-build build-info elements-by-key seen {}))
-  ([build-info elements-by-key seen {:keys [registry]
-                                     :or {registry op/registry}}]
-   (let [element (selected-element build-info elements-by-key registry)
-         positions (position-map (:gen-cond element) (:conditioned-nodes build-info))
-         g (:graph build-info)
-         memory (:memory build-info)
-         results (if (contains? positions :output)
-                   (inverse-builds g memory element positions)
-                   (when-let [result (forward-build g memory element positions)]
-                     [result]))]
-     (->> results
-          (filter #(unseen? seen %))
-          vec))))
+  ([build-info elements-by-key seen opts]
+   (:results (delayed-dag-build-with-seen build-info
+                                          elements-by-key
+                                          seen
+                                          opts))))

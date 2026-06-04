@@ -37,7 +37,7 @@
                               :conditioned-nodes [:d]
                               :condition-key [:array]})
         element (sut/graph-element op/negate [0] {:arity 1})
-        [result] (sut/delayed-dag-build info {[:array] [element]} (atom #{}))]
+        [result] (sut/delayed-dag-build info {[:array] [element]} #{})]
     (is (map? result))
     (is (= [-2 -3 -4]
            (graph/value-data (:graph result) (:root result))))
@@ -54,7 +54,7 @@
                               :conditioned-nodes [:d :d]
                               :condition-key [:array :array]})
         element (sut/graph-element op/mult [0 1] {:arity 2})
-        [result] (sut/delayed-dag-build info {[:array :array] [element]} (atom #{}))
+        [result] (sut/delayed-dag-build info {[:array :array] [element]} #{})
         g' (:graph result)
         op-node (graph/node g' (:operator-id result))]
     (is (approx-vector= [1.0 4.84 9.0]
@@ -74,7 +74,7 @@
                               :conditioned-nodes [:out :known]
                               :condition-key [:output :known]})
         element (sut/graph-element op/add [-1 0] {:arity 2})
-        [result] (sut/delayed-dag-build info {[:output :known] [element]} (atom #{}))
+        [result] (sut/delayed-dag-build info {[:output :known] [element]} #{})
         g' (:graph result)
         op-node (graph/node g' (:operator-id result))
         generated-id (second (:children op-node))]
