@@ -4,8 +4,8 @@ This file tracks CIWI's current parity against Python WILLIAM's
 `william/tests/test_alice.py`. The goal is compression behavior parity, not
 routine-by-routine helper parity.
 
-Status as of this checkpoint: core Alice enum parity is pending. CIWI now
-installs no rewrite operators by default, so the Alice harness does not use
+Status as of code checkpoint `45cd03a`: core Alice enum parity is pending. CIWI
+now installs no rewrite operators by default, so the Alice harness does not use
 local recognizer templates unless a caller opts in explicitly. A default Alice
 run therefore has 0.0 percent compression today. That is intentional until the
 Python Wunderbaum/Alice path has been ported and validated.
@@ -77,25 +77,13 @@ Debugging conclusions retained from the recognizer baseline:
   be solved by adding more recognizers. They should be revisited after the core
   operator-DAG enum is in place.
 
-## Roadmap
+## Current Core Evidence
 
-The next step is a straight Clojure port of Python Wunderbaum and the Alice path
-that uses it. This first version should preserve the Python search architecture:
-operator/count inputs, conditioned-spec indexing, node-tuple enumeration,
-delayed DAG building, propagation/inversion, bottleneck scoring, and
-`test_alice.py` task behavior. The operator registry must be injected by the
-caller rather than defaulted or hardcoded.
+The active core implementation checkpoint is `ciwi.wunderbaum` plus
+`ciwi.alice-wunderbaum`. That path contains the first task-level
+frontier/materialization slice with injected registries, operator/count
+declarations, conditioned-spec indexing, delayed graph building, operator
+inversion, and MDL-selected yielded graphs. It is not wired into the default
+`ciwi.alice` harness, and the Python-scale Alice rows above remain pending.
 
-Only after that port passes the relevant Python parity tests should CIWI adapt
-Wunderbaum into the local resource-bounded rewrite model. The bounded version
-can then become a `RewriteOperator` that respects focused neighborhoods,
-resource budgets, and incremental/local graph edit constraints. Until then,
-recognizer-template results remain a baseline only, not parity evidence.
-
-Current implementation checkpoint: `ciwi.wunderbaum` contains the first
-task-level frontier/materialization slice with injected registries,
-operator/count declarations, conditioned-spec indexing, delayed graph building,
-operator inversion, and MDL-selected yielded graphs. `ciwi.alice-wunderbaum`
-adds an explicit Alice-basis declaration table and a separate runner over that
-core. It is not wired into the default `ciwi.alice` harness, and the
-Python-scale Alice rows above remain pending.
+Project sequencing and next implementation steps live in `PLAN.md`.

@@ -1,0 +1,453 @@
+# CIWI Design
+
+CIWI is a Clojure proof of concept for WILLIAM-style compression. The design is
+not a transliteration of the Python object graph. CIWI uses persistent values,
+pure graph transforms, explicit candidate data, and narrow search interfaces
+that can be parallelized or replaced without changing graph semantics.
+
+## Scope
+
+The current proof target is compression behavior parity with Python
+WILLIAM/Alice, especially the behavior exercised by
+`william/tests/test_alice.py`. Routine-by-routine helper compatibility is not a
+goal unless the helper is required for graph compression, propagation,
+bottleneck/MDL selection, delayed graph construction, operator inversion, or
+Alice task behavior.
+
+The Alice parity operator basis is the Python `test_alice.py` basis: `Map`,
+`Fix`, `BRange`, `Add`, `Mult`, `Negate`, `Concat`, `Repeat`, `GetItem`,
+`Insert`, `CumSum`, `LessThan`, and `Equal`. Operators outside that basis can
+exist for infrastructure tests, but they are not evidence for Alice parity.
+
+## Basic Data Structure Examples
+
+These examples show the concrete Clojure shapes that the design prose refers to.
+The printed record names are not contractual APIs; the map keys and constructor
+functions are the important part.
+
+A value is data plus optional metadata used by search and propagation:
+
+```clojure
+(value/value [0 1 2 3]
+             {:name "target"
+              :spec :array-int
+              :permeable? false})
+
+;; #ciwi.value.Value{:data [0 1 2 3],
+;;                   :name "target",
+;;                   :spec :array-int,
+;;                   :permeable? false,
+;;                   :dummy? false}
+```
+
+An operator is a pure callable plus its inversion cases and description length:
+
+```clojure
+(op/operator
+ {:id :double
+  :conditions [[]]
+  :commutative? false
+  :call (fn [[x]] (* 2 x))
+  :inverse (fn [output _cond-inputs cond]
+             (when (= [] cond)
+               [[(/ output 2)]]))
+  :dl 1.0})
+```
+
+A graph is a `Graph` record whose `:nodes` map contains value-node and
+operator-node maps. This graph says the target can be described either as its
+raw value or as `(brange 0 4)`:
+
+```clojure
+(-> (graph/empty-graph)
+    (graph/add-value :target [0 1 2 3])
+    (graph/add-value :start 0)
+    (graph/add-value :stop 4)
+    (graph/add-operator :target-brange op/brange :target [:start :stop]))
+
+;; Shape of (:nodes graph):
+{:nodes
+ {:target {:id :target
+           :kind :value
+           :value (value/value [0 1 2 3])
+           :parents []
+           :options [:target-brange]}
+  :start {:id :start
+          :kind :value
+          :value (value/value 0)
+          :parents [:target-brange]
+          :options []}
+  :stop {:id :stop
+         :kind :value
+         :value (value/value 4)
+         :parents [:target-brange]
+         :options []}
+  :target-brange {:id :target-brange
+                  :kind :operator
+                  :operator op/brange
+                  :parent :target
+                  :children [:start :stop]}}}
+```
+
+Propagation memory is keyed by graph node id. Each entry carries the known value
+at that node; `nil` data means the value is unknown, not that the node is absent:
+
+```clojure
+{:target (propagation/entry [0 1 2 3])
+ :start (propagation/entry nil)
+ :target-brange (propagation/->MapEntry false op/brange)}
+```
+
+A rewrite candidate is explicit edit data. Child refs can materialize raw
+values, reuse existing local nodes, or inline nested generated edits:
+
+```clojure
+{:node-id :target
+ :op op/brange
+ :child-refs [(rewrite/value-ref 0)
+              (rewrite/value-ref 4)]
+ :before 18.0
+ :after 7.0
+ :delta -11.0
+ :reason :brange}
+
+{:kind :node :node-id :start}
+
+{:kind :edit
+ :op op/mult
+ :child-refs [(rewrite/node-ref :range)
+              (rewrite/value-ref 6)]
+ :value [0 6 12 18]
+ :dl 12.0}
+```
+
+A rewrite search result is structured data, not just a candidate vector:
+
+```clojure
+{:node-ids [:target]
+ :requested-node-ids [:target]
+ :rewrite-operator-ids [:bounded-enum]
+ :candidates [...]
+ :resource {:rewrite-operators-considered 1
+            :nodes-requested 1
+            :nodes-considered 1
+            :candidates-proposed 12
+            :candidates-accepted 1
+            :generated-edits 64}
+ :trace [{:kind :rewrite-operator
+          :rewrite-operator-id :bounded-enum
+          :resource {...}}]}
+```
+
+Alice tasks are plain records over target values, optional free values, and
+threshold metadata:
+
+```clojure
+(def small-range-task
+  (alice/compression-task
+   [[0 1 2 3 4]]
+   {:name "small-range"
+    :threshold-rate 80.0
+    :free-values []
+    :solutions {:python "(Array[int] (cumsum ...))"}}))
+
+(alice/task-domain "alice-core" [small-range-task])
+```
+
+Wunderbaum receives an injected registry and explicit operator declarations.
+The declaration table is the near-term Clojure equivalent of Python operator
+spec indexing:
+
+```clojure
+(wunderbaum/wunderbaum
+ {:registry {:brange op/brange}
+  :ops-with-counts [{:op :brange
+                     :count 0
+                     :input-specs [:int :int]
+                     :output-spec :array-int}]})
+
+{:dl 11.0
+ :graph ...
+ :selected {:target0 [:brange 0 4]}
+ :memory {:target0 (propagation/entry [0 1 2 3])}}
+```
+
+## Graph Model
+
+The graph keeps WILLIAM's bipartite shape:
+
+- value nodes contain `ciwi.value/Value`
+- operator nodes contain `ciwi.operator/Operator`
+- a value node has zero or more operator `:options`
+- an operator has one parent value and zero or more child values
+
+Nodes are maps inside an immutable `Graph` record. Edges are ids rather than
+object references. A graph edit returns a new graph.
+
+`:options` are alternative descriptions for a value, not simultaneously chosen
+subgraphs. The selected graph is derived by MDL selection. A global shared-DAG
+minimizer must walk the selected option tree and charge shared selected value
+nodes once; it must not trim by naively keeping every option under every node.
+
+## Propagation
+
+Propagation treats an entry whose value data is `nil` as unknown, matching
+Python WILLIAM's `Value(None)` behavior. Such entries may be present for
+shape/spec bookkeeping, but they do not trigger upward execution or downward
+inversion. Nested propagation branches over operators that can fire, and partial
+propagation can return the best currently known memory when no remaining
+operator is executable.
+
+Primitive operators are immutable `ciwi.operator/Operator` records with pure
+forward and inverse functions. Conservative inverse behavior is preferred:
+unknowns stay unknown, constraints validate known values, and unresolved local
+equations produce no inverse result rather than fabricating symbolic values.
+
+## Core Operators
+
+Alice-basis sequence semantics follow Python `test_alice.py`: `brange` is
+`(start stop)`, `repeat` is `(repetitions motif)`, `map` accepts an operator
+keyword/record as its callable child, `insert` partitions output into inserted
+indices/content/rest, and `cumsum` inverts by first differences.
+
+CIWI also contains broader sequence-edit and boolean infrastructure where it is
+useful for graph rewrite tests. Those operators are available to callers that
+inject them, but they are not part of the default Alice parity claim unless the
+Python Alice basis uses the same mechanism.
+
+## Description Length
+
+`ciwi.mdl/node-dl` computes the best local description for a value node:
+
+```text
+min(raw-value-dl,
+    op-dl + sum(best child value dls) for each operator option)
+```
+
+This is the Clojure analogue of WILLIAM's bottleneck/minimum-description
+selection, expressed as a memoized pure dynamic program. `ciwi.mdl/graph-dl`
+projects selected descriptions from all graph roots and charges each selected
+value node once, so shared selected sub-DAGs reduce global DL across a set of
+roots.
+
+CIWI intentionally does not assert Python's exact floating DL constants. The
+proof target is selected compression structure and achieved compression rate
+under CIWI's Clojure-native value codec.
+
+## Hashing
+
+`ciwi.hashing` provides deterministic ordering and positive stable hashes for
+native Clojure data. It handles nils, booleans, numbers, strings, keywords,
+symbols, vectors, lists, sets, maps, records, and classes with type-aware
+recursive keys. Value description length uses this ordering for maps and sets
+so DL is independent of hash-map or set iteration order.
+
+The same stable identity machinery is intended for library persistence,
+successful-history deduplication, and learned template/composite identity.
+
+## Rewrite Model
+
+A rewrite is explicit data:
+
+```clojure
+{:node-id :out
+ :op ciwi.operator/brange
+ :child-refs [{:kind :value :value 0}
+              {:kind :value :value 5}]
+ :before 20.0
+ :after 8.0
+ :delta -12.0
+ :reason :brange}
+```
+
+`child-refs` are normalized local graph edit operands. `{:kind :value ...}`
+materializes a fresh raw child value node. `{:kind :node ...}` reuses an
+existing local value node, including repeated references to the same child for
+DAG-style sharing. `{:kind :edit ...}` is a generated child edit that is
+materialized recursively when the parent rewrite is applied. Node refs inside
+nested edit refs are checked against the original parent so a generated local
+DAG cannot introduce a cycle.
+
+Applying a rewrite adds a new operator option under the target value. It does
+not replace or destroy the raw value. MDL selection decides whether the new
+option is better.
+
+## Search Interfaces
+
+`ciwi.search/rewrite-search` composes explicit
+`ciwi.rewrite/RewriteOperator` values and returns structured search data. If
+`:rewrite-operators` is omitted, the operator set is empty. Callers must opt
+into recognizers, graph-edit enumeration, Wunderbaum/Alice enumeration, or
+future learned proposal operators explicitly.
+
+Candidate generation is parallelizable over focused value nodes. The public
+interface exposes resource data and traces rather than a bare candidate vector
+so later template extraction, performance diagnosis, and amortization code can
+inspect successful and failed searches without rerunning them.
+
+Convergence keeps `:history` as the sequence of applied candidates and
+`:steps` as structured per-step search records. Fixed-point runs retain the
+terminal no-candidate search and resource summary.
+
+## Bounded Local Mode
+
+The bounded mode takes target value nodes and a `re-eval` budget. For each
+target it builds a breadth-first neighborhood capped by that budget, generates
+candidate rewrites only for value nodes in that neighborhood, and applies the
+best DL-decreasing candidate. Repeating this process is the local analogue of
+exhaustive compression.
+
+The local candidate scorer only inspects focused values and candidate-local
+predicted DL. Compound candidates may carry recursive predicted DL for
+introduced children, but they do not run the full decoder. Work is intended to
+scale with target leaves, neighborhood budget, enabled rewrite operators, and
+explicit generation limits rather than total stream history.
+
+## Opt-In Recognizer Templates
+
+Local recognizer templates implement `ciwi.rewrite/RewriteTemplate` and can be
+wrapped with `rewrite/template-operator`. They are intentionally disabled by
+default. Tests that exercise them pass `(rewrite/primitive-template-operator)`
+explicitly.
+
+Recognizer templates are useful proposal operators and debugging baselines, but
+they are not evidence for Alice parity. In particular, the primitive template
+sweep must not invent unconditioned `map :negate` or arbitrary `concat` splits,
+because Python `Map` requires a conditioned callable and Python `Concat`
+requires a conditioned side.
+
+## Clojure Graph Literals
+
+CIWI does not port Python's string sexpr parser directly. Graphs can be built
+from Clojure data:
+
+```clojure
+[:add 3 4]
+[:concat [:brange 0 3] [:repeat 2 [:x]]]
+```
+
+A vector or list is an operator form only when its head resolves through the
+operator registry. Other vectors are literal data. Use `ciwi.dsl/literal` to
+force literal interpretation of operator-looking data.
+
+## Conditions And Composites
+
+Python WILLIAM's condition machinery is represented as pure Clojure data in
+`ciwi.conditions`. Conditions are vectors of root-leaf indices with set
+semantics for redundancy checks. The port keeps WILLIAM's redundancy behavior
+where it is required for comparable search behavior, but graph extraction walks
+CIWI graphs directly instead of reconstructing Python sexprs.
+
+Composite operators are graph-backed `ciwi.operator/Operator` values. A
+composite captures a CIWI graph, its root, and optionally a set of constant leaf
+indices. Calls and inverses run through the existing propagation engine, while
+the public operator interface remains the same as primitive operators.
+
+Composite literals support `[:input id sample]` placeholders. Reusing an input
+id ties multiple graph leaves to one operator argument, which gives CIWI a
+native way to express DAG-style composites such as `x*x + y`. Non-input leaves
+in a placeholder template are captured as constants. Composite inversion also
+uses these input groups: all leaves in a repeated group must infer the same
+value.
+
+`ciwi.fix/fix-first` is the Clojure equivalent of Python WILLIAM's `Fix`
+operator. It captures the first input of any runtime `Operator` and returns a
+new runtime `Operator`, charging the captured value in the returned operator's
+DL.
+
+## Library Loading
+
+Learned and built-in artifacts should share native-looking runtime interfaces,
+but their persistence and loading paths are separate.
+
+Composite definitions are graph-shaped EDN maps that hydrate into
+`ciwi.operator/Operator` values. Rewrite-template definitions hydrate into
+`ciwi.rewrite/RewriteTemplate` values. A small `load-library` orchestrator can
+load both, but the internal branches stay separate because composites and
+templates have different functional character.
+
+The inner rewrite loop receives runtime `RewriteOperator` values, so it does not
+care whether a rule was built in, hand-written, loaded from EDN, or produced by
+an outer library-compression/amortization phase. Later source rendering,
+compilation, and dynamic loading should preserve that boundary.
+
+## Enumeration Components
+
+`ciwi.enumerative-rewrite` is a local forward-expression enumerator. For each
+focused value node, it enumerates expression trees over a configured operator
+set and literal generator, bounded by `:max-depth`, `:max-generated`, and
+`:beam-width`. The beam keeps the cheapest expressions by predicted expression
+DL with deterministic form tie-breaking. Local neighborhood values can seed the
+beam so accepted candidates reuse existing nodes instead of rematerializing
+duplicate children.
+
+`ciwi.graph-rewrite` is the graph-native bounded rewrite operator. It enumerates
+local edits directly by choosing a focused parent, a root operator, child
+operands from DAG-safe local node refs and literal value refs, and optional
+nested generated edits. It emits normal rewrite candidates with `:child-refs`
+and resource metadata.
+
+`ciwi.enumerator/effective-dl` ports the useful Dirichlet-process posterior
+predictive score from Python WILLIAM's DAG enumerator. It is a pure
+usage-adjusted ranking helper and does not couple local graph rewriting to
+Python's mutable DAG heap.
+
+## Wunderbaum
+
+Python WILLIAM's Wunderbaum is the mechanism CIWI needs for core Alice parity.
+It is not a local value recognizer. It is an operator-DAG enumeration and
+propagation path: enumerate candidate DAG shapes from the Alice operator basis
+under resource bounds, respect operator conditions and inverses, reuse
+conditioned or local values where possible, delay graph materialization until a
+candidate is selected, and score candidates by graph DL.
+
+The first CIWI Wunderbaum slice lives in `ciwi.wunderbaum` and intentionally
+stays outside `ciwi.search/RewriteOperator` while the straight parity port is
+being validated. It uses injected operator registries, operator/count
+declarations with explicit input/output specs, Python-style generalized
+conditions, effective operator DL from usage counts, graph-wide node-tuple
+enumeration, delayed DAG build, operator inversion, and MDL-selected
+materialized results. The implementation should remain functional and avoid
+mutable frontier/state machinery unless a concrete performance case is made and
+approved.
+
+`ciwi.alice-wunderbaum` is the Alice-facing runner over that core with an
+explicit declaration table for the Python `test_alice.py` operator basis. It
+requires an injected registry and does not change the default `ciwi.alice`
+no-recognizer harness.
+
+After the straight port proves parity, the same core can be adapted into a
+local resource-bounded `RewriteOperator` with explicit budgets for frontier
+pops, materializations, candidate count, propagation work, and local graph edit
+size. That adaptation is a separate design phase from the parity port.
+
+## Numeric Search Operators
+
+Optimizers implement `ciwi.optimize/SearchOperator`. The first port keeps a
+Newton/pattern-search style optimizer and an adaptive grid optimizer close to
+Python WILLIAM for comparison, but callers see them as recursive search
+operators over explicit state. This lets later work replace numeric search with
+graph rewrite search, gradient descent on differentiable subgraphs, or mixed
+specialized search without changing the surrounding compression loop.
+
+## Structural Graph Operations
+
+Graph comparison is based on canonical structural keys over immutable node ids.
+Commutative operators sort child structural keys, while noncommutative
+operators preserve child order. This gives Clojure-native replacements for
+Python `resembles`, `subgraph`, `depth`, and sexpr round-trip tests without
+adopting Python's mutable object identity assumptions.
+
+## Compression API
+
+`ciwi.compress` is the public compression loop over the lower-level search
+machinery. `compress-exhaustive` searches every value node until a fixed point.
+`compress-bounded` searches only bounded neighborhoods around target value
+nodes. Both return the final graph, history, DL, stop reason, and selected
+expressions derived from the MDL choice tree.
+
+`ciwi.alice/run-task-comparison` lifts those loops to Alice-style tasks by
+running both modes over the same task graph and comparing selected target
+expressions and global DL. The parity-focused Alice/Wunderbaum path remains
+separate so the Python port can be validated before it is folded into the local
+bounded rewrite model.
