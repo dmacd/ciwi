@@ -118,6 +118,29 @@
                                     :output-spec :array-int})]
     (is (empty? (sut/delayed-dag-build info {[:array-int] [element]} #{})))))
 
+(deftest delayed-dag-build-skips-generated-values-already-in-memory
+  (let [reuse-existing (op/operator
+                        {:id :reuse-existing
+                         :conditions [[]]
+                         :call (fn [[_x]] 8)
+                         :inverse (fn [_output _cond-inputs cond]
+                                    (when (empty? cond)
+                                      [[5]]))})
+        g (-> (graph/empty-graph)
+              (graph/add-value :out 8)
+              (graph/add-value :free 5))
+        info (sut/build-info {:dl 8.0
+                              :graph g
+                              :memory (memory [:out 8] [:free 5])
+                              :conditioned-nodes [:out]
+                              :condition-key [:int]})
+        element (sut/graph-element reuse-existing
+                                   [-1]
+                                   {:arity 1
+                                    :input-specs [:int]
+                                    :output-spec :int})]
+    (is (empty? (sut/delayed-dag-build info {[:int] [element]} #{})))))
+
 (deftest build-info-ordering-uses-description-length
   (let [info1 (sut/build-info {:dl 5.0})
         info2 (sut/build-info {:dl 10.0})

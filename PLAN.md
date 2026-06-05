@@ -10,14 +10,14 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
 
 ## Current Checkpoint
 
-- Last committed code checkpoint: `98702de` (`Align Wunderbaum parity
-  ordering`). The current working tree adds `insert_repeat2` parity.
+- Last committed code checkpoint: `89f8e19` (`Add insert repeat two parity`).
+  The current working tree adds the `insert_repeat3` root-order, focused
+  scoring, and delayed-builder parity fixes.
 - Current working tree has the first Python-scale core Wunderbaum parity rows,
   greedy Alice/Wunderbaum task runs, lazy best-first node tuple enumeration, a
   Python-compatible value DL model, Alice operator DL alignment, per-run DL
   caching, deferred selected-expression realization, and several translation
-  fixes; tests pass locally with 120 tests and 570
-  assertions.
+  fixes; tests pass locally with 122 tests and 580 assertions.
 
 ## Current State
 
@@ -36,9 +36,9 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   Gaussian value description length model. Alice/Wunderbaum declarations also
   preserve Python `TaskDomain` operator DL in materialized graphs.
 - Python-scale `simple_repeat`, `insert_repeat`, `insert_repeat2`,
-  `repeat_with_noise`, and `simply_linear` pass through the injected Alice
-  operator basis via `ciwi.alice-wunderbaum`, with no recognizer templates. The
-  live evidence matrix is `alice-test-parity.md`.
+  `insert_repeat3`, `repeat_with_noise`, and `simply_linear` pass through the
+  injected Alice operator basis via `ciwi.alice-wunderbaum`, with no recognizer
+  templates. The live evidence matrix is `alice-test-parity.md`.
 - `ciwi.alice-wunderbaum/run-greedy-task` now mirrors Python GreedyAlice's
   outer loop: compress the largest worthy raw leaf, accept the first candidate
   above the one-percent step threshold, splice it into the task tree, and
@@ -63,6 +63,16 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   integer index vector.
 - Node tuple enumeration now uses a persistent best-first successor queue
   rather than generating and sorting the full tuple product.
+- Focused Alice/Wunderbaum runs now preserve Python root-section semantics:
+  the focused target is the primary root, free values are ordered after it, and
+  attachment validation uses those explicit roles instead of relying on Clojure
+  map/root iteration order.
+- Focused compression steps score only the primary target root, matching
+  Python's candidate scoring against the focused leaf plus free values. This
+  prevents dummy/free roots from deciding whether a local candidate is accepted.
+- Delayed materialization now skips inverse-generated values already present in
+  memory and de-duplicates by whole materialized root sets, matching Python's
+  delayed DAG builder more closely.
 
 ## Roadmap
 
@@ -94,11 +104,16 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
 
 ## Near-Term Next Tasks
 
-- Proceed to `insert_repeat3`, keeping every fix tied to a Python mechanism
-  rather than a CIWI-only recognizer.
-- If runtime parity becomes the immediate priority, profile delayed
-  materialization, remaining repeated MDL work, and Clojure vector/numeric
-  paths on `simple_repeat`, `insert_repeat`, and `simply_linear`, where CIWI
-  still has a warm-runtime gap despite matching compression behavior.
+- Commit the current `insert_repeat3` parity tranche.
+- Continue parity work on `sprinkled`, `increasing_runs`, and `map_negate`,
+  keeping compression behavior fixes tied to Python Alice/Wunderbaum
+  mechanisms.
+- If runtime parity becomes the immediate priority, profile `insert_repeat3`
+  first: the latest warmed full local run reached the Python rate and seven
+  accepted steps, but CIWI is still substantially slower than Python.
+- For performance profiling, start with delayed materialization, remaining
+  repeated MDL work, and Clojure vector/numeric paths. `insert_repeat3` is now
+  the largest measured gap; `simple_repeat`, `insert_repeat`, and
+  `simply_linear` remain useful smaller probes.
 - Keep updating `alice-test-parity.md` with measured core CIWI rate, exact
   selected solution, timing, and Python comparison for each row.

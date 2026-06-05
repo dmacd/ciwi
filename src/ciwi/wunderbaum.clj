@@ -161,20 +161,24 @@
      :target-ids target-ids}))
 
 (defn- graph-value-order
-  [g]
-  (loop [roots (graph/roots g)
-         seen #{}
-         result []]
-    (if-let [root-id (first roots)]
-      (let [ids (graph/breadth-first-walk g root-id {:above? false
-                                                     :below? true
-                                                     :values? true
-                                                     :operators? false})
-            new-ids (remove seen ids)]
-        (recur (rest roots)
-               (into seen new-ids)
-               (into result new-ids)))
-      result)))
+  ([g]
+   (graph-value-order g (graph/roots g)))
+  ([g root-order]
+   (let [root-order (vec (concat (filter #(graph/node g %) root-order)
+                                  (remove (set root-order) (graph/roots g))))]
+     (loop [roots root-order
+            seen #{}
+            result []]
+       (if-let [root-id (first roots)]
+         (let [ids (graph/breadth-first-walk g root-id {:above? false
+                                                        :below? true
+                                                        :values? true
+                                                        :operators? false})
+               new-ids (remove seen ids)]
+           (recur (rest roots)
+                  (into seen new-ids)
+                  (into result new-ids)))
+         result)))))
 
 (defn- node-index-dl
   [idx]
@@ -227,8 +231,9 @@
   "Enumerate graph value-node tuples in Python NodeTupleEnumerator order."
   [g {:keys [max-tuple-len max-results]
       :or {max-tuple-len 2
-           max-results 1000}}]
-  (let [ids (vec (graph-value-order g))]
+           max-results 1000}
+      :as opts}]
+  (let [ids (vec (graph-value-order g (:root-order opts)))]
     (if (empty? ids)
       []
       (loop [queue (into (tuple-queue) (starting-tuples ids max-tuple-len))
@@ -255,27 +260,72 @@
                                          :include-self? true}))
              node-id))
 
+(defn- above-any?
+  [g node-id target-ids]
+  (let [reachable (set (graph/walk g node-id {:above? false
+                                              :below? true
+                                              :values? true
+                                              :operators? true
+                                              :include-self? true}))]
+    (boolean (some reachable target-ids))))
+
+(defn- op-carrying-roots
+  [g primary-root-id]
+  (filterv (fn [root-id]
+             (and (not= primary-root-id root-id)
+                  (seq (:options (graph/node g root-id)))))
+           (graph/roots g)))
+
+(defn- leaves-below-primary-outside-op-root?
+  [g primary-root-id op-root-id]
+  (boolean
+   (some #(not (below? g op-root-id %))
+         (graph/leaves g primary-root-id))))
+
 (defn- invalid-attachment?
-  [g gen-cond conditioned-nodes]
-  (let [root-id (first (graph/roots g))]
-    (boolean
-     (some (fn [[position node-id]]
-             (cond
-               (and (= -1 position)
-                    (seq (:options (graph/node g node-id))))
-               true
+  ([g gen-cond conditioned-nodes]
+   (invalid-attachment? g
+                        gen-cond
+                        conditioned-nodes
+                        (first (graph/roots g))
+                        (rest (graph/roots g))))
+  ([g gen-cond conditioned-nodes root-id free-root-ids]
+   (let [root-id (or root-id (first (graph/roots g)))
+         free-root-ids (vec free-root-ids)
+         op-roots (op-carrying-roots g root-id)
+         input-attachment? (some #(not= -1 %) gen-cond)]
+     (boolean
+      (or
+       (some (fn [[position node-id]]
+               (cond
+                 (and (= -1 position)
+                      (seq (:options (graph/node g node-id))))
+                 true
 
-               (and (= -1 position)
-                    root-id
-                    (not (below? g root-id node-id)))
-               true
+                 (and (= -1 position)
+                      root-id
+                      (not (below? g root-id node-id)))
+                 true
 
-               (and (not= -1 position)
-                    (= root-id node-id))
-               true
+                 (and (not= -1 position)
+                      (not (above-any? g node-id free-root-ids)))
+                 true
 
-               :else false))
-           (map vector gen-cond conditioned-nodes)))))
+                 (and (not= -1 position)
+                      (= root-id node-id))
+                 true
+
+                 :else false))
+             (map vector gen-cond conditioned-nodes))
+       (> (count op-roots) 1)
+       (and (seq op-roots)
+            input-attachment?
+            (let [op-root-id (first op-roots)]
+              (or (not (some #{op-root-id} conditioned-nodes))
+                  (not (leaves-below-primary-outside-op-root?
+                        g
+                        root-id
+                        op-root-id))))))))))
 
 (defn- build-rank
   [item]
@@ -292,7 +342,8 @@
                             (build-rank right)))))
 
 (defn expand-graph
-  [wb queue graph memory dl {:keys [max-dag-dl max-tuple-len max-node-tuples]
+  [wb queue graph memory dl {:keys [max-dag-dl max-tuple-len max-node-tuples
+                                    primary-root-id root-order free-root-ids]
                              :or {max-dag-dl Double/POSITIVE_INFINITY
                                   max-tuple-len 2
                                   max-node-tuples 1000}} order]
@@ -304,7 +355,11 @@
         (fn [[queue order] [element-index element]]
           (let [new-dl (+ dl (double (:dl element)))]
             (if (or (> new-dl max-dag-dl)
-                    (invalid-attachment? graph (:gen-cond element) nodes))
+                    (invalid-attachment? graph
+                                         (:gen-cond element)
+                                         nodes
+                                         primary-root-id
+                                         free-root-ids))
               [queue order]
               (let [order (inc order)
                     build-info (delayed/build-info
@@ -322,14 +377,24 @@
         (map-indexed vector elements))))
    [queue order]
    (node-tuples graph {:max-tuple-len max-tuple-len
-                       :max-results max-node-tuples})))
+                       :max-results max-node-tuples
+                       :root-order root-order})))
+
+(defn- score-target-dl
+  [graph target-ids value-dl-cache score-target-count]
+  (if score-target-count
+    (let [context (mdl/scoring-context {:value-dl-cache value-dl-cache})]
+      (reduce + 0.0
+              (map #(:dl (mdl/node-dl graph % context))
+                   (take score-target-count target-ids))))
+    (mdl/graph-dl graph {:value-dl-cache value-dl-cache})))
 
 (defn- result-summary
-  [graph memory build-dl target-ids value-dl-cache]
+  [graph memory build-dl target-ids value-dl-cache {:keys [score-target-count]}]
   {:graph graph
    :memory memory
    :build-dl build-dl
-   :dl (mdl/graph-dl graph {:value-dl-cache value-dl-cache})
+   :dl (score-target-dl graph target-ids value-dl-cache score-target-count)
    :target-ids target-ids})
 
 (defn realize-selected
@@ -376,12 +441,17 @@
 (defn- initial-frontier
   [wb targets opts]
   (let [{:keys [graph memory target-ids]} (initial-state targets)
+        opts (assoc opts
+                    :primary-root-id (first target-ids)
+                    :root-order target-ids
+                    :free-root-ids (subvec target-ids 1))
         [queue order] (expand-graph wb (empty-queue) graph memory 0.0 opts 0)]
     {:queue queue
      :order order
      :seen #{}
      :value-dl-cache (or (:value-dl-cache opts) (atom {}))
-     :target-ids target-ids}))
+     :target-ids target-ids
+     :opts opts}))
 
 (defn- materialize-build
   [wb seen build-info]
@@ -396,7 +466,12 @@
     (reduced [queue order yielded emitted stop?])
     (let [{:keys [threshold-dl]} opts
           threshold? (threshold-active? threshold-dl)
-          summary (result-summary graph memory build-dl target-ids value-dl-cache)
+          summary (result-summary graph
+                                  memory
+                                  build-dl
+                                  target-ids
+                                  value-dl-cache
+                                  opts)
           [queue order] (expand-graph wb queue graph memory build-dl opts order)
           emit? (or (not threshold?)
                     (< (:dl summary) (double threshold-dl)))]
@@ -458,6 +533,6 @@
   ([wb targets]
    (iterate wb targets {}))
   ([wb targets opts]
-   (let [{:keys [queue order seen target-ids value-dl-cache]}
+   (let [{:keys [queue order seen target-ids value-dl-cache opts]}
          (initial-frontier wb targets opts)]
      (walk-frontier wb opts seen target-ids value-dl-cache queue order 0 0))))

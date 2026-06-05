@@ -25,6 +25,19 @@
                           {:name "repeat_with_noise"
                            :threshold-rate 90.0}))
 
+(defn- insert-repeat3-task
+  []
+  (alice/compression-task [(vec (concat (repeat 100 45)
+                                        (take 500 (cycle [87 62]))
+                                        (repeat 610 164)))]
+                          {:name "insert_repeat3"
+                           :threshold-rate 93.0}))
+
+(defn- close-to?
+  [expected actual]
+  (< (Math/abs (- (double expected) (double actual)))
+     1.0e-6))
+
 (deftest alice-wunderbaum-requires-injected-registry
   (let [task (alice/compression-task [[0 1 2 3]]
                                      {:name "range"})]
@@ -149,3 +162,23 @@
            (get-in task-result [:resource :candidates-consumed])))
     (is (= (:selected step)
            (:selected task-result)))))
+
+(deftest alice-wunderbaum-insert-repeat3-reaches-python-fourth-step
+  (let [result (run-python-scale-sequence-task
+                (insert-repeat3-task)
+                {:max-popped 10000
+                 :max-yields 1000
+                 :max-steps 4})
+        fourth-step (nth (:steps result) 3)
+        selected (:selected fourth-step)]
+    (is (= :max-steps
+           (get-in result [:resource :stop-reason])))
+    (is (= 4 (count (:steps result))))
+    (is (= 4 (get-in result [:resource :candidates-consumed])))
+    (is (close-to? 86.38075946321129
+                   (:compression-rate result)))
+    (is (= [0 1 0] (:path fourth-step)))
+    (is (close-to? 1161.7371134088858 (:dl fourth-step)))
+    (is (= :insert (first selected)))
+    (is (= :cumsum (get-in selected [1 0])))
+    (is (= :insert (get-in selected [1 1 0])))))

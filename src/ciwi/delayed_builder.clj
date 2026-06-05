@@ -1,5 +1,6 @@
 (ns ciwi.delayed-builder
   (:require [ciwi.graph :as graph]
+            [ciwi.hashing :as hashing]
             [ciwi.operator :as op]
             [ciwi.propagation :as propagation]
             [ciwi.rewrite :as rewrite]
@@ -113,23 +114,44 @@
           (map vector gen-cond conditioned-nodes)))
 
 (defn- result-key
-  [{:keys [graph root memory]}]
-  [(graph/structural-key graph root)
+  [{:keys [graph memory]}]
+  [(->> (graph/roots graph)
+        (map #(graph/structural-key graph %))
+        (sort-by pr-str)
+        vec)
    (->> memory
         (map (fn [[node-id entry]]
                [node-id (value/datum (entry-value entry))]))
         (sort-by (comp pr-str first))
         vec)])
 
+(defn- value-key
+  [x]
+  (let [v (value/value x)]
+    [(spec/value-spec v) (hashing/stable-key (:data v))]))
+
+(defn- memory-value-keys
+  [memory]
+  (into #{}
+        (map (comp value-key entry-value))
+        (vals memory)))
+
+(defn- duplicate-generated-value?
+  [existing-value-keys missing-values]
+  (boolean
+   (some #(contains? existing-value-keys (value-key %))
+         missing-values)))
+
 (defn- dedupe-results
   [seen results]
-  (reduce (fn [[seen emitted] result]
-            (let [k (result-key result)]
-              (if (contains? seen k)
-                [seen emitted]
-                [(conj seen k) (conj emitted result)])))
-          [(or seen #{}) []]
-          results))
+  (loop [seen (or seen #{})
+         remaining (seq results)]
+    (if-let [result (first remaining)]
+      (let [k (result-key result)]
+        (if (contains? seen k)
+          (recur seen (next remaining))
+          [(conj seen k) [result]]))
+      [seen []])))
 
 (defn- try-apply-op
   [operator inputs]
@@ -184,9 +206,12 @@
       (when (every? #(rewrite/reusable-child-node? g output-id %) known-child-ids)
         (let [output (memory-value memory output-id)
               known-inputs (mapv #(memory-value memory %) known-child-ids)
-              missing-positions (vec (remove (set known-positions) (range arity)))]
+              missing-positions (vec (remove (set known-positions) (range arity)))
+              existing-value-keys (memory-value-keys memory)]
           (for [missing-values (try-invert-op operator output known-inputs known-positions)
                 :when (= (count missing-positions) (count missing-values))
+                :when (not (duplicate-generated-value? existing-value-keys
+                                                       missing-values))
                 :let [built
                   (reduce (fn [[acc-g acc-memory ids] idx]
                             (if-let [node-id (get positions idx)]

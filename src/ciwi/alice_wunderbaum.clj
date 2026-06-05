@@ -381,7 +381,9 @@
                                         (candidate-seq context
                                                        values
                                                        {:threshold-dl
-                                                        threshold-dl}))]
+                                                        threshold-dl
+                                                        :score-target-count
+                                                        1}))]
     (if-let [candidate (:candidate search)]
       (let [replacement (candidate-tree context candidate :target0)]
         {:leaf leaf

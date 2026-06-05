@@ -6,9 +6,10 @@ routine-by-routine helper parity.
 
 Status as of the current working tree: the straight CIWI Wunderbaum path has
 Python-scale core evidence for `simple_repeat`, `insert_repeat`,
-`insert_repeat2`, `repeat_with_noise`, and `simply_linear`. The default local
-rewrite Alice harness still installs no rewrite operators by default, so it
-cannot accidentally use local recognizer templates as parity evidence.
+`insert_repeat2`, `insert_repeat3`, `repeat_with_noise`, and `simply_linear`.
+The default local rewrite Alice harness still installs no rewrite operators by
+default, so it cannot accidentally use local recognizer templates as parity
+evidence.
 
 The Python timings below use `GreedyAlice` with `min_rate=0.01`,
 `max_dag_dl=35`, `learn=false`, `trees_only=false`, and `use_rust=false`.
@@ -31,7 +32,7 @@ debugging and performance comparison only. They are not Alice parity evidence.
 | `simple_repeat` | 1,000 | 94.0 | 98.056137 | 35.4 | passes greedy core, 3 steps / 3 candidates; matches Python cumsum/insert shape | 98.056137 | 75.1 | `[:insert [:cumsum [:insert [0] 0 C2x499]] 140 C-50x500]` | 99.636156 | 87 | `[:repeat 500 [140 -50]]` | `(Array[int] (insert (Array[int] (cumsum (Array[int] (insert Array[int] int Array[int])))) int Array[int]))` |
 | `insert_repeat` | 350 | 92.0 | 93.075788 | 23.3 | passes greedy core, 2 steps / 2 candidates; matches Python cumsum/insert shape | 93.075788 | 34.8 | `[:insert [:cumsum I0+99x1] 45 C87x250]` | 98.611733 | 18 | `[:insert [:brange 0 100] 45 [:repeat 250 [87]]]` | `(Array[int] (insert (Array[int] (cumsum Array[int])) int Array[int]))` |
 | `insert_repeat2` | 645 | 92.0 | 92.325943 | 43.7 | passes greedy core, 3 steps / 3 candidates; matches Python shared-DAG concat/insert shape | 92.325943 | 38.0 | `[:insert [:concat I0+9 I10+34] [:insert I0+9 45 C87x25] C164x610]` | 98.943455 | 23 | `[:insert [:brange 0 35] [:insert [:brange 0 10] 45 [:repeat 25 [87]]] [:repeat 610 [164]]]` | `((= $ Array[int]) (Array[int] (insert (Array[int] (concat _1 Array[int])) (Array[int] (insert _1 int Array[int])) Array[int])))` |
-| `insert_repeat3` | 1,210 | 93.0 | 93.830537 | 10,677 | pending core enum | 0.0 | - | - | 68.028790 | 105 | `[:insert [:brange 0 600] [:insert I3 [:insert [:brange 0 100] 45 [:repeat 250 [87]]] [:repeat 250 [62]]] [:repeat 610 [164]]]` | `P_insert_repeat3` |
+| `insert_repeat3` | 1,210 | 93.0 | 93.830537 | 10,677 | passes greedy core, 7 steps / 7 candidates; matches Python nested cumsum/getitem/insert skeleton; default regression covers the hard fourth step | 93.830537 | 61,480 | `C_insert_repeat3` | 68.028790 | 105 | `[:insert [:brange 0 600] [:insert I3 [:insert [:brange 0 100] 45 [:repeat 250 [87]]] [:repeat 250 [62]]] [:repeat 610 [164]]]` | `P_insert_repeat3` |
 | `repeat_with_noise` | 501 | 90.0 | 96.279777 | 5.2 | passes greedy core, 1 step / 1 candidate; matches Python one-step plain insert under Python DL | 96.279777 | 4.8 | `[:insert [100] -1 C45x500]` | 99.103288 | 16 | `[:insert [100] -1 [:repeat 500 [45]]]` | `(Array[int] (insert Array[int] int Array[int]))` |
 | `simply_linear` | 1,000 | 97.0 | 99.506286 | 12.0 | passes greedy core, 2 steps / 2 candidates; matches Python cumsum/insert shape under Python DL | 99.506286 | 25.6 | `[:cumsum [:insert [0] -18 C6x999]]` | 99.785287 | 122 | `[:add [:mult [:brange 0 1000] 6] -18]` | `(Array[int] (cumsum (Array[int] (insert Array[int] int Array[int]))))` |
 | `sprinkled` | 10,000 | 75.0 | 79.294650 | 6 | pending core enum | 0.0 | - | - | 93.074107 | 249 | `[:insert S 1 [:repeat 9900 [0]]]` | `(Array[int] (insert Array[int] int Array[int]))` |
@@ -87,14 +88,24 @@ positions of the `64` separators in Python's `increasing_runs` target.
 (Array[int] (cumsum (Array[int] (getitem Array[int] (Array[int] (cumsum (Array[int] (insert (Array[int] (cumsum (Array[int] (insert Array[int] int Array[int])))) (Array[int] (getitem Array[int] (Array[int] (insert (Array[int] (cumsum (Array[int] (insert Array[int] Array[int] Array[int])))) Array[int] Array[int])))) Array[int]))))))))
 ```
 
+`C_insert_repeat3` has the same operator skeleton as `P_insert_repeat3` under
+CIWI's native selected-expression syntax. The exact expanded Clojure expression
+contains several Python-scale raw vectors, so the table names the structural
+solution and keeps the full raw-vector definitions in the task fixture rather
+than duplicating them inline. The focused regression in
+`ciwi.alice-wunderbaum-test` asserts the formerly missing fourth-step
+`[:insert [:cumsum [:insert ...]] ...]` candidate on the Python-scale target.
+
 ## Current Interpretation
 
 The active parity claim is limited to the Alice operator basis and the
 Python-scale task definitions under the Python WILLIAM value DL model.
 `ciwi.alice-test` asserts that default local rewrite Alice runs perform no
 recognizer rewrites, which prevents accidental shortcut-based parity.
-`ciwi.alice-wunderbaum-test` now carries the first Python-scale core
-Wunderbaum rows.
+`ciwi.alice-wunderbaum-test` now carries Python-scale core Wunderbaum rows and
+a focused `insert_repeat3` regression for the hard nested fourth step. The
+full `insert_repeat3` seven-step threshold run is tracked here because it is
+still expensive enough to be a performance-debugging target.
 
 Debugging conclusions retained from the recognizer baseline:
 
@@ -163,6 +174,17 @@ Current root-cause notes from the core path:
   declaration output spec. Without this, the cheaper `getitem` boolean-mask
   declaration could accept an integer index vector generated by the generic
   inverse path, which Python rejects.
-- The next core row to debug is `insert_repeat3`.
+- `insert_repeat3` required preserving Python's implicit root-section order in
+  CIWI's explicit graph representation. Focused target roots must stay ahead of
+  dummy/free roots for node tuple ordering and attachment validation. Focused
+  steps must also score only the primary target root, not the whole temporary
+  graph including free anchors.
+- Python's delayed DAG builder skips inverse-generated values already present
+  in memory and returns only the first unseen materialization for each delayed
+  attachment. CIWI now mirrors that behavior and de-duplicates materializations
+  by whole root-set structure.
+- The next core rows to debug are `sprinkled`, `increasing_runs`, and
+  `map_negate`, with performance profiling kept separate from recognizer
+  shortcuts.
 
 Project sequencing and next implementation steps live in `PLAN.md`.

@@ -477,12 +477,34 @@ current tree summary this appears as a zero-DL raw reference with the same
 concrete value; it is the near-term equivalent of Python's shared-DAG sexpr
 variables such as `_1`.
 
+During those focused steps, Wunderbaum also carries an explicit root order.
+The primary target leaf is first and dummy/free values follow it. Python keeps
+this order implicitly through `Graph.nodes` section order; CIWI cannot rely on
+hash-map or root-set iteration for the same semantics. Attachment validation
+therefore receives `:primary-root-id`, `:free-root-ids`, and `:root-order`
+explicitly. Output-conditioned attachments must be below the primary target,
+input-conditioned attachments must be above a free root, and the special
+Python rule for an already operator-carrying free root is preserved.
+
+Focused Alice steps score only the primary target root, not the whole temporary
+graph containing dummy/free values. CIWI exposes this as Wunderbaum's
+`:score-target-count`, which `ciwi.alice-wunderbaum` sets to `1` for a
+leaf-local compression step. Without this, a candidate can look worse or better
+for the wrong reason because free anchors are included in the temporary graph's
+DL.
+
 Delayed materialization treats non-executable operator calls and inverses as no
 candidate, matching Python's `exec_errors` behavior. Operator inverses must
 therefore be conservative: a shape mismatch or impossible condition yields no
 inverse rather than a `nil` child. Unknown `nil` values can exist in propagation
 memory for bookkeeping, but they are not a valid way to make a selected
 compression artificially cheap.
+
+Python's delayed DAG builder also filters inverse-generated values that already
+exist in memory and yields only the first unseen materialization for a delayed
+attachment. CIWI's delayed builder mirrors that by comparing generated values
+using stable value keys and de-duplicating by the whole root set rather than by
+only the newly generated root.
 
 Delayed materialization also validates declaration specs after inversion or
 forward execution. A generated inverse child must conform to the selected
