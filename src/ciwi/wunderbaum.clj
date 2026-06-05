@@ -251,24 +251,6 @@
   (mapv #(spec/value-spec (get-in g [:nodes % :value]))
         node-ids))
 
-(defn- below?
-  [g root-id node-id]
-  (contains? (set (graph/walk g root-id {:above? false
-                                         :below? true
-                                         :values? true
-                                         :operators? true
-                                         :include-self? true}))
-             node-id))
-
-(defn- above-any?
-  [g node-id target-ids]
-  (let [reachable (set (graph/walk g node-id {:above? false
-                                              :below? true
-                                              :values? true
-                                              :operators? true
-                                              :include-self? true}))]
-    (boolean (some reachable target-ids))))
-
 (defn- op-carrying-roots
   [g primary-root-id]
   (filterv (fn [root-id]
