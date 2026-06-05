@@ -5,6 +5,10 @@
             [ciwi.value :as value]
             [clojure.test :refer [deftest is testing]]))
 
+(defn- approx=
+  [expected actual]
+  (< (Math/abs (- (double expected) (double actual))) 1.0e-9))
+
 (deftest chooses-shorter-operator-description
   (let [[g _] (-> (graph/empty-graph)
                   (graph/add-value :out [0 1 2 3 4])
@@ -101,5 +105,5 @@
       (is (= [:concat [:brange 0 8] 1001]
              (sut/selected-expression g2 :b))))
     (testing "graph-level MDL charges the selected shared node once"
-      (is (= shared-graph-dl (sut/graph-dl g2)))
-      (is (= (+ shared-graph-dl shared-dl) root-summed-dl)))))
+      (is (approx= shared-graph-dl (sut/graph-dl g2)))
+      (is (approx= (+ shared-graph-dl shared-dl) root-summed-dl)))))

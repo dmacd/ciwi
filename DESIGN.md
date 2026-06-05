@@ -230,9 +230,21 @@ projects selected descriptions from all graph roots and charges each selected
 value node once, so shared selected sub-DAGs reduce global DL across a set of
 roots.
 
-CIWI intentionally does not assert Python's exact floating DL constants. The
-proof target is selected compression structure and achieved compression rate
-under CIWI's Clojure-native value codec.
+CIWI's value description length is a direct port of Python WILLIAM's
+`Value.desc_len(mode="use_gaussian")` model. Clojure vectors that are
+rectangular and homogeneous in numbers, booleans, or strings are treated as
+Python `np.ndarray` values; other sequential values are structural lists.
+The port includes Python's continuous Elias helper `jelias`, scalar
+integer/float precision handling, numeric-array Elias coding, 1D Gaussian
+array coding, 2D multivariate Gaussian point coding, simple 3D channel-wise
+Gaussian coding, boolean-array coding, string-array coding, and the default
+non-Gaussian mode used by Python's lower-level `description.desc_len`.
+
+The exact Elias delta helper remains available as `ciwi.value/elias-discrete`
+for enumerator index ordering. Alice/Wunderbaum operator declarations use
+Python `TaskDomain`'s operator cost convention: all operator classes in the
+injected Alice basis receive `ceil(jelias(number-of-operator-classes))` bits,
+and delayed materialization preserves that declaration cost in the graph.
 
 ## Hashing
 
@@ -411,10 +423,32 @@ materialized results. The implementation should remain functional and avoid
 mutable frontier/state machinery unless a concrete performance case is made and
 approved.
 
+Node tuple enumeration follows Python's best-first ordering by tuple index DL,
+but uses persistent Clojure data. It starts with the all-zero tuple for each
+allowed tuple length, pops the cheapest tuple, and enqueues the one-index
+successors that stay within the current graph's value-node order. This avoids
+building and sorting the full cartesian product for every graph expansion.
+
 `ciwi.alice-wunderbaum` is the Alice-facing runner over that core with an
 explicit declaration table for the Python `test_alice.py` operator basis. It
 requires an injected registry and does not change the default `ciwi.alice`
 no-recognizer harness.
+
+The Alice-facing layer exposes two intentionally different result modes.
+`run-task` consumes the configured yielded candidates and reports the best one,
+which is useful for exploratory debugging. `run-task-to-threshold` consumes the
+lazy stream only until a candidate reaches a requested compression rate, which
+is the timing-relevant mode for Python Alice task comparisons.
+`run-compression-step` is the same threshold mechanism with a default
+one-percent compression rate, matching Python GreedyAlice's `min_rate=0.01`
+convention.
+
+Delayed materialization treats non-executable operator calls and inverses as no
+candidate, matching Python's `exec_errors` behavior. Operator inverses must
+therefore be conservative: a shape mismatch or impossible condition yields no
+inverse rather than a `nil` child. Unknown `nil` values can exist in propagation
+memory for bookkeeping, but they are not a valid way to make a selected
+compression artificially cheap.
 
 After the straight port proves parity, the same core can be adapted into a
 local resource-bounded `RewriteOperator` with explicit budgets for frontier

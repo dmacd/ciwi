@@ -445,7 +445,8 @@
     :inverse (fn [output cond-inputs cond]
                (when (= 1 (count cond))
                  (let [known (first cond-inputs)]
-                   [[(elementwise2 - output known)]])))}))
+                   (when-let [result (elementwise2 - output known)]
+                     [[result]]))))}))
 
 (def sub
   (operator
@@ -456,10 +457,11 @@
     :inverse (fn [output cond-inputs cond]
                (when (= 1 (count cond))
                  (let [known (first cond-inputs)]
-                   (case (first cond)
-                     0 [[(elementwise2 - known output)]]
-                     1 [[(elementwise2 + output known)]]
-                     ()))))}))
+                   (when-let [result (case (first cond)
+                                       0 (elementwise2 - known output)
+                                       1 (elementwise2 + output known)
+                                       nil)]
+                     [[result]]))))}))
 
 (def mult
   (operator
@@ -473,7 +475,8 @@
                  (let [known (first cond-inputs)]
                    (when-not (or (and (number? known) (zero? known))
                                  (and (seqish? known) (some zero? known)))
-                     [[(elementwise2 / output known)]]))))}))
+                     (when-let [result (elementwise2 / output known)]
+                       [[result]])))))}))
 
 (def negate
   (operator
@@ -659,11 +662,12 @@
                                 {:xs xs :idx idx}))))
     :inverse (fn [output cond-inputs condition]
                (case (vec condition)
-                 [] (let [values (vec (distinct output))
-                          indices (mapv (fn [x]
-                                          (.indexOf values x))
-                                        output)]
-                      [[values indices]])
+                 [] (when (seqish? output)
+                      (let [values (vec (distinct output))
+                            indices (mapv (fn [x]
+                                            (.indexOf values x))
+                                          output)]
+                        [[values indices]]))
                  [1] (let [idx (first cond-inputs)]
                        (cond
                          (and (bool-mask? idx)

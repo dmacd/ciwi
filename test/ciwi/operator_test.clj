@@ -16,9 +16,12 @@
   (is (= 12 (:data (sut/apply-op sut/add [(value/value 5) (value/value 7)]))))
   (is (= [[7]] (raw-inversions sut/add 12 [5] [0])))
   (is (= [[5]] (raw-inversions sut/add 12 [7] [1])))
+  (is (empty? (raw-inversions sut/add [1 2 3] [[1 2]] [0])))
   (is (= [[7]] (raw-inversions sut/sub 5 [12] [0])))
   (is (= [[12]] (raw-inversions sut/sub 5 [7] [1])))
+  (is (empty? (raw-inversions sut/sub [1 2 3] [[1 2]] [0])))
   (is (= [[4]] (raw-inversions sut/mult 12 [3] [0])))
+  (is (empty? (raw-inversions sut/mult [1 2 3] [[1 2]] [0])))
   (is (= [[3]] (raw-inversions sut/negate -3 [] []))))
 
 (deftest sequence-operators-run-forward-and-backward
@@ -55,6 +58,7 @@
                                              (value/value 1)]))))
   (is (= [3 2] (:data (sut/apply-op sut/getitem [(value/value [3 5 2])
                                                  (value/value [true false true])]))))
+  (is (empty? (raw-inversions sut/getitem 7 [] [])))
   (is (= [[[2.0 nil nil 3.0]]]
          (raw-inversions sut/getitem [2.0 3.0] [[true false false true]] [1])))
   (is (= [342 6 8 78]

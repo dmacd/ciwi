@@ -132,7 +132,7 @@
            (mdl/selected-operators (:graph bounded) :range)))
     (is (= (mdl/selected-operators (:graph exhaustive) :flat)
            (mdl/selected-operators (:graph bounded) :flat)))
-    (is (= #{:brange :repeat} (set (map :reason (:history bounded)))))))
+    (is (= #{:brange} (set (map :reason (:history bounded)))))))
 
 
 (deftest composed-rewrite-operators-participate-in-search

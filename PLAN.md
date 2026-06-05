@@ -1,6 +1,6 @@
 # CIWI Plan
 
-Last updated: 2026-06-04.
+Last updated: 2026-06-05.
 
 ## Objective
 
@@ -10,11 +10,12 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
 
 ## Current Checkpoint
 
-- Code checkpoint: `45cd03a Add initial Wunderbaum port`.
-- Tests at that checkpoint: `./bin/test` passed with 109 tests and 490
+- Last committed code checkpoint: DL parity checkpoint at current `HEAD`.
+- Current working tree has the first Python-scale core Wunderbaum parity rows,
+  threshold-aware Alice/Wunderbaum task runs, lazy best-first node tuple
+  enumeration, a Python-compatible value DL model, Alice operator DL alignment,
+  and several translation fixes; tests pass locally with 119 tests and 550
   assertions.
-- Current documentation work splits planning, design, parity evidence, agent
-  workflow, and code style into separate files.
 
 ## Current State
 
@@ -30,8 +31,23 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
 - `ciwi.alice-wunderbaum` adds an Alice-facing declaration table and runner
   over that core. It is separate from the default `ciwi.alice` no-recognizer
   harness.
-- Python-scale Alice rows remain pending for the core enum path. The live
-  evidence matrix is `alice-test-parity.md`.
+- `ciwi.value` now ports Python WILLIAM's scalar, structural, array, and
+  Gaussian value description length model. Alice/Wunderbaum declarations also
+  preserve Python `TaskDomain` operator DL in materialized graphs.
+- Python-scale `simple_repeat`, `repeat_with_noise`, and `simply_linear` now
+  pass through the injected Alice operator basis via
+  `ciwi.alice-wunderbaum`, with no recognizer templates. The live evidence
+  matrix is `alice-test-parity.md`.
+- `ciwi.alice-wunderbaum/run-task-to-threshold` now stops the lazy Wunderbaum
+  stream at the task threshold instead of collecting a best-of-`max-yields`
+  sample. With the Python DL model, `repeat_with_noise` reaches the task
+  threshold at the same plain-`insert` solution as Python after 3 yielded
+  candidates.
+- Delayed graph materialization now skips non-executable operator
+  calls/inverses, matching Python's invalid-probe behavior, and numeric inverse
+  shape mismatches no longer generate `nil` children.
+- Node tuple enumeration now uses a persistent best-first successor queue
+  rather than generating and sorting the full tuple product.
 
 ## Roadmap
 
@@ -63,10 +79,13 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
 
 ## Near-Term Next Tasks
 
-- Compare the current `ciwi.alice-wunderbaum` runner against the simplest
-  Python Alice rows and identify the first missing Python mechanism.
-- Expand the Wunderbaum/Alice port until simple range, repeat, insert, and
-  cumsum-style solutions arise from the Alice operator basis rather than local
-  recognizer templates.
-- Update `alice-test-parity.md` as soon as a core CIWI row has measured rate,
-  solution, and timing data.
+- Proceed to `insert_repeat`, then `insert_repeat2`, keeping every fix tied to
+  a Python mechanism rather than a CIWI-only recognizer.
+- Add `run-greedy-task` after the remaining single-step evidence is clean, so
+  CIWI can mirror Python Alice's outer loop instead of only first-threshold
+  Wunderbaum streams.
+- If runtime parity becomes the immediate priority, profile delayed
+  materialization, repeated MDL recomputation, and search ordering on the first
+  Python-scale row where CIWI is slower for the same compression behavior.
+- Keep updating `alice-test-parity.md` with measured core CIWI rate, exact
+  selected solution, timing, and Python comparison for each row.

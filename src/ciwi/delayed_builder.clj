@@ -128,24 +128,45 @@
           [(or seen #{}) []]
           results))
 
+(defn- try-apply-op
+  [operator inputs]
+  (try
+    (op/apply-op operator inputs)
+    (catch Exception _
+      nil)))
+
+(defn- try-invert-op
+  [operator output known-inputs known-positions]
+  (try
+    (op/invert-op operator output known-inputs known-positions)
+    (catch Exception _
+      ())))
+
+(defn- costed-operator
+  [{:keys [operator dl]}]
+  (cond-> operator
+    (some? dl) (assoc :dl dl)))
+
 (defn- forward-build
-  [g memory {:keys [operator arity]} positions]
+  [g memory {:keys [operator arity] :as element} positions]
   (let [child-ids (mapv positions (range arity))]
     (when (every? some? child-ids)
       (let [inputs (mapv #(memory-value memory %) child-ids)
-            output (op/apply-op operator inputs)
-            root-id (graph/unique-id g (keyword (str "delayed-" (name (:id operator)))))
-            op-id (graph/unique-id g (keyword (str (name root-id) "-" (name (:id operator)))))
-            g (graph/add-value g root-id output)
-            memory (assoc-memory memory root-id output)
-            g (graph/add-operator g op-id operator root-id child-ids)]
-        {:graph g
-         :memory memory
-         :root root-id
-         :operator-id op-id}))))
+            output (try-apply-op operator inputs)]
+        (when output
+          (let [graph-op (costed-operator element)
+                root-id (graph/unique-id g (keyword (str "delayed-" (name (:id operator)))))
+                op-id (graph/unique-id g (keyword (str (name root-id) "-" (name (:id operator)))))
+                g (graph/add-value g root-id output)
+                memory (assoc-memory memory root-id output)
+                g (graph/add-operator g op-id graph-op root-id child-ids)]
+            {:graph g
+             :memory memory
+             :root root-id
+             :operator-id op-id}))))))
 
 (defn- inverse-builds
-  [g memory {:keys [operator arity]} positions]
+  [g memory {:keys [operator arity] :as element} positions]
   (when-let [output-id (:output positions)]
     (let [known-positions (->> (range arity)
                                (filter #(contains? positions %))
@@ -155,7 +176,7 @@
         (let [output (memory-value memory output-id)
               known-inputs (mapv #(memory-value memory %) known-child-ids)
               missing-positions (vec (remove (set known-positions) (range arity)))]
-          (for [missing-values (op/invert-op operator output known-inputs known-positions)
+          (for [missing-values (try-invert-op operator output known-inputs known-positions)
                 :when (= (count missing-positions) (count missing-values))]
             (let [[g memory child-ids]
                   (reduce (fn [[acc-g acc-memory ids] idx]
@@ -173,7 +194,7 @@
                   child-ids (mapv child-ids (range arity))
                   op-id (graph/unique-id g (keyword (str (name output-id) "-"
                                                          (name (:id operator)))))
-                  g (graph/add-operator g op-id operator output-id child-ids)]
+                  g (graph/add-operator g op-id (costed-operator element) output-id child-ids)]
               {:graph g
                :memory memory
                :root output-id

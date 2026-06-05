@@ -223,7 +223,7 @@
     (is (= [(rewrite/node-ref :scores) (rewrite/value-ref 2)]
            (get-in first-candidate [:child-refs 1 :child-refs])))
     (is (= [:setitem [:repeat 4 ["--------"]]
-            [:lessthan [:brange 0 4] 2]
+            [true true false false]
             ["xxxxxxxx" "xxxxxxxx"]]
            (mdl/selected-expression (:graph bounded) :out)))
     (is (= (mdl/selected-expression (:graph exhaustive) :out)

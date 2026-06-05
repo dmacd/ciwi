@@ -1,5 +1,6 @@
 (ns ciwi.wunderbaum-test
-  (:require [ciwi.mdl :as mdl]
+  (:require [ciwi.graph :as graph]
+            [ciwi.mdl :as mdl]
             [ciwi.operator :as op]
             [ciwi.value :as value]
             [ciwi.wunderbaum :as sut]
@@ -36,6 +37,18 @@
     (is (= [[0 1]]
            (mapv :gen-cond forward-conditioned)))))
 
+(deftest node-tuples-use-best-first-index-order
+  (let [g (-> (graph/empty-graph)
+              (graph/add-value :a 1)
+              (graph/add-value :b 2)
+              (graph/add-value :c 3))
+        tuples (sut/node-tuples g {:max-tuple-len 2
+                                   :max-results 7})]
+    (is (= [[0] [0 0] [1] [2] [0 1] [0 2] [1 0]]
+           (mapv :indices tuples)))
+    (is (= [[:a] [:a :a] [:b] [:c] [:a :b] [:a :c] [:b :a]]
+           (mapv :nodes tuples)))))
+
 (deftest wunderbaum-finds-range-by-delayed-output-inversion
   (let [target (value/value [0 1 2 3] {:spec :array-int})
         initial (sut/initial-state [target])
@@ -60,18 +73,19 @@
                 (filter #(let [expr (get-in % [:selected :target0])]
                            (and (vector? expr)
                                 (= :add (first expr))))
-                        (sut/iterate wb
-                                     [(value/value [6 7 8] {:spec :array-int})
-                                      (value/value 5 {:spec :int})]
-                                     {:max-popped 32
-                                      :max-yields 8})))
-        expr (get-in result [:selected :target0])]
-    (is (some? result))
-    (is (= :add (first expr)))
-    (is (= [[1 2 3] 5]
-           (rest expr)))
-    (is (= 5
-           (get-in result [:selected :target1])))))
+	                        (sut/iterate wb
+	                                     [(value/value [1000000 1000001 1000002]
+	                                                   {:spec :array-int})
+	                                      (value/value 1000000 {:spec :int})]
+	                                     {:max-popped 32
+	                                      :max-yields 8})))
+	        expr (get-in result [:selected :target0])]
+	    (is (some? result))
+	    (is (= :add (first expr)))
+	    (is (= [[0 1 2] 1000000]
+	           (rest expr)))
+	    (is (= 1000000
+	           (get-in result [:selected :target1])))))
 
 (deftest wunderbaum-uses-injected-registry-not-global-registry
   (let [quad (op/operator

@@ -86,6 +86,24 @@
     (is (= 3
            (value-at (:memory result) generated-id)))))
 
+(deftest delayed-dag-build-skips-non-executable-inverses
+  (let [bad-inverse (op/operator
+                     {:id :bad-inverse
+                      :conditions [[]]
+                      :call (fn [[x]]
+                              x)
+                      :inverse (fn [_output _cond-inputs _cond]
+                                 (throw (UnsupportedOperationException.
+                                         "invalid inverse probe")))})
+        g (one-value-graph :out 7)
+        info (sut/build-info {:dl 8.0
+                              :graph g
+                              :memory (memory [:out 7])
+                              :conditioned-nodes [:out]
+                              :condition-key [:output]})
+        element (sut/graph-element bad-inverse [-1] {:arity 1})]
+    (is (empty? (sut/delayed-dag-build info {[:output] [element]} #{})))))
+
 (deftest build-info-ordering-uses-description-length
   (let [info1 (sut/build-info {:dl 5.0})
         info2 (sut/build-info {:dl 10.0})

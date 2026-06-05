@@ -198,13 +198,48 @@
   [idx]
   (value/elias-discrete (inc idx)))
 
-(defn- product
-  [xs n]
-  (if (zero? n)
-    [[]]
-    (for [x xs
-          tail (product xs (dec n))]
-      (into [x] tail))))
+(defn- tuple-item
+  [ids indices]
+  {:dl (reduce + 0.0 (map node-index-dl indices))
+   :indices (vec indices)
+   :nodes (mapv ids indices)})
+
+(defn- tuple-rank
+  [item]
+  [(:dl item) (:indices item)])
+
+(defn- tuple-queue
+  []
+  (sorted-set-by (fn [left right]
+                   (compare (tuple-rank left)
+                            (tuple-rank right)))))
+
+(defn- pop-tuple
+  [queue]
+  (let [item (first queue)]
+    [item (disj queue item)]))
+
+(defn- starting-tuples
+  [ids max-tuple-len]
+  (for [n (range 1 (inc max-tuple-len))]
+    (tuple-item ids (vec (repeat n 0)))))
+
+(defn- next-tuple-indices
+  [id-count indices]
+  (for [position (range (count indices))
+        :let [next-index (inc (nth indices position))]
+        :when (< next-index id-count)]
+    (assoc indices position next-index)))
+
+(defn- enqueue-next-tuples
+  [ids queue seen indices]
+  (reduce (fn [[queue seen] next-indices]
+            (if (contains? seen next-indices)
+              [queue seen]
+              [(conj queue (tuple-item ids next-indices))
+               (conj seen next-indices)]))
+          [queue seen]
+          (next-tuple-indices (count ids) indices)))
 
 (defn node-tuples
   "Enumerate graph value-node tuples in Python NodeTupleEnumerator order."
@@ -212,14 +247,17 @@
       :or {max-tuple-len 2
            max-results 1000}}]
   (let [ids (vec (graph-value-order g))]
-    (->> (for [n (range 1 (inc max-tuple-len))
-               indices (product (range (count ids)) n)]
-           {:dl (reduce + 0.0 (map node-index-dl indices))
-            :indices (vec indices)
-            :nodes (mapv ids indices)})
-         (sort-by (juxt :dl :indices))
-         (take max-results)
-         vec)))
+    (if (empty? ids)
+      []
+      (loop [queue (into (tuple-queue) (starting-tuples ids max-tuple-len))
+             seen (set (map :indices queue))
+             result []]
+        (if (or (empty? queue)
+                (>= (count result) max-results))
+          result
+          (let [[item queue] (pop-tuple queue)
+                [queue seen] (enqueue-next-tuples ids queue seen (:indices item))]
+            (recur queue seen (conj result item))))))))
 
 (defn- node-condition-key
   [g node-ids]
