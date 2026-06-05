@@ -10,14 +10,14 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
 
 ## Current Checkpoint
 
-- Last committed code checkpoint: `89f8e19` (`Add insert repeat two parity`).
-  The current working tree adds the `insert_repeat3` root-order, focused
-  scoring, and delayed-builder parity fixes.
+- Last committed code checkpoint: `7ed04fc` (`Add insert repeat three
+  parity`). The current working tree adds `sprinkled` parity and the
+  Python-aligned synthetic free-value accounting fix.
 - Current working tree has the first Python-scale core Wunderbaum parity rows,
   greedy Alice/Wunderbaum task runs, lazy best-first node tuple enumeration, a
   Python-compatible value DL model, Alice operator DL alignment, per-run DL
   caching, deferred selected-expression realization, and several translation
-  fixes; tests pass locally with 122 tests and 580 assertions.
+  fixes; tests pass locally with 122 tests and 586 assertions.
 
 ## Current State
 
@@ -36,9 +36,10 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   Gaussian value description length model. Alice/Wunderbaum declarations also
   preserve Python `TaskDomain` operator DL in materialized graphs.
 - Python-scale `simple_repeat`, `insert_repeat`, `insert_repeat2`,
-  `insert_repeat3`, `repeat_with_noise`, and `simply_linear` pass through the
-  injected Alice operator basis via `ciwi.alice-wunderbaum`, with no recognizer
-  templates. The live evidence matrix is `alice-test-parity.md`.
+  `insert_repeat3`, `repeat_with_noise`, `simply_linear`, and `sprinkled` pass
+  through the injected Alice operator basis via `ciwi.alice-wunderbaum`, with
+  no recognizer templates. The live evidence matrix is
+  `alice-test-parity.md`.
 - `ciwi.alice-wunderbaum/run-greedy-task` now mirrors Python GreedyAlice's
   outer loop: compress the largest worthy raw leaf, accept the first candidate
   above the one-percent step threshold, splice it into the task tree, and
@@ -73,6 +74,11 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
 - Delayed materialization now skips inverse-generated values already present in
   memory and de-duplicates by whole materialized root sets, matching Python's
   delayed DAG builder more closely.
+- CIWI now distinguishes existing task-tree free anchors from synthetic/default
+  free values. Existing leaves used as local anchors stay zero-DL in the tree
+  summary to avoid double-counting shared leaves; synthetic defaults such as
+  `1` and `1.5` are normal permeable values and are charged if selected, as in
+  Python's bottleneck accounting.
 
 ## Roadmap
 
@@ -104,8 +110,8 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
 
 ## Near-Term Next Tasks
 
-- Commit the current `insert_repeat3` parity tranche.
-- Continue parity work on `sprinkled`, `increasing_runs`, and `map_negate`,
+- Finish and commit the current `sprinkled` parity tranche after tests pass.
+- Continue parity work on `increasing_runs` and `map_negate`,
   keeping compression behavior fixes tied to Python Alice/Wunderbaum
   mechanisms.
 - If runtime parity becomes the immediate priority, profile `insert_repeat3`

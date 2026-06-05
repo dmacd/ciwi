@@ -176,6 +176,10 @@
 
 (defn- free-value
   [x]
+  (specified-value x {}))
+
+(defn- free-anchor-value
+  [x]
   (specified-value x {:dummy? true}))
 
 (defn- task-values
@@ -230,12 +234,14 @@
   [(:spec v) (:data v)])
 
 (defn- add-free-value
-  [[values seen] x]
-  (let [v (free-value x)
+  ([state x]
+   (add-free-value state x free-value))
+  ([[values seen] x value-fn]
+   (let [v (value-fn x)
         k (free-value-key v)]
     (if (contains? seen k)
       [values seen]
-      [(conj values v) (conj seen k)])))
+      [(conj values v) (conj seen k)]))))
 
 (defn- add-default-free-values
   [[values seen :as state]]
@@ -354,9 +360,10 @@
                                            tree)))
                                 (remove #(same-leaf? leaf %))
                                 (map :expr))
-        state (reduce add-free-value [[] #{}]
-                      (concat current-leaf-exprs
-                              (map :data (:free-values context))))
+        state (reduce #(add-free-value %1 %2 free-anchor-value)
+                      [[] #{}]
+                      current-leaf-exprs)
+        state (reduce add-free-value state (:free-values context))
         [values _seen] (add-default-free-values state)]
     values))
 

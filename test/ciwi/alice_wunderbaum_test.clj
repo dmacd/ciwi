@@ -8,6 +8,16 @@
   [:map :fix :brange :add :mult :negate :concat :repeat
    :getitem :insert :cumsum :lessthan :equal])
 
+(def python-sprinkled-indices
+  [436 634 675 761 851 883 915 933 971 1270 1295 1397 1536 1604 1642
+   1811 1889 1937 1996 2256 2264 2394 2750 2882 3119 3247 3294 3525
+   3621 3652 3679 3692 3872 3994 4094 4289 4346 4348 4363 4403 4433
+   4467 4473 4616 4645 4681 4745 4955 4963 5089 5217 5415 5442 5509
+   5633 6278 6288 6366 6391 6482 6684 6744 6803 6823 6847 6909 6965
+   6992 7113 7293 7403 7419 7536 7545 7561 7663 7669 7744 7757 7794
+   7933 8041 8168 8224 8313 8314 8329 8411 8505 8528 8821 8884 8976
+   9025 9189 9197 9385 9640 9654 9670])
+
 (defn- run-python-scale-sequence-task
   [task opts]
   (sut/run-greedy-task
@@ -32,6 +42,12 @@
                                         (repeat 610 164)))]
                           {:name "insert_repeat3"
                            :threshold-rate 93.0}))
+
+(defn- sprinkled-target
+  []
+  (reduce #(assoc %1 %2 1)
+          (vec (repeat 10000 0))
+          python-sprinkled-indices))
 
 (defn- close-to?
   [expected actual]
@@ -124,6 +140,15 @@
             :expected [:cumsum [:insert [0] -18 (vec (repeat 999 6))]]
             :threshold-rate 97.0
             :opts {:max-popped 10000
+                   :max-yields 1000}}
+           {:name "sprinkled"
+            :target (sprinkled-target)
+            :expected [:insert
+                       python-sprinkled-indices
+                       1
+                       (vec (repeat 9900 0))]
+            :threshold-rate 75.0
+            :opts {:max-popped 10000
                    :max-yields 1000}}]]
     (testing name
       (let [task (alice/compression-task [target]
@@ -141,6 +166,7 @@
                  "insert_repeat" 2
                  "insert_repeat2" 3
                  "simply_linear" 2
+                 "sprinkled" 1
                  1)
                (count (:steps result))))
         (is (= (count (:steps result))

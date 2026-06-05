@@ -477,6 +477,14 @@ current tree summary this appears as a zero-DL raw reference with the same
 concrete value; it is the near-term equivalent of Python's shared-DAG sexpr
 variables such as `_1`.
 
+Only existing task-tree leaves get that zero-DL anchor treatment. Explicit task
+free values and Alice's synthetic defaults (`1` and `1.5`) are normal permeable
+values: they are skipped when computing the original focused target DL, but if
+the selected compression uses them as leaves, their value DL is charged. This
+matches Python's local bottleneck accounting and matters for rows such as
+`sprinkled`, where the scalar `1` is introduced by the default free-value
+mechanism rather than by an existing graph leaf.
+
 During those focused steps, Wunderbaum also carries an explicit root order.
 The primary target leaf is first and dummy/free values follow it. Python keeps
 this order implicitly through `Graph.nodes` section order; CIWI cannot rely on
