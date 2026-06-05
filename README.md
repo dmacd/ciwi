@@ -87,8 +87,8 @@ results for three weeks. Then I got curious about it, and a little
 voice told me to actually pick it up and play with it. I was instantly
 smitten again with the elegance and joy of clojure, and became determined to
 finish the port and see what we could build on top of it. As a bonus, I
-tend understand things by building them, or at least coaching someone else to
-build them.
+tend understand things better by building them, or at least coaching someone 
+else to build them.
 
 So that's the emotional rationale. The more technical motivation is clojure 
 seems like a more natural fit for experimenting
