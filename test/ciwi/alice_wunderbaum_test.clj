@@ -149,6 +149,12 @@
                        (vec (repeat 9900 0))]
             :threshold-rate 75.0
             :opts {:max-popped 10000
+                   :max-yields 1000}}
+           {:name "map_negate"
+            :target (vec (map - (range 1000)))
+            :expected [:cumsum [:insert [0] 0 (vec (repeat 999 -1))]]
+            :threshold-rate 98.0
+            :opts {:max-popped 10000
                    :max-yields 1000}}]]
     (testing name
       (let [task (alice/compression-task [target]
@@ -167,6 +173,7 @@
                  "insert_repeat2" 3
                  "simply_linear" 2
                  "sprinkled" 1
+                 "map_negate" 2
                  1)
                (count (:steps result))))
         (is (= (count (:steps result))

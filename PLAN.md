@@ -11,13 +11,13 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
 ## Current Checkpoint
 
 - Last committed code checkpoint: `7ed04fc` (`Add insert repeat three
-  parity`). The current working tree adds `sprinkled` parity and the
-  Python-aligned synthetic free-value accounting fix.
+  parity`). The current working tree adds `sprinkled` and `map_negate` parity,
+  plus the Python-aligned synthetic free-value accounting fix.
 - Current working tree has the first Python-scale core Wunderbaum parity rows,
   greedy Alice/Wunderbaum task runs, lazy best-first node tuple enumeration, a
   Python-compatible value DL model, Alice operator DL alignment, per-run DL
   caching, deferred selected-expression realization, and several translation
-  fixes; tests pass locally with 122 tests and 586 assertions.
+  fixes; tests pass locally with 122 tests and 592 assertions.
 
 ## Current State
 
@@ -36,9 +36,9 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   Gaussian value description length model. Alice/Wunderbaum declarations also
   preserve Python `TaskDomain` operator DL in materialized graphs.
 - Python-scale `simple_repeat`, `insert_repeat`, `insert_repeat2`,
-  `insert_repeat3`, `repeat_with_noise`, `simply_linear`, and `sprinkled` pass
-  through the injected Alice operator basis via `ciwi.alice-wunderbaum`, with
-  no recognizer templates. The live evidence matrix is
+  `insert_repeat3`, `repeat_with_noise`, `simply_linear`, `sprinkled`, and
+  `map_negate` pass through the injected Alice operator basis via
+  `ciwi.alice-wunderbaum`, with no recognizer templates. The live evidence matrix is
   `alice-test-parity.md`.
 - `ciwi.alice-wunderbaum/run-greedy-task` now mirrors Python GreedyAlice's
   outer loop: compress the largest worthy raw leaf, accept the first candidate
@@ -110,10 +110,9 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
 
 ## Near-Term Next Tasks
 
-- Finish and commit the current `sprinkled` parity tranche after tests pass.
-- Continue parity work on `increasing_runs` and `map_negate`,
-  keeping compression behavior fixes tied to Python Alice/Wunderbaum
-  mechanisms.
+- Finish and commit the current `map_negate` parity tranche after tests pass.
+- Continue parity work on `increasing_runs`, keeping compression behavior
+  fixes tied to Python Alice/Wunderbaum mechanisms.
 - If runtime parity becomes the immediate priority, profile `insert_repeat3`
   first: the latest warmed full local run reached the Python rate and seven
   accepted steps, but CIWI is still substantially slower than Python.
