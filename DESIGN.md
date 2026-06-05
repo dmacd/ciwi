@@ -230,6 +230,14 @@ projects selected descriptions from all graph roots and charges each selected
 value node once, so shared selected sub-DAGs reduce global DL across a set of
 roots.
 
+Description-length caching is caller-owned rather than record-mutable. Python
+WILLIAM caches `Value.desc_len()` on the `Value` object; CIWI keeps values
+immutable and passes explicit cache atoms through scoring contexts instead.
+`ciwi.value/desc-len-cached` memoizes raw value DLs, while
+`ciwi.mdl/scoring-context` adds graph-local node-DL memoization. Wunderbaum
+shares the value-DL cache across a candidate stream but creates fresh node
+caches per graph.
+
 CIWI's value description length is a direct port of Python WILLIAM's
 `Value.desc_len(mode="use_gaussian")` model. Clojure vectors that are
 rectangular and homogeneous in numbers, booleans, or strings are treated as
@@ -429,19 +437,22 @@ allowed tuple length, pops the cheapest tuple, and enqueues the one-index
 successors that stay within the current graph's value-node order. This avoids
 building and sorting the full cartesian product for every graph expansion.
 
-`ciwi.alice-wunderbaum` is the Alice-facing runner over that core with an
-explicit declaration table for the Python `test_alice.py` operator basis. It
+`wunderbaum/iterate` yields scored candidate summaries without selected target
+expressions. Most candidates are only compared and discarded, so selected
+expressions are computed explicitly with `wunderbaum/realize-selected` when a
+caller needs to inspect or accept a candidate.
+
+`ciwi.alice-wunderbaum` is the Alice-facing greedy runner over that core with
+an explicit declaration table for the Python `test_alice.py` operator basis. It
 requires an injected registry and does not change the default `ciwi.alice`
 no-recognizer harness.
 
-The Alice-facing layer exposes two intentionally different result modes.
-`run-task` consumes the configured yielded candidates and reports the best one,
-which is useful for exploratory debugging. `run-task-to-threshold` consumes the
-lazy stream only until a candidate reaches a requested compression rate, which
-is the timing-relevant mode for Python Alice task comparisons.
-`run-compression-step` is the same threshold mechanism with a default
-one-percent compression rate, matching Python GreedyAlice's `min_rate=0.01`
-convention.
+`run-greedy-task` mirrors Python `GreedyAlice`: sort raw leaves by DL, compress
+the largest worthy leaf, accept the first Wunderbaum candidate above
+`:min-compression-rate` (default 1%), splice that selected expression into the
+task tree, and repeat until the task threshold is reached or no worthy leaf can
+improve. `run-compression-step` exposes the same mechanism capped at one greedy
+step for diagnostics.
 
 Delayed materialization treats non-executable operator calls and inverses as no
 candidate, matching Python's `exec_errors` behavior. Operator inverses must

@@ -49,9 +49,13 @@ WILLIAM/Alice compression behavior before adding new mechanisms.
 - Use Python-scale Alice fixtures when claiming parity. If a test must be
   scaled down temporarily, document that explicitly in code and docs as a
   performance gap or implementation gap.
-- Compare selected compression structure and achieved compression rate. Exact
-  Python floating DL constants are not a CIWI parity requirement because CIWI
-  uses a simpler Clojure-native value codec.
+- Compare selected compression structure and achieved compression rate under
+  the Python-compatible DL model.
+- Treat performance timings as a diagnostic lens for catching implementation
+  problems, not as cold-start product benchmarks. Collect and report Python and
+  CIWI timings only under warm-start conditions: dependencies loaded, runtime
+  initialized, and first-run/JIT/import effects excluded. Do not add separate
+  cold-start columns unless explicitly requested.
 - When a performance gap appears, diagnose the root cause before changing the
   algorithm. Valid fixes are translation fixes, missing Python mechanisms, data
   structure issues, or implementation performance issues. Invalid fixes are

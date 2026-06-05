@@ -343,16 +343,31 @@
                        :max-results max-node-tuples})))
 
 (defn- result-summary
-  [graph memory build-dl target-ids]
+  [graph memory build-dl target-ids value-dl-cache]
   {:graph graph
    :memory memory
    :build-dl build-dl
-   :dl (mdl/graph-dl graph)
-   :target-ids target-ids
-   :selected (into {}
+   :dl (mdl/graph-dl graph {:value-dl-cache value-dl-cache})
+   :target-ids target-ids})
+
+(defn realize-selected
+  "Attach selected target expressions to a materialized Wunderbaum summary.
+
+  Candidate enumeration intentionally leaves `:selected` absent because most
+  yielded graphs are only scored and discarded by the greedy Alice loop.
+  "
+  [summary]
+  (if (contains? summary :selected)
+    summary
+    (let [context (mdl/scoring-context)]
+      (assoc summary
+             :selected
+             (into {}
                    (map (fn [id]
-                          [id (mdl/selected-expression graph id)]))
-                   target-ids)})
+                          [id (mdl/selected-expression (:graph summary)
+                                                       id
+                                                       context)]))
+                   (:target-ids summary))))))
 
 (defn- pop-queue
   [queue]
@@ -378,6 +393,7 @@
     {:queue queue
      :order order
      :seen #{}
+     :value-dl-cache (or (:value-dl-cache opts) (atom {}))
      :target-ids target-ids}))
 
 (defn- materialize-build
@@ -388,30 +404,46 @@
                                        {:registry (:registry wb)}))
 
 (defn- add-materialized-result
-  [wb opts target-ids build-dl [queue order yielded emitted] {:keys [graph memory]}]
-  (let [summary (result-summary graph memory build-dl target-ids)
+  [wb opts target-ids value-dl-cache build-dl [queue order yielded emitted] {:keys [graph memory]}]
+  (let [summary (result-summary graph memory build-dl target-ids value-dl-cache)
         [queue order] (expand-graph wb queue graph memory build-dl opts order)]
     [queue order (inc yielded) (conj emitted summary)]))
 
 (defn- process-frontier-item
-  [wb opts seen target-ids item queue order yielded]
+  [wb opts seen target-ids value-dl-cache item queue order yielded]
   (let [build-info (:build-info item)
         {:keys [seen results]} (materialize-build wb seen build-info)
         [queue order yielded emitted]
-        (reduce (partial add-materialized-result wb opts target-ids (:dl item))
+        (reduce (partial add-materialized-result wb opts target-ids value-dl-cache (:dl item))
                 [queue order yielded []]
                 results)]
     [seen queue order yielded emitted]))
 
 (defn- walk-frontier
-  [wb opts seen target-ids queue order popped yielded]
+  [wb opts seen target-ids value-dl-cache queue order popped yielded]
   (lazy-seq
    (when (frontier-active? queue popped yielded opts)
      (let [[item queue] (pop-queue queue)
            [seen queue order yielded emitted]
-           (process-frontier-item wb opts seen target-ids item queue order yielded)]
+           (process-frontier-item wb
+                                  opts
+                                  seen
+                                  target-ids
+                                  value-dl-cache
+                                  item
+                                  queue
+                                  order
+                                  yielded)]
        (concat emitted
-               (walk-frontier wb opts seen target-ids queue order (inc popped) yielded))))))
+               (walk-frontier wb
+                              opts
+                              seen
+                              target-ids
+                              value-dl-cache
+                              queue
+                              order
+                              (inc popped)
+                              yielded))))))
 
 (defn iterate
   "Yield materialized Wunderbaum candidate graphs in frontier order.
@@ -423,5 +455,6 @@
   ([wb targets]
    (iterate wb targets {}))
   ([wb targets opts]
-   (let [{:keys [queue order seen target-ids]} (initial-frontier wb targets opts)]
-     (walk-frontier wb opts seen target-ids queue order 0 0))))
+   (let [{:keys [queue order seen target-ids value-dl-cache]}
+         (initial-frontier wb targets opts)]
+     (walk-frontier wb opts seen target-ids value-dl-cache queue order 0 0))))

@@ -1,5 +1,7 @@
 (ns ciwi.alice-wunderbaum
   (:require [ciwi.alice :as alice]
+            [ciwi.graph :as graph]
+            [ciwi.mdl :as mdl]
             [ciwi.value :as value]
             [ciwi.wunderbaum :as wunderbaum]))
 
@@ -115,69 +117,52 @@
   [n]
   (mapv #(keyword (str "target" %)) (range n)))
 
-(defn- selected-targets
-  [result target-count]
-  (select-keys (:selected result) (target-ids target-count)))
-
-(defn- raw-selected-targets
-  [task target-count]
-  (zipmap (target-ids target-count)
-          (take target-count (:targets task))))
-
-(defn- result-summary
-  [task target-count initial-dl best candidates resource]
-  (let [dl (or (:dl best) initial-dl)
-        rate (alice/compression-rate initial-dl dl)
-        selected (if best
-                   (selected-targets best target-count)
-                   (raw-selected-targets task target-count))]
-    {:task-name (:name task)
-     :initial-dl initial-dl
-     :dl dl
-     :compression-rate rate
-     :meets-threshold? (>= rate (double (:threshold-rate task)))
-     :selected selected
-     :best best
-     :candidates candidates
-     :resource resource}))
-
 (defn- task-search-context
   [task opts]
-  (let [{:keys [registry ops-with-counts] :as opts} opts
+  (let [{:keys [registry ops-with-counts]} opts
         registry (require-registry registry)
+        value-dl-cache (or (:value-dl-cache opts) (atom {}))
+        opts (assoc opts :value-dl-cache value-dl-cache)
         ops-with-counts (or ops-with-counts
                             (declarations-for-registry registry opts))
         {:keys [targets free-values]} (task-values task)
         all-values (vec (concat targets free-values))
-        initial-dl (reduce + 0.0 (map value/desc-len targets))
+        initial-dl (reduce + 0.0
+                           (map #(value/desc-len-cached value-dl-cache %)
+                                targets))
         wb (wunderbaum/wunderbaum {:registry registry
                                    :ops-with-counts ops-with-counts})]
     {:opts opts
      :ops-with-counts ops-with-counts
      :target-count (count targets)
+     :targets targets
+     :free-values free-values
      :all-values all-values
      :initial-dl initial-dl
+     :value-dl-cache value-dl-cache
      :wunderbaum wb}))
 
 (defn- candidate-seq
-  [{:keys [wunderbaum all-values opts]}]
-  (wunderbaum/iterate wunderbaum all-values opts))
+  ([context]
+   (candidate-seq context (:all-values context)))
+  ([{:keys [wunderbaum opts]} values]
+   (wunderbaum/iterate wunderbaum values opts)))
 
 (defn- first-candidate-at-rate
   [initial-dl threshold-rate candidates]
   (loop [remaining candidates
-         consumed []]
+         consumed 0]
     (if-let [candidate (first remaining)]
-      (let [consumed (conj consumed candidate)
+      (let [consumed (inc consumed)
             rate (alice/compression-rate initial-dl (:dl candidate))]
         (if (>= rate threshold-rate)
-          {:candidate candidate
-           :candidates consumed
+          {:candidate (wunderbaum/realize-selected candidate)
+           :candidates-consumed consumed
            :stop-reason :threshold-reached
            :compression-rate rate}
           (recur (rest remaining) consumed)))
       {:candidate nil
-       :candidates consumed
+       :candidates-consumed consumed
        :stop-reason :exhausted
        :compression-rate 0.0})))
 
@@ -185,53 +170,249 @@
   [result ops-with-counts]
   (assoc result :operator-count (count ops-with-counts)))
 
-(defn run-task
-  "Run one CIWI Alice task through the straight-port Wunderbaum path.
+(defn- raw-tree
+  [value-dl-cache v]
+  (let [v (value/value v)]
+    {:kind :raw
+     :expr (:data v)
+     :dl (value/desc-len-cached value-dl-cache v)}))
 
-  This is not the local bounded RewriteOperator mode. The caller must inject the
-  operator registry, and may inject explicit `:ops-with-counts`; otherwise the
-  Alice declaration table is filtered to the supplied registry.
-  "
-  ([task opts]
-   (let [{:keys [ops-with-counts target-count initial-dl] :as context}
-         (task-search-context task opts)
-         candidates (vec (candidate-seq context))
-         best (first (sort-by :dl candidates))]
-     (-> (result-summary task
-                         target-count
-                         initial-dl
-                         best
-                         candidates
-                         {:mode :best-of-yields
-                          :candidates-yielded (count candidates)
-                          :stop-reason :exhausted})
-         (assoc-operator-count ops-with-counts)))))
+(defn- choice-tree
+  [g value-dl-cache choice]
+  (case (:kind choice)
+    :raw
+    (let [v (get-in g [:nodes (:node-id choice) :value])]
+      {:kind :raw
+       :expr (:data v)
+       :dl (or (:dl choice)
+               (value/desc-len-cached value-dl-cache v))})
 
-(defn run-task-to-threshold
-  "Run one task until the lazy Wunderbaum stream reaches a compression rate.
+    :operator
+    (let [op-node (graph/node g (:op-id choice))
+          operator (:operator op-node)
+          children (mapv #(choice-tree g value-dl-cache %)
+                         (:child-choices choice))
+          op-dl (:dl operator)]
+      {:kind :operator
+       :op-id (:id operator)
+       :op-dl op-dl
+       :children children
+       :expr (into [(:id operator)] (map :expr children))
+       :dl (+ op-dl (reduce + 0.0 (map :dl children)))})))
 
-  The default threshold is the task's `:threshold-rate`. Callers may pass
-  `:compression-threshold-rate` to measure another stopping point without
-  collecting and sorting all yielded candidates.
-  "
-  [task {:keys [compression-threshold-rate] :as opts}]
-  (let [{:keys [ops-with-counts target-count initial-dl] :as context}
+(defn- candidate-tree
+  [{:keys [value-dl-cache]} candidate target-id]
+  (let [description (mdl/node-dl (:graph candidate)
+                                 target-id
+                                 {:value-dl-cache value-dl-cache})]
+    (choice-tree (:graph candidate) value-dl-cache (:choice description))))
+
+(defn- refresh-operator-tree
+  [tree children]
+  (assoc tree
+         :children children
+         :expr (into [(:op-id tree)] (map :expr children))
+         :dl (+ (:op-dl tree) (reduce + 0.0 (map :dl children)))))
+
+(defn- replace-tree
+  [tree path replacement]
+  (if (empty? path)
+    replacement
+    (let [idx (first path)
+          path (subvec (vec path) 1)
+          children (assoc (:children tree)
+                          idx
+                          (replace-tree (nth (:children tree) idx)
+                                        path
+                                        replacement))]
+      (refresh-operator-tree tree children))))
+
+(defn- target-tree-leaves
+  [target-index target-id tree]
+  (letfn [(walk [node path]
+            (if (= :raw (:kind node))
+              [{:target-index target-index
+                :target-id target-id
+                :path path
+                :expr (:expr node)
+                :dl (:dl node)}]
+              (mapcat (fn [[idx child]]
+                        (walk child (conj path idx)))
+                      (map-indexed vector (:children node)))))]
+    (vec (walk tree []))))
+
+(defn- worthy-leaves
+  [target-trees worthy-dl]
+  (let [ids (target-ids (count target-trees))]
+    (->> (map-indexed vector target-trees)
+         (mapcat (fn [[idx tree]]
+                   (target-tree-leaves idx (nth ids idx) tree)))
+         (filter #(>= (:dl %) worthy-dl))
+         (sort-by (juxt #(- (:dl %)) :target-index :path))
+         vec)))
+
+(defn- compress-leaf
+  [context min-compression-rate leaf]
+  (let [values (into [(target-value (:expr leaf))]
+                     (:free-values context))
+        search (first-candidate-at-rate (:dl leaf)
+                                        min-compression-rate
+                                        (candidate-seq context values))]
+    (if-let [candidate (:candidate search)]
+      (let [replacement (candidate-tree context candidate :target0)]
+        {:leaf leaf
+         :candidate candidate
+         :replacement-tree replacement
+         :selected (:expr replacement)
+         :initial-dl (:dl leaf)
+         :dl (:dl replacement)
+         :compression-rate (alice/compression-rate (:dl leaf)
+                                                   (:dl replacement))
+         :candidates-consumed (:candidates-consumed search)
+         :stop-reason (:stop-reason search)})
+      {:leaf leaf
+       :candidates-consumed (:candidates-consumed search)
+       :stop-reason (:stop-reason search)})))
+
+(defn- first-successful-compression
+  [context min-compression-rate worthy-dl target-trees]
+  (loop [leaves (worthy-leaves target-trees worthy-dl)
+         consumed 0
+         attempts []]
+    (if-let [leaf (first leaves)]
+      (let [attempt (compress-leaf context min-compression-rate leaf)
+            consumed (+ consumed (:candidates-consumed attempt))
+            attempt (assoc attempt :candidates-consumed consumed)]
+        (if (:replacement-tree attempt)
+          (assoc attempt :attempts attempts)
+          (recur (rest leaves)
+                 consumed
+                 (conj attempts (select-keys attempt
+                                             [:leaf
+                                              :candidates-consumed
+                                              :stop-reason])))))
+      {:replacement-tree nil
+       :candidates-consumed consumed
+       :attempts attempts
+       :stop-reason :no-worthy-leaves})))
+
+(defn- apply-compression
+  [target-trees {:keys [leaf replacement-tree]}]
+  (update target-trees
+          (:target-index leaf)
+          replace-tree
+          (:path leaf)
+          replacement-tree))
+
+(defn- target-tree-dl
+  [target-trees]
+  (reduce + 0.0 (map :dl target-trees)))
+
+(defn- selected-targets
+  [target-trees]
+  (zipmap (target-ids (count target-trees))
+          (map :expr target-trees)))
+
+(defn- record-step
+  [{:keys [leaf selected initial-dl dl compression-rate candidates-consumed stop-reason]}]
+  {:target-id (:target-id leaf)
+   :path (:path leaf)
+   :initial-dl initial-dl
+   :dl dl
+   :compression-rate compression-rate
+   :selected selected
+   :candidates-consumed candidates-consumed
+   :stop-reason stop-reason})
+
+(defn- greedy-result
+  [task context initial-dl target-trees steps resource]
+  (let [dl (target-tree-dl target-trees)
+        rate (alice/compression-rate initial-dl dl)]
+    (-> {:task-name (:name task)
+         :initial-dl initial-dl
+         :dl dl
+         :compression-rate rate
+         :meets-threshold? (>= rate (double (:threshold-rate task)))
+         :selected (selected-targets target-trees)
+         :steps steps
+         :resource resource}
+        (assoc-operator-count (:ops-with-counts context)))))
+
+(defn- run-greedy*
+  [task opts {:keys [mode stop-at-task-threshold? max-steps]
+              :or {stop-at-task-threshold? true}}]
+  (let [{:keys [targets initial-dl value-dl-cache] :as context}
         (task-search-context task opts)
-        threshold-rate (double (or compression-threshold-rate
-                                   (:threshold-rate task)
-                                   0.0))
-        {:keys [candidate candidates stop-reason]}
-        (first-candidate-at-rate initial-dl threshold-rate (candidate-seq context))]
-    (-> (result-summary task
-                        target-count
-                        initial-dl
-                        candidate
-                        candidates
-                        {:mode :first-threshold-candidate
-                         :compression-threshold-rate threshold-rate
-                         :candidates-consumed (count candidates)
-                         :stop-reason stop-reason})
-        (assoc-operator-count ops-with-counts))))
+        target-trees (mapv #(raw-tree value-dl-cache %) targets)
+        min-compression-rate (double (or (:min-compression-rate opts) 1.0))
+        worthy-dl (double (or (:worthy-dl opts) 200.0))
+        max-steps (or max-steps (:max-steps opts) Long/MAX_VALUE)]
+    (loop [target-trees target-trees
+           steps []
+           consumed 0]
+      (let [dl (target-tree-dl target-trees)
+            rate (alice/compression-rate initial-dl dl)]
+        (cond
+          (and stop-at-task-threshold?
+               (>= rate (double (:threshold-rate task))))
+          (greedy-result task
+                         context
+                         initial-dl
+                         target-trees
+                         steps
+                         {:mode mode
+                          :stop-reason :threshold-reached
+                          :steps (count steps)
+                          :candidates-consumed consumed
+                          :min-compression-rate min-compression-rate
+                          :worthy-dl worthy-dl})
+
+          (>= (count steps) max-steps)
+          (greedy-result task
+                         context
+                         initial-dl
+                         target-trees
+                         steps
+                         {:mode mode
+                          :stop-reason :max-steps
+                          :steps (count steps)
+                          :candidates-consumed consumed
+                          :min-compression-rate min-compression-rate
+                          :worthy-dl worthy-dl})
+
+          :else
+          (let [step (first-successful-compression context
+                                                   min-compression-rate
+                                                   worthy-dl
+                                                   target-trees)
+                consumed (+ consumed (:candidates-consumed step))]
+            (if (:replacement-tree step)
+              (recur (apply-compression target-trees step)
+                     (conj steps (record-step step))
+                     consumed)
+              (greedy-result task
+                             context
+                             initial-dl
+                             target-trees
+                             steps
+                             {:mode mode
+                              :stop-reason (:stop-reason step)
+                              :steps (count steps)
+                              :candidates-consumed consumed
+                              :attempts (:attempts step)
+                              :min-compression-rate min-compression-rate
+                              :worthy-dl worthy-dl}))))))))
+
+(defn run-greedy-task
+  "Run a Python GreedyAlice-shaped task.
+
+  Each iteration compresses the largest worthy raw leaf, accepts the first
+  Wunderbaum candidate above `:min-compression-rate`, rewrites that local leaf,
+  and repeats until the task threshold is met or no worthy leaf can be improved.
+  The operator registry is always injected by the caller.
+  "
+  [task opts]
+  (run-greedy* task opts {:mode :greedy-task}))
 
 (defn run-compression-step
   "Run a Python-style compression step with a minimum compression rate.
@@ -239,8 +420,9 @@
   `:min-compression-rate` is a percent. The default `1.0` corresponds to
   Python GreedyAlice's `min_rate=0.01`.
   "
-  [task {:keys [min-compression-rate] :as opts}]
-  (run-task-to-threshold task
-                         (assoc opts
-                                :compression-threshold-rate
-                                (double (or min-compression-rate 1.0)))))
+  [task opts]
+  (run-greedy* task
+               opts
+               {:mode :greedy-compression-step
+                :stop-at-task-threshold? false
+                :max-steps 1}))

@@ -52,10 +52,11 @@
 (deftest wunderbaum-finds-range-by-delayed-output-inversion
   (let [target (value/value [0 1 2 3] {:spec :array-int})
         initial (sut/initial-state [target])
-        result (first (sut/iterate (range-wunderbaum)
-                                   [target]
-                                   {:max-popped 8
-                                    :max-yields 1}))]
+        result (sut/realize-selected
+                (first (sut/iterate (range-wunderbaum)
+                                    [target]
+                                    {:max-popped 8
+                                     :max-yields 1})))]
     (is (some? result))
     (is (= [:brange 0 4]
            (get-in result [:selected :target0])))
@@ -69,23 +70,25 @@
                                 :count 0
                                 :input-specs [:array-int :int]
                                 :output-spec :array-int}]})
-        result (first
-                (filter #(let [expr (get-in % [:selected :target0])]
-                           (and (vector? expr)
-                                (= :add (first expr))))
-	                        (sut/iterate wb
-	                                     [(value/value [1000000 1000001 1000002]
-	                                                   {:spec :array-int})
-	                                      (value/value 1000000 {:spec :int})]
-	                                     {:max-popped 32
-	                                      :max-yields 8})))
-	        expr (get-in result [:selected :target0])]
-	    (is (some? result))
-	    (is (= :add (first expr)))
-	    (is (= [[0 1 2] 1000000]
-	           (rest expr)))
-	    (is (= 1000000
-	           (get-in result [:selected :target1])))))
+        result (some (fn [candidate]
+                       (let [candidate (sut/realize-selected candidate)
+                             expr (get-in candidate [:selected :target0])]
+                         (when (and (vector? expr)
+                                    (= :add (first expr)))
+                           candidate)))
+                     (sut/iterate wb
+                                  [(value/value [1000000 1000001 1000002]
+                                                {:spec :array-int})
+                                   (value/value 1000000 {:spec :int})]
+                                  {:max-popped 32
+                                   :max-yields 8}))
+        expr (get-in result [:selected :target0])]
+    (is (some? result))
+    (is (= :add (first expr)))
+    (is (= [[0 1 2] 1000000]
+           (rest expr)))
+    (is (= 1000000
+           (get-in result [:selected :target1])))))
 
 (deftest wunderbaum-uses-injected-registry-not-global-registry
   (let [quad (op/operator
@@ -105,10 +108,11 @@
                                 :count 0
                                 :input-specs [:int]
                                 :output-spec :array-int}]})
-        result (first (sut/iterate wb
-                                   [(value/value [7 7 7 7] {:spec :array-int})]
-                                   {:max-popped 8
-                                    :max-yields 1}))]
+        result (sut/realize-selected
+                (first (sut/iterate wb
+                                    [(value/value [7 7 7 7] {:spec :array-int})]
+                                    {:max-popped 8
+                                     :max-yields 1})))]
     (is (= [:quad 7]
            (get-in result [:selected :target0])))
     (is (nil? (get op/registry :quad)))))

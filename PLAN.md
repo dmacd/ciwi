@@ -12,9 +12,10 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
 
 - Last committed code checkpoint: DL parity checkpoint at current `HEAD`.
 - Current working tree has the first Python-scale core Wunderbaum parity rows,
-  threshold-aware Alice/Wunderbaum task runs, lazy best-first node tuple
-  enumeration, a Python-compatible value DL model, Alice operator DL alignment,
-  and several translation fixes; tests pass locally with 119 tests and 550
+  greedy Alice/Wunderbaum task runs, lazy best-first node tuple enumeration, a
+  Python-compatible value DL model, Alice operator DL alignment, per-run DL
+  caching, deferred selected-expression realization, and several translation
+  fixes; tests pass locally with 119 tests and 551
   assertions.
 
 ## Current State
@@ -28,21 +29,23 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   Wunderbaum with injected registries, operator/count declarations,
   generalized conditions, node-tuple enumeration, delayed graph building,
   operator inversion, usage-biased DL, and MDL-selected materialized results.
-- `ciwi.alice-wunderbaum` adds an Alice-facing declaration table and runner
-  over that core. It is separate from the default `ciwi.alice` no-recognizer
-  harness.
+- `ciwi.alice-wunderbaum` adds an Alice-facing greedy runner over that core.
+  It is separate from the default `ciwi.alice` no-recognizer harness.
 - `ciwi.value` now ports Python WILLIAM's scalar, structural, array, and
   Gaussian value description length model. Alice/Wunderbaum declarations also
   preserve Python `TaskDomain` operator DL in materialized graphs.
-- Python-scale `simple_repeat`, `repeat_with_noise`, and `simply_linear` now
-  pass through the injected Alice operator basis via
-  `ciwi.alice-wunderbaum`, with no recognizer templates. The live evidence
-  matrix is `alice-test-parity.md`.
-- `ciwi.alice-wunderbaum/run-task-to-threshold` now stops the lazy Wunderbaum
-  stream at the task threshold instead of collecting a best-of-`max-yields`
-  sample. With the Python DL model, `repeat_with_noise` reaches the task
-  threshold at the same plain-`insert` solution as Python after 3 yielded
-  candidates.
+- Python-scale `simple_repeat`, `repeat_with_noise`, and `simply_linear` pass
+  through the injected Alice operator basis via `ciwi.alice-wunderbaum`, with
+  no recognizer templates. The live evidence matrix is
+  `alice-test-parity.md`.
+- `ciwi.alice-wunderbaum/run-greedy-task` now mirrors Python GreedyAlice's
+  outer loop: compress the largest worthy raw leaf, accept the first candidate
+  above the one-percent step threshold, splice it into the task tree, and
+  repeat until the task threshold is reached. `simply_linear` now reaches the
+  same cumsum/insert solution in two greedy steps and six yielded candidates.
+- Wunderbaum candidate summaries defer selected-expression realization until a
+  candidate is accepted or explicitly inspected, and value DLs are cached
+  across each candidate stream.
 - Delayed graph materialization now skips non-executable operator
   calls/inverses, matching Python's invalid-probe behavior, and numeric inverse
   shape mismatches no longer generate `nil` children.
@@ -81,11 +84,9 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
 
 - Proceed to `insert_repeat`, then `insert_repeat2`, keeping every fix tied to
   a Python mechanism rather than a CIWI-only recognizer.
-- Add `run-greedy-task` after the remaining single-step evidence is clean, so
-  CIWI can mirror Python Alice's outer loop instead of only first-threshold
-  Wunderbaum streams.
 - If runtime parity becomes the immediate priority, profile delayed
-  materialization, repeated MDL recomputation, and search ordering on the first
-  Python-scale row where CIWI is slower for the same compression behavior.
+  materialization, remaining repeated MDL work, and Clojure vector/numeric
+  paths on the first Python-scale row where CIWI is slower for the same
+  compression behavior.
 - Keep updating `alice-test-parity.md` with measured core CIWI rate, exact
   selected solution, timing, and Python comparison for each row.

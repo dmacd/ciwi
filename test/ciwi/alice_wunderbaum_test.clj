@@ -10,7 +10,7 @@
 
 (defn- run-python-scale-sequence-task
   [task opts]
-  (sut/run-task-to-threshold
+  (sut/run-greedy-task
    task
    (merge {:registry alice/basic-operator-registry
            :operator-ids python-alice-operator-ids
@@ -31,7 +31,7 @@
     (is (thrown-with-msg?
          clojure.lang.ExceptionInfo
          #"requires an injected operator registry"
-         (sut/run-task task {:max-popped 8})))))
+         (sut/run-greedy-task task {:max-popped 8})))))
 
 (deftest declarations-are-filtered-to-the-injected-registry
   (let [declarations (sut/declarations-for-registry {:repeat op/repeat})]
@@ -43,9 +43,10 @@
   (let [task (alice/compression-task [[0 1 2 3 4 5 6 7]]
                                      {:name "range"
                                       :threshold-rate 1.0})
-        result (sut/run-task task {:registry {:brange op/brange}
-                                   :max-popped 16
-                                   :max-yields 4})]
+        result (sut/run-greedy-task task {:registry {:brange op/brange}
+                                          :max-popped 16
+                                          :max-yields 4
+                                          :worthy-dl 0})]
     (is (:meets-threshold? result))
     (is (= [:brange 0 8]
            (get-in result [:selected :target0])))
@@ -57,9 +58,10 @@
         task (alice/compression-task [target]
                                      {:name "repeat"
                                       :threshold-rate 1.0})
-        result (sut/run-task task {:registry {:repeat op/repeat}
-                                   :max-popped 32
-                                   :max-yields 8})]
+        result (sut/run-greedy-task task {:registry {:repeat op/repeat}
+                                          :max-popped 32
+                                          :max-yields 8
+                                          :worthy-dl 0})]
     (is (:meets-threshold? result))
     (is (= [:repeat 10 [140 -50]]
            (get-in result [:selected :target0])))))
@@ -93,8 +95,10 @@
         (is (>= (:compression-rate result) threshold-rate))
         (is (= expected
                (get-in result [:selected :target0])))
-        (is (= :first-threshold-candidate
-               (get-in result [:resource :mode])))))))
+        (is (= :greedy-task
+               (get-in result [:resource :mode])))
+        (when (= name "simply_linear")
+          (is (= 2 (count (:steps result)))))))))
 
 (deftest alice-wunderbaum-repeat-with-noise-step-reaches-task-threshold
   (let [opts {:registry alice/basic-operator-registry
@@ -104,11 +108,11 @@
               :max-yields 500}
         task (repeat-with-noise-task)
         step (sut/run-compression-step task opts)
-        task-threshold (sut/run-task-to-threshold task opts)]
+        task-result (sut/run-greedy-task task opts)]
     (is (>= (:compression-rate step) 1.0))
     (is (:meets-threshold? step))
-    (is (:meets-threshold? task-threshold))
+    (is (:meets-threshold? task-result))
     (is (= (get-in step [:resource :candidates-consumed])
-           (get-in task-threshold [:resource :candidates-consumed])))
+           (get-in task-result [:resource :candidates-consumed])))
     (is (= (:selected step)
-           (:selected task-threshold)))))
+           (:selected task-result)))))
