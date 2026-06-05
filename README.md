@@ -1,6 +1,20 @@
 # CIWI
 
-Prototype workspace for a Clojure implementation of incremental WILLIAM.
+CIWI is a Clojure proof of concept for incremental compression in the style of
+[WILLIAM](https://gitlab.com/occam_ua/william). The goal is to make the core
+machinery easier to inspect, test, and evolve: values, operators, graph
+construction, MDL selection, bounded rewrite, exhaustive rewrite, and the
+Alice/Wunderbaum compression path are represented with ordinary Clojure data and
+small explicit interfaces.
+
+For more context, see [DESIGN.md](./DESIGN.md) for the current architecture and
+[PLAN.md](./PLAN.md) for the active implementation roadmap.
+
+## Status
+
+CIWI is pre-alpha research code and still very much under construction. It is
+not yet at parity with WILLIAM, and APIs, data shapes, search behavior, and
+performance characteristics may change quickly.
 
 ## Local Tooling
 
@@ -53,3 +67,10 @@ The first prototype model mirrors WILLIAM's bipartite graph shape:
 The initial operator set is deliberately small: `add` and `negate`. The tests
 include a small golden case transcribed from
 `../william/william/tests/test_propagation.py`.
+
+## License
+
+CIWI uses the same terms as WILLIAM: Creative Commons
+Attribution-NonCommercial 4.0 International (CC BY-NC 4.0). You may use, share,
+and modify this code for non-commercial purposes with attribution. See
+[LICENSE.md](./LICENSE.md) for the license notice and canonical legal terms.
