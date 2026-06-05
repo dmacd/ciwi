@@ -450,6 +450,13 @@ expressions. Most candidates are only compared and discarded, so selected
 expressions are computed explicitly with `wunderbaum/realize-selected` when a
 caller needs to inspect or accept a candidate.
 
+When `:threshold-dl` is supplied, `wunderbaum/iterate` mirrors Python's
+`threshold_dl` behavior: it still expands materialized graphs that do not meet
+the threshold, but it does not yield them to the caller, and it stops after the
+first yielded graph below the threshold. Alice uses this for one-percent
+compression steps so yielded candidate counts correspond to accepted
+compression candidates rather than every explored frontier materialization.
+
 `ciwi.alice-wunderbaum` is the Alice-facing greedy runner over that core with
 an explicit declaration table for the Python `test_alice.py` operator basis. It
 requires an injected registry and does not change the default `ciwi.alice`
@@ -461,6 +468,14 @@ the largest worthy leaf, accept the first Wunderbaum candidate above
 task tree, and repeat until the task threshold is reached or no worthy leaf can
 improve. `run-compression-step` exposes the same mechanism capped at one greedy
 step for diagnostics.
+
+For each leaf-local compression step, the other current task-tree leaves are
+passed to Wunderbaum as dummy free values. This matches Python
+`initialize_free_values`, where graph leaves other than the focused leaf can be
+used as zero-cost anchors and then glued back into the task graph. In CIWI's
+current tree summary this appears as a zero-DL raw reference with the same
+concrete value; it is the near-term equivalent of Python's shared-DAG sexpr
+variables such as `_1`.
 
 Delayed materialization treats non-executable operator calls and inverses as no
 candidate, matching Python's `exec_errors` behavior. Operator inverses must

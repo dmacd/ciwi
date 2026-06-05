@@ -368,6 +368,11 @@
        (< yielded max-yields)
        (under-pop-limit? popped max-popped)))
 
+(defn- threshold-active?
+  [threshold-dl]
+  (and (some? threshold-dl)
+       (< (double threshold-dl) Double/POSITIVE_INFINITY)))
+
 (defn- initial-frontier
   [wb targets opts]
   (let [{:keys [graph memory target-ids]} (initial-state targets)
@@ -386,27 +391,41 @@
                                        {:registry (:registry wb)}))
 
 (defn- add-materialized-result
-  [wb opts target-ids value-dl-cache build-dl [queue order yielded emitted] {:keys [graph memory]}]
-  (let [summary (result-summary graph memory build-dl target-ids value-dl-cache)
-        [queue order] (expand-graph wb queue graph memory build-dl opts order)]
-    [queue order (inc yielded) (conj emitted summary)]))
+  [wb opts target-ids value-dl-cache build-dl [queue order yielded emitted stop?] {:keys [graph memory]}]
+  (if stop?
+    (reduced [queue order yielded emitted stop?])
+    (let [{:keys [threshold-dl]} opts
+          threshold? (threshold-active? threshold-dl)
+          summary (result-summary graph memory build-dl target-ids value-dl-cache)
+          [queue order] (expand-graph wb queue graph memory build-dl opts order)
+          emit? (or (not threshold?)
+                    (< (:dl summary) (double threshold-dl)))]
+      (cond
+        (and threshold? emit?)
+        (reduced [queue order (inc yielded) (conj emitted summary) true])
+
+        emit?
+        [queue order (inc yielded) (conj emitted summary) false]
+
+        :else
+        [queue order yielded emitted false]))))
 
 (defn- process-frontier-item
   [wb opts seen target-ids value-dl-cache item queue order yielded]
   (let [build-info (:build-info item)
         {:keys [seen results]} (materialize-build wb seen build-info)
-        [queue order yielded emitted]
+        [queue order yielded emitted stop?]
         (reduce (partial add-materialized-result wb opts target-ids value-dl-cache (:dl item))
-                [queue order yielded []]
+                [queue order yielded [] false]
                 results)]
-    [seen queue order yielded emitted]))
+    [seen queue order yielded emitted stop?]))
 
 (defn- walk-frontier
   [wb opts seen target-ids value-dl-cache queue order popped yielded]
   (lazy-seq
    (when (frontier-active? queue popped yielded opts)
      (let [[item queue] (pop-queue queue)
-           [seen queue order yielded emitted]
+           [seen queue order yielded emitted stop?]
            (process-frontier-item wb
                                   opts
                                   seen
@@ -416,16 +435,18 @@
                                   queue
                                   order
                                   yielded)]
-       (concat emitted
-               (walk-frontier wb
-                              opts
-                              seen
-                              target-ids
-                              value-dl-cache
-                              queue
-                              order
-                              (inc popped)
-                              yielded))))))
+       (if stop?
+         emitted
+         (concat emitted
+                 (walk-frontier wb
+                                opts
+                                seen
+                                target-ids
+                                value-dl-cache
+                                queue
+                                order
+                                (inc popped)
+                                yielded)))))))
 
 (defn iterate
   "Yield materialized Wunderbaum candidate graphs in frontier order.

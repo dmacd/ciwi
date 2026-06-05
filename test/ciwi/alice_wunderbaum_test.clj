@@ -87,6 +87,19 @@
             :threshold-rate 92.0
             :opts {:max-popped 10000
                    :max-yields 1000}}
+           {:name "insert_repeat2"
+            :target (vec (concat (repeat 10 45)
+                                  (repeat 25 87)
+                                  (repeat 610 164)))
+            :expected [:insert
+                       [:concat (vec (range 10)) (vec (range 10 35))]
+                       [:insert (vec (range 10))
+                        45
+                        (vec (repeat 25 87))]
+                       (vec (repeat 610 164))]
+            :threshold-rate 92.0
+            :opts {:max-popped 10000
+                   :max-yields 1000}}
            {:name "repeat_with_noise"
             :target (first (:targets (repeat-with-noise-task)))
             :expected [:insert [100] -1 (vec (repeat 500 45))]
@@ -113,9 +126,12 @@
         (is (= (case name
                  "simple_repeat" 3
                  "insert_repeat" 2
+                 "insert_repeat2" 3
                  "simply_linear" 2
                  1)
-               (count (:steps result))))))))
+               (count (:steps result))))
+        (is (= (count (:steps result))
+               (get-in result [:resource :candidates-consumed])))))))
 
 (deftest alice-wunderbaum-repeat-with-noise-step-reaches-task-threshold
   (let [opts {:registry alice/basic-operator-registry

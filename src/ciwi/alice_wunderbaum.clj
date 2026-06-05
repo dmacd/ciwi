@@ -176,7 +176,7 @@
 
 (defn- free-value
   [x]
-  (specified-value x {}))
+  (specified-value x {:dummy? true}))
 
 (defn- task-values
   [task]
@@ -216,7 +216,38 @@
   ([context]
    (candidate-seq context (:all-values context)))
   ([{:keys [wunderbaum opts]} values]
-   (wunderbaum/iterate wunderbaum values opts)))
+   (wunderbaum/iterate wunderbaum values opts))
+  ([{:keys [wunderbaum opts]} values candidate-opts]
+   (wunderbaum/iterate wunderbaum values (merge opts candidate-opts))))
+
+(defn- same-leaf?
+  [left right]
+  (and (= (:target-index left) (:target-index right))
+       (= (:path left) (:path right))))
+
+(defn- free-value-key
+  [v]
+  [(:spec v) (:data v)])
+
+(defn- add-free-value
+  [[values seen] x]
+  (let [v (free-value x)
+        k (free-value-key v)]
+    (if (contains? seen k)
+      [values seen]
+      [(conj values v) (conj seen k)])))
+
+(defn- add-default-free-values
+  [[values seen :as state]]
+  (let [data (map :data values)
+        int-one? (some #(and (integer? %) (= 1 %)) data)
+        float? (some float? data)
+        state (if int-one?
+                state
+                (add-free-value state 1))]
+    (if float?
+      state
+      (add-free-value state 1.5))))
 
 (defn- first-candidate-at-rate
   [initial-dl threshold-rate candidates]
@@ -311,6 +342,24 @@
                       (map-indexed vector (:children node)))))]
     (vec (walk tree []))))
 
+(defn- leaf-free-values
+  [context target-trees leaf]
+  (let [current-leaf-exprs (->> (map-indexed vector target-trees)
+                                (mapcat (fn [[idx tree]]
+                                          (target-tree-leaves
+                                           idx
+                                           (nth (target-ids
+                                                 (count target-trees))
+                                                idx)
+                                           tree)))
+                                (remove #(same-leaf? leaf %))
+                                (map :expr))
+        state (reduce add-free-value [[] #{}]
+                      (concat current-leaf-exprs
+                              (map :data (:free-values context))))
+        [values _seen] (add-default-free-values state)]
+    values))
+
 (defn- worthy-leaves
   [target-trees worthy-dl]
   (let [ids (target-ids (count target-trees))]
@@ -322,12 +371,17 @@
          vec)))
 
 (defn- compress-leaf
-  [context min-compression-rate leaf]
+  [context min-compression-rate target-trees leaf]
   (let [values (into [(target-value (:expr leaf))]
-                     (:free-values context))
+                     (leaf-free-values context target-trees leaf))
+        threshold-dl (* (:dl leaf)
+                        (- 1.0 (/ min-compression-rate 100.0)))
         search (first-candidate-at-rate (:dl leaf)
                                         min-compression-rate
-                                        (candidate-seq context values))]
+                                        (candidate-seq context
+                                                       values
+                                                       {:threshold-dl
+                                                        threshold-dl}))]
     (if-let [candidate (:candidate search)]
       (let [replacement (candidate-tree context candidate :target0)]
         {:leaf leaf
@@ -350,7 +404,10 @@
          consumed 0
          attempts []]
     (if-let [leaf (first leaves)]
-      (let [attempt (compress-leaf context min-compression-rate leaf)
+      (let [attempt (compress-leaf context
+                                   min-compression-rate
+                                   target-trees
+                                   leaf)
             consumed (+ consumed (:candidates-consumed attempt))
             attempt (assoc attempt :candidates-consumed consumed)]
         (if (:replacement-tree attempt)
