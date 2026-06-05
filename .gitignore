@@ -3,5 +3,14 @@
 .m2/
 .tooling/
 .cpcache/
+.clerk/
+.clj-kondo/.cache/
+.idea/
+.ipynb_checkpoints/
+**/.ipynb_checkpoints/
+.jupyter-config/
+.jupyter-data/
+.jupyter-runtime/
+.ipython/
+.nrepl-port
 target/
-

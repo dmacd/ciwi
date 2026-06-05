@@ -254,19 +254,40 @@
   [xs ys]
   (count (take-while true? (map = xs ys))))
 
+(defn- common-unused-prefix-len
+  [output used content start]
+  (let [n (count output)
+        m (count content)]
+    (loop [idx start
+           content-idx 0]
+      (if (and (< idx n)
+               (< content-idx m)
+               (not (contains? used idx))
+               (= (nth output idx) (nth content content-idx)))
+        (recur (inc idx) (inc content-idx))
+        content-idx))))
+
 (defn- best-content-block
   [output used content]
-  (let [n (count output)]
-    (reduce (fn [best idx]
-              (let [available (->> (range idx n)
-                                   (take-while #(not (used %)))
-                                   (mapv output))
-                    prefix-len (common-prefix-len available content)]
-                (if (> prefix-len (:len best))
-                  {:idx idx :len prefix-len}
-                  best)))
-            {:idx 0 :len 0}
-            (range n))))
+  (let [n (count output)
+        content-count (count content)]
+    (loop [idx 0
+           best {:idx 0 :len 0}]
+      (cond
+        (= idx n)
+        best
+
+        (contains? used idx)
+        (recur (inc idx) best)
+
+        :else
+        (let [prefix-len (common-unused-prefix-len output used content idx)
+              best (if (> prefix-len (:len best))
+                     {:idx idx :len prefix-len}
+                     best)]
+          (if (= prefix-len content-count)
+            best
+            (recur (inc idx) best)))))))
 
 (defn- partition-given-content
   [output content]

@@ -2,7 +2,9 @@
  :mvn/local-repo ".m2/repository"
  :deps {org.clojure/clojure {:mvn/version "1.12.5"}}
  :aliases
- {:dev {:extra-paths ["dev" "test"]}
+ {:dev {:extra-paths ["dev" "notebooks" "test"]}
   :test {:extra-paths ["test"]
-         :main-opts ["-m" "ciwi.test-runner"]}}}
-
+         :main-opts ["-m" "ciwi.test-runner"]}
+  :clerk {:extra-paths ["notebooks" "test"]
+          :extra-deps {io.github.nextjournal/clerk {:mvn/version "0.18.1158"}}
+          :main-opts ["-m" "ciwi.clerk"]}}}

@@ -13,6 +13,27 @@ this workspace.
 ./bin/test
 ```
 
+To run the Clerk notebook:
+
+```bash
+./bin/clerk
+```
+
+Open `http://localhost:7777`. The runner watches `notebooks` and `src`, and
+shows `notebooks/ciwi/notebook/core_machinery.clj` by default. Use
+`./bin/clerk --browse` to let Clerk open the browser, or
+`./bin/clerk --port 7878` if port 7777 is already in use.
+
+For Cursive-driven REPL notebooks, start a REPL with the `:dev` alias and open:
+
+```text
+notebooks/ciwi/notebook/core_machinery.clj
+notebooks/ciwi/notebook/alice_machinery.clj
+```
+
+The `:dev` alias includes `notebooks`, so those namespaces can be loaded and
+their `(comment ...)` forms can be evaluated directly in Cursive.
+
 If `.tooling/clojure` is missing, run:
 
 ```bash
