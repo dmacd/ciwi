@@ -86,11 +86,12 @@ if I asked Codex to ..." experiments. I didn't even look at the
 results for three weeks. Then I got curious about it, and a little
 voice told me to actually pick it up and play with it. I was instantly
 smitten again with the elegance and joy of clojure, and became determined to
-finish the port and see what we could build on top of it.
+finish the port and see what we could build on top of it. As a bonus, I
+tend understand things by building them, or at least coaching someone else to
+build them.
 
-So thats the emotional rationale. The more technical motivations were 1) I
-understand things by building them, or at least coaching someone else to
-build them and 2) clojure seems like a more natural fit for experimenting
+So that's the emotional rationale. The more technical motivation is clojure 
+seems like a more natural fit for experimenting
 with more sophisticated graph local, incremental, bounded graph rewrites due
 to its emphasis on immutability and use of efficient persistent data
 structures, and the avenues for scalability that those properties unlock.
