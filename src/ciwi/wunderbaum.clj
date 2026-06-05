@@ -276,11 +276,48 @@
                   (seq (:options (graph/node g root-id)))))
            (graph/roots g)))
 
+(defn- descendant-set
+  [g root-id]
+  (set (graph/walk g root-id {:above? false
+                              :below? true
+                              :values? true
+                              :operators? true
+                              :include-self? true})))
+
+(defn- ancestor-set
+  [g root-id]
+  (set (graph/walk g root-id {:above? true
+                              :below? false
+                              :values? true
+                              :operators? true
+                              :include-self? true})))
+
+(defn- attachment-context
+  [g root-id free-root-ids]
+  (let [root-id (or root-id (first (graph/roots g)))
+        free-root-ids (vec free-root-ids)
+        op-roots (op-carrying-roots g root-id)]
+    {:primary-root-id root-id
+     :free-root-ids free-root-ids
+     :primary-descendants (when root-id
+                            (descendant-set g root-id))
+     :free-ancestors (into #{}
+                           (mapcat #(ancestor-set g %))
+                           free-root-ids)
+     :op-roots op-roots
+     :primary-leaves (when (seq op-roots)
+                       (graph/leaves g root-id))
+     :op-root-descendants (into {}
+                                (map (fn [op-root-id]
+                                       [op-root-id
+                                        (descendant-set g op-root-id)]))
+                                op-roots)}))
+
 (defn- leaves-below-primary-outside-op-root?
-  [g primary-root-id op-root-id]
+  [{:keys [primary-leaves op-root-descendants]} op-root-id]
   (boolean
-   (some #(not (below? g op-root-id %))
-         (graph/leaves g primary-root-id))))
+   (some #(not (contains? (get op-root-descendants op-root-id) %))
+         primary-leaves)))
 
 (defn- invalid-attachment?
   ([g gen-cond conditioned-nodes]
@@ -290,9 +327,16 @@
                         (first (graph/roots g))
                         (rest (graph/roots g))))
   ([g gen-cond conditioned-nodes root-id free-root-ids]
-   (let [root-id (or root-id (first (graph/roots g)))
-         free-root-ids (vec free-root-ids)
-         op-roots (op-carrying-roots g root-id)
+   (invalid-attachment? g
+                        gen-cond
+                        conditioned-nodes
+                        (attachment-context g root-id free-root-ids)))
+  ([g gen-cond conditioned-nodes {:keys [primary-root-id
+                                         primary-descendants
+                                         free-ancestors
+                                         op-roots]
+                                  :as context}]
+   (let [root-id primary-root-id
          input-attachment? (some #(not= -1 %) gen-cond)]
      (boolean
       (or
@@ -304,11 +348,11 @@
 
                  (and (= -1 position)
                       root-id
-                      (not (below? g root-id node-id)))
+                      (not (contains? primary-descendants node-id)))
                  true
 
                  (and (not= -1 position)
-                      (not (above-any? g node-id free-root-ids)))
+                      (not (contains? free-ancestors node-id)))
                  true
 
                  (and (not= -1 position)
@@ -323,8 +367,7 @@
             (let [op-root-id (first op-roots)]
               (or (not (some #{op-root-id} conditioned-nodes))
                   (not (leaves-below-primary-outside-op-root?
-                        g
-                        root-id
+                        context
                         op-root-id))))))))))
 
 (defn- build-rank
@@ -347,38 +390,40 @@
                              :or {max-dag-dl Double/POSITIVE_INFINITY
                                   max-tuple-len 2
                                   max-node-tuples 1000}} order]
-  (reduce
-   (fn [[queue order] {:keys [nodes]}]
-     (let [k (node-condition-key graph nodes)
-           elements (get (:elements-by-condition-key wb) k)]
-       (reduce
-        (fn [[queue order] [element-index element]]
-          (let [new-dl (+ dl (double (:dl element)))]
-            (if (or (> new-dl max-dag-dl)
-                    (invalid-attachment? graph
-                                         (:gen-cond element)
-                                         nodes
-                                         primary-root-id
-                                         free-root-ids))
-              [queue order]
-              (let [order (inc order)
-                    build-info (delayed/build-info
-                                {:dl new-dl
-                                 :graph graph
-                                 :memory memory
-                                 :conditioned-nodes nodes
-                                 :condition-key k
-                                 :element-index element-index})]
-                [(enqueue queue {:dl new-dl
-                                 :order order
-                                 :build-info build-info})
-                 order]))))
-        [queue order]
-        (map-indexed vector elements))))
-   [queue order]
-   (node-tuples graph {:max-tuple-len max-tuple-len
-                       :max-results max-node-tuples
-                       :root-order root-order})))
+  (let [attachment-context (attachment-context graph
+                                               primary-root-id
+                                               free-root-ids)]
+    (reduce
+     (fn [[queue order] {:keys [nodes]}]
+       (let [k (node-condition-key graph nodes)
+             elements (get (:elements-by-condition-key wb) k)]
+         (reduce
+          (fn [[queue order] [element-index element]]
+            (let [new-dl (+ dl (double (:dl element)))]
+              (if (or (> new-dl max-dag-dl)
+                      (invalid-attachment? graph
+                                           (:gen-cond element)
+                                           nodes
+                                           attachment-context))
+                [queue order]
+                (let [order (inc order)
+                      build-info (delayed/build-info
+                                  {:dl new-dl
+                                   :graph graph
+                                   :memory memory
+                                   :conditioned-nodes nodes
+                                   :condition-key k
+                                   :element-index element-index})]
+                  [(enqueue queue {:dl new-dl
+                                   :order order
+                                   :build-info build-info})
+                   order]))))
+          [queue order]
+          (map-indexed vector elements))))
+     [queue order]
+     (node-tuples graph {:max-tuple-len max-tuple-len
+                         :max-results max-node-tuples
+                         :root-order root-order}))))
 
 (defn- score-target-dl
   [graph target-ids value-dl-cache score-target-count]
@@ -450,15 +495,17 @@
      :order order
      :seen #{}
      :value-dl-cache (or (:value-dl-cache opts) (atom {}))
+     :value-key-cache (or (:value-key-cache opts) (atom {}))
      :target-ids target-ids
      :opts opts}))
 
 (defn- materialize-build
-  [wb seen build-info]
+  [wb seen build-info value-key-cache]
   (delayed/delayed-dag-build-with-seen build-info
                                        (:elements-by-condition-key wb)
                                        seen
-                                       {:registry (:registry wb)}))
+                                       {:registry (:registry wb)
+                                        :value-key-cache value-key-cache}))
 
 (defn- add-materialized-result
   [wb opts target-ids value-dl-cache build-dl [queue order yielded emitted stop?] {:keys [graph memory]}]
@@ -486,9 +533,12 @@
         [queue order yielded emitted false]))))
 
 (defn- process-frontier-item
-  [wb opts seen target-ids value-dl-cache item queue order yielded]
+  [wb opts seen target-ids value-dl-cache value-key-cache item queue order yielded]
   (let [build-info (:build-info item)
-        {:keys [seen results]} (materialize-build wb seen build-info)
+        {:keys [seen results]} (materialize-build wb
+                                                  seen
+                                                  build-info
+                                                  value-key-cache)
         [queue order yielded emitted stop?]
         (reduce (partial add-materialized-result wb opts target-ids value-dl-cache (:dl item))
                 [queue order yielded [] false]
@@ -496,7 +546,7 @@
     [seen queue order yielded emitted stop?]))
 
 (defn- walk-frontier
-  [wb opts seen target-ids value-dl-cache queue order popped yielded]
+  [wb opts seen target-ids value-dl-cache value-key-cache queue order popped yielded]
   (lazy-seq
    (when (frontier-active? queue popped yielded opts)
      (let [[item queue] (pop-queue queue)
@@ -506,6 +556,7 @@
                                   seen
                                   target-ids
                                   value-dl-cache
+                                  value-key-cache
                                   item
                                   queue
                                   order
@@ -518,6 +569,7 @@
                                 seen
                                 target-ids
                                 value-dl-cache
+                                value-key-cache
                                 queue
                                 order
                                 (inc popped)
@@ -533,6 +585,15 @@
   ([wb targets]
    (iterate wb targets {}))
   ([wb targets opts]
-   (let [{:keys [queue order seen target-ids value-dl-cache opts]}
+   (let [{:keys [queue order seen target-ids value-dl-cache value-key-cache opts]}
          (initial-frontier wb targets opts)]
-     (walk-frontier wb opts seen target-ids value-dl-cache queue order 0 0))))
+     (walk-frontier wb
+                    opts
+                    seen
+                    target-ids
+                    value-dl-cache
+                    value-key-cache
+                    queue
+                    order
+                    0
+                    0))))

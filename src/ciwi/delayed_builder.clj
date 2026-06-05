@@ -9,6 +9,17 @@
 
 (defrecord BuildInfo [dl graph memory conditioned-nodes condition-key element-index])
 
+(deftype IdentityKey [x purpose]
+  Object
+  (equals [_ other]
+    (and (instance? IdentityKey other)
+         (identical? x (.-x ^IdentityKey other))
+         (= purpose (.-purpose ^IdentityKey other))))
+  (hashCode [_]
+    (hash [::identity-key
+           (System/identityHashCode x)
+           purpose])))
+
 (defn build-info
   [{:keys [dl graph memory conditioned-nodes condition-key element-index]
     :or {memory {}
@@ -87,6 +98,13 @@
   [memory node-id x]
   (assoc memory node-id (propagation/entry x)))
 
+(defn- with-inferred-spec
+  [x]
+  (let [v (value/value x)]
+    (if (:spec v)
+      v
+      (assoc v :spec (spec/infer-spec v)))))
+
 (defn- add-generated-value
   [g memory base value]
   (let [node-id (graph/unique-id g base)]
@@ -116,8 +134,8 @@
 (defn- result-key
   [{:keys [graph memory]}]
   [(->> (graph/roots graph)
-        (map #(graph/structural-key graph %))
         (sort-by pr-str)
+        (map #(graph/structural-key graph %))
         vec)
    (->> memory
         (map (fn [[node-id entry]]
@@ -125,21 +143,34 @@
         (sort-by (comp pr-str first))
         vec)])
 
-(defn- value-key
+(defn- raw-value-key
   [x]
   (let [v (value/value x)]
     [(spec/value-spec v) (hashing/stable-key (:data v))]))
 
+(defn- value-key
+  ([x]
+   (raw-value-key x))
+  ([cache x]
+   (if (and cache (value/value? x))
+     (let [k (IdentityKey. x :delayed-value-key)]
+       (if-let [entry (find @cache k)]
+         (val entry)
+         (let [value-key (raw-value-key x)]
+           (swap! cache assoc k value-key)
+           value-key)))
+     (raw-value-key x))))
+
 (defn- memory-value-keys
-  [memory]
+  [cache memory]
   (into #{}
-        (map (comp value-key entry-value))
+        (map #(value-key cache (entry-value %)))
         (vals memory)))
 
 (defn- duplicate-generated-value?
-  [existing-value-keys missing-values]
+  [cache existing-value-keys missing-values]
   (boolean
-   (some #(contains? existing-value-keys (value-key %))
+   (some #(contains? existing-value-keys (value-key cache %))
          missing-values)))
 
 (defn- dedupe-results
@@ -174,8 +205,10 @@
 
 (defn- value-conforms?
   [expected x]
-  (or (nil? expected)
-      (spec/conforms? expected (spec/value-spec x))))
+  (let [v (with-inferred-spec x)]
+    (when (or (nil? expected)
+              (spec/conforms? expected (:spec v)))
+      v)))
 
 (defn- forward-build
   [g memory {:keys [operator arity output-spec] :as element} positions]
@@ -183,8 +216,8 @@
     (when (every? some? child-ids)
       (let [inputs (mapv #(memory-value memory %) child-ids)
             output (try-apply-op operator inputs)]
-        (when (and output
-                   (value-conforms? output-spec output))
+        (when-let [output (and output
+                               (value-conforms? output-spec output))]
           (let [graph-op (costed-operator element)
                 root-id (graph/unique-id g (keyword (str "delayed-" (name (:id operator)))))
                 op-id (graph/unique-id g (keyword (str (name root-id) "-" (name (:id operator)))))
@@ -197,7 +230,7 @@
              :operator-id op-id}))))))
 
 (defn- inverse-builds
-  [g memory {:keys [operator arity input-specs] :as element} positions]
+  [g memory {:keys [operator arity input-specs] :as element} positions opts]
   (when-let [output-id (:output positions)]
     (let [known-positions (->> (range arity)
                                (filter #(contains? positions %))
@@ -207,10 +240,12 @@
         (let [output (memory-value memory output-id)
               known-inputs (mapv #(memory-value memory %) known-child-ids)
               missing-positions (vec (remove (set known-positions) (range arity)))
-              existing-value-keys (memory-value-keys memory)]
+              value-key-cache (:value-key-cache opts)
+              existing-value-keys (memory-value-keys value-key-cache memory)]
           (for [missing-values (try-invert-op operator output known-inputs known-positions)
                 :when (= (count missing-positions) (count missing-values))
-                :when (not (duplicate-generated-value? existing-value-keys
+                :when (not (duplicate-generated-value? value-key-cache
+                                                       existing-value-keys
                                                        missing-values))
                 :let [built
                   (reduce (fn [[acc-g acc-memory ids] idx]
@@ -220,12 +255,13 @@
                                     missing-value (nth missing-values missing-idx)
                                     base (keyword (str "delayed-" (name (:id operator))
                                                        "-arg" idx))]
-                                (if-not (value-conforms? (nth input-specs idx nil)
-                                                         missing-value)
-                                  (reduced nil)
+                                (if-let [missing-value (value-conforms?
+                                                        (nth input-specs idx nil)
+                                                        missing-value)]
                                   (let [[acc-g acc-memory node-id]
                                         (add-generated-value acc-g acc-memory base missing-value)]
-                                    [acc-g acc-memory (assoc ids idx node-id)])))))
+                                    [acc-g acc-memory (assoc ids idx node-id)])
+                                  (reduced nil)))))
                           [g memory {}]
                           (range arity))]
                 :when (some? built)]
@@ -241,13 +277,14 @@
 
 (defn- raw-delayed-dag-build
   [build-info elements-by-key {:keys [registry]
-                               :or {registry op/registry}}]
+                               :or {registry op/registry}
+                               :as opts}]
   (let [element (selected-element build-info elements-by-key registry)
         positions (position-map (:gen-cond element) (:conditioned-nodes build-info))
         g (:graph build-info)
         memory (:memory build-info)
         results (if (contains? positions :output)
-                  (inverse-builds g memory element positions)
+                  (inverse-builds g memory element positions opts)
                   (when-let [result (forward-build g memory element positions)]
                     [result]))]
     (vec results)))

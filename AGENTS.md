@@ -55,7 +55,9 @@ WILLIAM/Alice compression behavior before adding new mechanisms.
   problems, not as cold-start product benchmarks. Collect and report Python and
   CIWI timings only under warm-start conditions: dependencies loaded, runtime
   initialized, and first-run/JIT/import effects excluded. Do not add separate
-  cold-start columns unless explicitly requested.
+  cold-start columns unless explicitly requested. Do not record table timings
+  from concurrent benchmark runs that contend with each other; use isolated
+  warm runs for reported numbers.
 - When timing Python WILLIAM from this workspace, set `NUMBA_CACHE_DIR` to a
   writable `/tmp` path if Numba cannot initialize source-local caching under
   the sandbox. This is benchmark environment hygiene, not an implementation

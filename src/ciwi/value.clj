@@ -3,6 +3,19 @@
 
 (defrecord Value [data name spec permeable? dummy?])
 
+(deftype IdentityValueCacheKey [v opts dummy?]
+  Object
+  (equals [_ other]
+    (and (instance? IdentityValueCacheKey other)
+         (identical? v (.-v ^IdentityValueCacheKey other))
+         (= opts (.-opts ^IdentityValueCacheKey other))
+         (= dummy? (.-dummy? ^IdentityValueCacheKey other))))
+  (hashCode [_]
+    (hash [::identity-value
+           (System/identityHashCode v)
+           opts
+           dummy?])))
+
 (def max-precision 10)
 (def intnan64 Long/MIN_VALUE)
 (def max-unique 10)
@@ -648,15 +661,21 @@
 
   Python WILLIAM memoizes `Value.desc_len()` on each Value instance. CIWI keeps
   values immutable, so callers that score many related candidate graphs pass an
-  explicit cache instead of mutating the value record.
+  explicit cache instead of mutating the value record. Existing `Value` records
+  are cached by identity, matching Python's per-instance memoization and
+  avoiding repeated large-vector hash work on cache hits. Raw non-`Value` inputs
+  keep value-based keys because they do not have a stable instance identity.
   "
   ([cache v]
    (desc-len-cached cache v {:mode :use-gaussian}))
   ([cache v opts]
    (if (nil? cache)
      (desc-len v opts)
-     (let [v (value v)
-           k [opts (:dummy? v) (:data v)]]
+     (let [value-input? (value? v)
+           v (value v)
+           k (if value-input?
+               (IdentityValueCacheKey. v opts (:dummy? v))
+               [opts (:dummy? v) (:data v)])]
        (if-let [entry (find @cache k)]
          (val entry)
          (let [dl (desc-len v opts)]

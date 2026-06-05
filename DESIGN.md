@@ -233,7 +233,9 @@ roots.
 Description-length caching is caller-owned rather than record-mutable. Python
 WILLIAM caches `Value.desc_len()` on the `Value` object; CIWI keeps values
 immutable and passes explicit cache atoms through scoring contexts instead.
-`ciwi.value/desc-len-cached` memoizes raw value DLs, while
+`ciwi.value/desc-len-cached` memoizes existing `Value` records by identity,
+matching Python's per-instance memoization and avoiding repeated large-vector
+hash work on cache hits. Raw non-`Value` inputs keep value-based cache keys.
 `ciwi.mdl/scoring-context` adds graph-local node-DL memoization. Wunderbaum
 shares the value-DL cache across a candidate stream but creates fresh node
 caches per graph.
@@ -492,7 +494,10 @@ hash-map or root-set iteration for the same semantics. Attachment validation
 therefore receives `:primary-root-id`, `:free-root-ids`, and `:root-order`
 explicitly. Output-conditioned attachments must be below the primary target,
 input-conditioned attachments must be above a free root, and the special
-Python rule for an already operator-carrying free root is preserved.
+Python rule for an already operator-carrying free root is preserved. Each graph
+expansion computes an attachment context once, including primary descendants
+and free-root ancestors, so attachment checks do not repeatedly walk the same
+graph.
 
 Focused Alice steps score only the primary target root, not the whole temporary
 graph containing dummy/free values. CIWI exposes this as Wunderbaum's
@@ -512,7 +517,9 @@ Python's delayed DAG builder also filters inverse-generated values that already
 exist in memory and yields only the first unseen materialization for a delayed
 attachment. CIWI's delayed builder mirrors that by comparing generated values
 using stable value keys and de-duplicating by the whole root set rather than by
-only the newly generated root.
+only the newly generated root. Stable value keys are cached by `Value` identity
+inside a Wunderbaum candidate stream, matching Python's cached `Value.hash`
+behavior without mutating the records.
 
 Delayed materialization also validates declaration specs after inversion or
 forward execution. A generated inverse child must conform to the selected
@@ -522,6 +529,14 @@ check that inverse outputs match node specs. The check matters because one
 runtime operator can have several declarations: for example, the generic
 `getitem` inverse can produce an integer index vector, but that result must not
 be accepted through the cheaper boolean-mask declaration.
+
+Materialized forward outputs and inverse-generated children carry inferred
+specs on their immutable `Value` records. This is the non-mutating equivalent
+of Python `Value.spec` caching and prevents repeated full-array scans during
+node-condition indexing. The unconditioned `getitem` inverse computes its
+source vector and inverse index vector in one pass, which is the same general
+inverse as Python's `np.unique(..., return_inverse=True)` path but avoids the
+old quadratic `.indexOf` scan.
 
 After the straight port proves parity, the same core can be adapted into a
 local resource-bounded `RewriteOperator` with explicit budgets for frontier

@@ -10,14 +10,15 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
 
 ## Current Checkpoint
 
-- Last committed code checkpoint: `db279ea` (`Add increasing runs Alice
-  parity`). The current committed state has Python-scale core parity evidence
-  for all sequence rows in Python `test_alice.py`.
-- Current working tree has the first Python-scale core Wunderbaum parity rows,
-  greedy Alice/Wunderbaum task runs, lazy best-first node tuple enumeration, a
-  Python-compatible value DL model, Alice operator DL alignment, per-run DL
-  caching, deferred selected-expression realization, and several translation
-  fixes; tests pass locally with 122 tests and 598 assertions.
+- Current local state has Python-scale core parity evidence for all sequence
+  rows in Python `test_alice.py`, plus the first round of warm-runtime fixes
+  from profiling the largest gaps.
+- The implementation includes Python-scale core Wunderbaum parity rows, greedy
+  Alice/Wunderbaum task runs, lazy best-first node tuple enumeration, a
+  Python-compatible value DL model, Alice operator DL alignment, per-run DL and
+  value-key caching, deferred selected-expression realization, and several
+  translation/performance fixes; tests pass locally with 122 tests and 598
+  assertions.
 
 ## Current State
 
@@ -52,8 +53,9 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   only the first graph below the step threshold while continuing to explore
   non-threshold frontier items internally.
 - Wunderbaum candidate summaries defer selected-expression realization until a
-  candidate is accepted or explicitly inspected, and value DLs are cached
-  across each candidate stream.
+  candidate is accepted or explicitly inspected. Value DLs are cached across
+  each candidate stream, existing `Value` records use identity cache keys, and
+  delayed-builder stable value keys are cached by `Value` identity.
 - Delayed graph materialization now skips non-executable operator
   calls/inverses, matching Python's invalid-probe behavior, and numeric inverse
   shape mismatches no longer generate `nil` children.
@@ -74,6 +76,11 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
 - Delayed materialization now skips inverse-generated values already present in
   memory and de-duplicates by whole materialized root sets, matching Python's
   delayed DAG builder more closely.
+- Delayed materialization carries inferred specs on generated `Value` records,
+  avoiding repeated Python-scale vector scans during node-condition indexing.
+  Wunderbaum graph expansion computes attachment reachability context once per
+  expansion, and the unconditioned `getitem` inverse now builds source/inverse
+  index vectors in one pass.
 - CIWI now distinguishes existing task-tree free anchors from synthetic/default
   free values. Existing leaves used as local anchors stay zero-DL in the tree
   summary to avoid double-counting shared leaves; synthetic defaults such as
@@ -110,15 +117,15 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
 
 ## Near-Term Next Tasks
 
-- Decide the next parity target after sequence rows: either profile the
-  remaining warm-runtime gaps in the core Alice/Wunderbaum path, or broaden
+- Decide the next parity target after sequence rows: either continue profiling
+  the remaining warm-runtime gaps in the core Alice/Wunderbaum path, or broaden
   parity beyond `test_alice.py` sequence compression tasks.
-- If runtime parity becomes the immediate priority, profile `insert_repeat3`
-  first: the latest warmed full local run reached the Python rate and seven
-  accepted steps, but CIWI is still substantially slower than Python.
-- For performance profiling, start with delayed materialization, remaining
-  repeated MDL work, and Clojure vector/numeric paths. `insert_repeat3` is now
-  the largest measured gap; `simple_repeat`, `insert_repeat`, and
-  `simply_linear` remain useful smaller probes.
+- If runtime parity remains the immediate priority, focus on `increasing_runs`,
+  `sprinkled`, `simply_linear`, and `map_negate`. `insert_repeat3` now reaches
+  the Python rate in seven accepted steps and is faster than the recorded Python
+  warm timing.
+- For performance profiling, start with pure Clojure large-array value-DL
+  paths, structural-key/de-dupe work, and any remaining repeated MDL scoring.
+  Do not solve these gaps with recognizer templates or task-specific shortcuts.
 - Keep updating `alice-test-parity.md` with measured core CIWI rate, exact
   selected solution, timing, and Python comparison for each row.

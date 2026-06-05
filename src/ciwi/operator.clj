@@ -341,6 +341,26 @@
 
       :else nil)))
 
+(defn- getitem-unconditioned-inverse
+  [output]
+  (loop [remaining (seq output)
+         value->index {}
+         values []
+         indices []]
+    (if-let [remaining (seq remaining)]
+      (let [x (first remaining)]
+        (if-let [idx (get value->index x)]
+          (recur (next remaining)
+                 value->index
+                 values
+                 (conj indices idx))
+          (let [idx (count values)]
+            (recur (next remaining)
+                   (assoc value->index x idx)
+                   (conj values x)
+                   (conj indices idx)))))
+      [[values indices]])))
+
 (defn- set-many
   [xs indices values]
   (when (and (valid-indices? xs indices)
@@ -684,11 +704,7 @@
     :inverse (fn [output cond-inputs condition]
                (case (vec condition)
                  [] (when (seqish? output)
-                      (let [values (vec (distinct output))
-                            indices (mapv (fn [x]
-                                            (.indexOf values x))
-                                          output)]
-                        [[values indices]]))
+                      (getitem-unconditioned-inverse output))
                  [1] (let [idx (first cond-inputs)]
                        (cond
                          (and (bool-mask? idx)
