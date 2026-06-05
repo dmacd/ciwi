@@ -10,10 +10,9 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
 
 ## Current Checkpoint
 
-- Last committed code checkpoint: `7ed04fc` (`Add insert repeat three
-  parity`). The current working tree adds `increasing_runs` parity; the
-  immediately preceding commits added `sprinkled`, `map_negate`, and the
-  Python-aligned synthetic free-value accounting fix.
+- Last committed code checkpoint: `db279ea` (`Add increasing runs Alice
+  parity`). The current committed state has Python-scale core parity evidence
+  for all sequence rows in Python `test_alice.py`.
 - Current working tree has the first Python-scale core Wunderbaum parity rows,
   greedy Alice/Wunderbaum task runs, lazy best-first node tuple enumeration, a
   Python-compatible value DL model, Alice operator DL alignment, per-run DL
@@ -111,8 +110,6 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
 
 ## Near-Term Next Tasks
 
-- Finish and commit the current `increasing_runs` parity tranche after tests
-  pass.
 - Decide the next parity target after sequence rows: either profile the
   remaining warm-runtime gaps in the core Alice/Wunderbaum path, or broaden
   parity beyond `test_alice.py` sequence compression tasks.
