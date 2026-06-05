@@ -49,6 +49,12 @@
           (vec (repeat 10000 0))
           python-sprinkled-indices))
 
+(defn- increasing-runs-target
+  []
+  (vec (mapcat (fn [x]
+                 (concat (repeat x 123) [64]))
+               (range 500))))
+
 (defn- close-to?
   [expected actual]
   (< (Math/abs (- (double expected) (double actual)))
@@ -155,6 +161,17 @@
             :expected [:cumsum [:insert [0] 0 (vec (repeat 999 -1))]]
             :threshold-rate 98.0
             :opts {:max-popped 10000
+                   :max-yields 1000}}
+           {:name "increasing_runs"
+            :target (increasing-runs-target)
+            :expected [:insert
+                       [:cumsum
+                        [:cumsum
+                         (vec (concat [0 2] (repeat 498 1)))]]
+                       64
+                       (vec (repeat 124750 123))]
+            :threshold-rate 99.9
+            :opts {:max-popped 10000
                    :max-yields 1000}}]]
     (testing name
       (let [task (alice/compression-task [target]
@@ -174,6 +191,7 @@
                  "simply_linear" 2
                  "sprinkled" 1
                  "map_negate" 2
+                 "increasing_runs" 3
                  1)
                (count (:steps result))))
         (is (= (count (:steps result))

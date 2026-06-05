@@ -7,9 +7,9 @@ routine-by-routine helper parity.
 Status as of the current working tree: the straight CIWI Wunderbaum path has
 Python-scale core evidence for `simple_repeat`, `insert_repeat`,
 `insert_repeat2`, `insert_repeat3`, `repeat_with_noise`, `simply_linear`, and
-`sprinkled`, and `map_negate`. The default local rewrite Alice harness still
-installs no rewrite operators by default, so it cannot accidentally use local
-recognizer templates as parity evidence.
+`sprinkled`, `increasing_runs`, and `map_negate`. The default local rewrite
+Alice harness still installs no rewrite operators by default, so it cannot
+accidentally use local recognizer templates as parity evidence.
 
 The Python timings below use `GreedyAlice` with `min_rate=0.01`,
 `max_dag_dl=35`, `learn=false`, `trees_only=false`, and `use_rust=false`.
@@ -36,7 +36,7 @@ debugging and performance comparison only. They are not Alice parity evidence.
 | `repeat_with_noise` | 501 | 90.0 | 96.279777 | 5.2 | passes greedy core, 1 step / 1 candidate; matches Python one-step plain insert under Python DL | 96.279777 | 4.8 | `[:insert [100] -1 C45x500]` | 99.103288 | 16 | `[:insert [100] -1 [:repeat 500 [45]]]` | `(Array[int] (insert Array[int] int Array[int]))` |
 | `simply_linear` | 1,000 | 97.0 | 99.506286 | 12.0 | passes greedy core, 2 steps / 2 candidates; matches Python cumsum/insert shape under Python DL | 99.506286 | 25.6 | `[:cumsum [:insert [0] -18 C6x999]]` | 99.785287 | 122 | `[:add [:mult [:brange 0 1000] 6] -18]` | `(Array[int] (cumsum (Array[int] (insert Array[int] int Array[int]))))` |
 | `sprinkled` | 10,000 | 75.0 | 79.294650 | 6 | passes greedy core, 1 step / 1 candidate; matches Python plain insert shape | 79.294650 | 89.7 | `[:insert S 1 C0x9900]` | 93.074107 | 249 | `[:insert S 1 [:repeat 9900 [0]]]` | `(Array[int] (insert Array[int] int Array[int]))` |
-| `increasing_runs` | 125,250 | 99.9 | 99.905472 | 88 | pending core enum | 0.0 | - | - | 99.274754 | 2,705 | `[:insert R 64 [:repeat 124750 [123]]]` | `(Array[int] (insert (Array[int] (cumsum (Array[int] (cumsum Array[int])))) int Array[int]))` |
+| `increasing_runs` | 125,250 | 99.9 | 99.905472 | 88 | passes greedy core, 3 steps / 3 candidates; matches Python insert/cumsum/cumsum shape | 99.905472 | 3,248 | `[:insert [:cumsum [:cumsum D_inc]] 64 C123x124750]` | 99.274754 | 2,705 | `[:insert R 64 [:repeat 124750 [123]]]` | `(Array[int] (insert (Array[int] (cumsum (Array[int] (cumsum Array[int])))) int Array[int]))` |
 | `map_negate` | 1,000 | 98.0 | 99.521131 | 12 | passes greedy core, 2 steps / 2 candidates; matches Python cumsum/insert shape | 99.521131 | 55.7 | `[:cumsum [:insert [0] 0 C-1x999]]` | 99.826700 | 66 | `[:mult [:brange 0 1000] -1]` | `(Array[int] (cumsum (Array[int] (insert Array[int] int Array[int]))))` |
 
 ## Exact Long Values
@@ -85,6 +85,11 @@ index set used by Python `test_alice.py`, sorted for stable display:
 
 `R` is `(mapv #(/ (* % (+ % 3)) 2) (range 500))`, i.e. the exact marker
 positions of the `64` separators in Python's `increasing_runs` target.
+
+`D_inc` is `(vec (concat [0 2] (repeat 498 1)))`, whose double cumulative sum
+is `R`.
+
+`C123x124750` is `(vec (repeat 124750 123))`.
 
 `P_insert_repeat3` is:
 
@@ -196,7 +201,11 @@ Current root-cause notes from the core path:
 - `map_negate` did not require a map or multiplication shortcut. Under the
   Python Alice basis it reaches the same cumsum/insert compression shape as
   Python WILLIAM.
-- The next remaining core row to debug is `increasing_runs`, with performance
-  profiling kept separate from recognizer shortcuts.
+- `increasing_runs` reaches the Python insert/cumsum/cumsum shape at the same
+  compression rate. The remaining gap is performance: CIWI's warmed run is
+  still much slower than Python on this largest row.
+- All Python `test_alice.py` sequence rows now have core CIWI compression
+  behavior evidence. Next work should either profile the remaining runtime gaps
+  or broaden parity beyond these sequence tasks.
 
 Project sequencing and next implementation steps live in `PLAN.md`.
