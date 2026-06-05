@@ -10,6 +10,31 @@ small explicit interfaces.
 For more context, see [DESIGN.md](./DESIGN.md) for the current architecture and
 [PLAN.md](./PLAN.md) for the active implementation roadmap.
 
+
+## But..._why_?
+
+I'll admit, this started as one of those late-night "I wonder what would happen 
+if I asked Codex to ..." experiments. I didn't even look at the 
+results for three weeks. Then I got curious about it, and a little 
+voice told me to actually pick it up and play with it. I was instantly 
+smitten again with the elegance and joy of clojure, and became determined to 
+finish the port and see what we could build on top of it. 
+
+So thats the emotional rationale. The more technical motivations were 1) I 
+understand things by building them, or at least coaching someone else to 
+build them and 2) clojure seems like a more natural fit for experimenting 
+with more sophisticated graph local, incremental, bounded graph rewrites due 
+to its emphasis on immutability and use of efficient persistent data 
+structures, and the avenues for scalability that those properties unlock. 
+Plus it's just a lot more fun to read and write than python. The reasons 
+that's true for humans happen to mostly map on to LLMs as well.
+
+The main barriers to using clojure for ML research in the past (for me 
+anyway) have been lack of mature integrations with ML frameworks and 
+associated tools. However given how thoroughly excited coding agents are to 
+write and test reams of boring interop code, this issue no longer drives my 
+language preferences the way it once it.
+
 ## Status
 
 CIWI is pre-alpha research code and still very much under construction. It is
