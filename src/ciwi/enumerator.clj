@@ -67,16 +67,20 @@
 
   With zero usage counts this equals `base-dl`. Positive counts shorten the
   effective length using the same Dirichlet-process posterior predictive score
-  as Python WILLIAM's DAG enumerator, without adding random tie noise.
+  as Python WILLIAM's DAG enumerator. `jitter` is an optional tiny additive DL
+  tie-breaker; Python supplies this from `default_rng(42).random() * 1e-6`.
   "
   ([base-dl count total-count]
    (effective-dl base-dl count total-count default-concentration))
   ([base-dl count total-count concentration]
+   (effective-dl base-dl count total-count concentration 0.0))
+  ([base-dl count total-count concentration jitter]
    (let [base-dl (double base-dl)
          count (double count)
          total-count (double total-count)
          concentration (double concentration)
-         base-mass (Math/pow 2.0 (- base-dl))]
+         dl (+ base-dl (double jitter))
+         base-mass (Math/pow 2.0 (- dl))]
      (- (value/log2 (+ total-count concentration))
         (value/log2 (+ count (* concentration base-mass)))))))
 
@@ -94,7 +98,8 @@
                     (effective-dl (:dl item)
                                   (get item :count 0)
                                   total-count
-                                  concentration)))
+                                  concentration
+                                  (get item :jitter 0.0))))
            items))))
 
 (defn rank-usage-biased-items

@@ -6,33 +6,10 @@
             [ciwi.mdl :as mdl]
             [ciwi.operator :as op]
             [ciwi.propagation :as propagation]
+            [ciwi.spec :as spec]
             [ciwi.value :as value]))
 
 (defrecord Wunderbaum [registry elements-by-condition-key opts])
-
-(defn infer-spec
-  "Infer the small CIWI spec key used by the first Wunderbaum port."
-  [x]
-  (let [x (value/datum x)]
-    (cond
-      (nil? x) :unknown
-      (integer? x) :int
-      (float? x) :float
-      (number? x) :number
-      (string? x) :string
-      (keyword? x) :keyword
-      (and (vector? x) (every? #(or (true? %) (false? %)) x)) :array-bool
-      (and (vector? x) (every? integer? x)) :array-int
-      (and (vector? x) (every? float? x)) :array-float
-      (and (vector? x) (every? number? x)) :array-number
-      (vector? x) :array
-      (op/operator? x) :operator
-      :else (class x))))
-
-(defn value-spec
-  [x]
-  (or (:spec (value/value x))
-      (infer-spec x)))
 
 (defn- require-registry
   [registry]
@@ -88,7 +65,7 @@
   [registry op-count]
   (let [{operator :op
          op-count-value :count
-         :keys [arity input-specs output-spec conditions dl id]
+         :keys [arity input-specs output-spec conditions dl id jitter]
          :as declaration} (normalize-op-count op-count)
         op-count-value (or op-count-value 0)
         runtime-op (resolve-operator registry operator)
@@ -115,7 +92,8 @@
      :output-spec output-spec
      :conditions (vec conditions)
      :count op-count-value
-     :dl (or dl (:dl runtime-op))}))
+     :dl (or dl (:dl runtime-op))
+     :jitter (double (or jitter 0.0))}))
 
 (defn- condition-key
   [{:keys [input-specs output-spec]} gen-cond]
@@ -135,7 +113,9 @@
      (fn [elements declaration]
        (let [effective-dl (enumerator/effective-dl (:dl declaration)
                                                    (:count declaration)
-                                                   total-count)]
+                                                   total-count
+                                                   enumerator/default-concentration
+                                                   (:jitter declaration))]
          (reduce
           (fn [elements gen-cond]
             (let [k (condition-key declaration gen-cond)
@@ -143,6 +123,8 @@
                            (:operator declaration)
                            gen-cond
                            {:arity (:arity declaration)
+                            :input-specs (:input-specs declaration)
+                            :output-spec (:output-spec declaration)
                             :dl effective-dl
                             :id (:id declaration)})]
               (update elements k (fnil conj []) element)))
@@ -261,7 +243,7 @@
 
 (defn- node-condition-key
   [g node-ids]
-  (mapv #(value-spec (get-in g [:nodes % :value]))
+  (mapv #(spec/value-spec (get-in g [:nodes % :value]))
         node-ids))
 
 (defn- below?

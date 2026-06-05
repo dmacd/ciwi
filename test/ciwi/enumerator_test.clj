@@ -72,6 +72,12 @@
                                       (Math/pow 2.0 (- base-dl))))))]
     (is (close? base-dl
                 (sut/effective-dl base-dl 0 0 concentration)))
+    (is (close? 8.000000471096206
+                (sut/effective-dl base-dl
+                                  0
+                                  0
+                                  concentration
+                                  0.000000471096206)))
     (is (close? expected
                 (sut/effective-dl base-dl count total-count concentration)))))
 

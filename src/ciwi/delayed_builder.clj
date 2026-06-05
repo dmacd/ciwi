@@ -3,6 +3,7 @@
             [ciwi.operator :as op]
             [ciwi.propagation :as propagation]
             [ciwi.rewrite :as rewrite]
+            [ciwi.spec :as spec]
             [ciwi.value :as value]))
 
 (defrecord BuildInfo [dl graph memory conditioned-nodes condition-key element-index])
@@ -24,10 +25,12 @@
 (defn graph-element
   ([operator gen-cond]
    (graph-element operator gen-cond {}))
-  ([operator gen-cond {:keys [arity dl id]}]
+  ([operator gen-cond {:keys [arity input-specs output-spec dl id]}]
    {:operator operator
     :gen-cond (vec gen-cond)
     :arity arity
+    :input-specs (vec input-specs)
+    :output-spec output-spec
     :dl dl
     :id id}))
 
@@ -147,13 +150,19 @@
   (cond-> operator
     (some? dl) (assoc :dl dl)))
 
+(defn- value-conforms?
+  [expected x]
+  (or (nil? expected)
+      (spec/conforms? expected (spec/value-spec x))))
+
 (defn- forward-build
-  [g memory {:keys [operator arity] :as element} positions]
+  [g memory {:keys [operator arity output-spec] :as element} positions]
   (let [child-ids (mapv positions (range arity))]
     (when (every? some? child-ids)
       (let [inputs (mapv #(memory-value memory %) child-ids)
             output (try-apply-op operator inputs)]
-        (when output
+        (when (and output
+                   (value-conforms? output-spec output))
           (let [graph-op (costed-operator element)
                 root-id (graph/unique-id g (keyword (str "delayed-" (name (:id operator)))))
                 op-id (graph/unique-id g (keyword (str (name root-id) "-" (name (:id operator)))))
@@ -166,7 +175,7 @@
              :operator-id op-id}))))))
 
 (defn- inverse-builds
-  [g memory {:keys [operator arity] :as element} positions]
+  [g memory {:keys [operator arity input-specs] :as element} positions]
   (when-let [output-id (:output positions)]
     (let [known-positions (->> (range arity)
                                (filter #(contains? positions %))
@@ -177,8 +186,8 @@
               known-inputs (mapv #(memory-value memory %) known-child-ids)
               missing-positions (vec (remove (set known-positions) (range arity)))]
           (for [missing-values (try-invert-op operator output known-inputs known-positions)
-                :when (= (count missing-positions) (count missing-values))]
-            (let [[g memory child-ids]
+                :when (= (count missing-positions) (count missing-values))
+                :let [built
                   (reduce (fn [[acc-g acc-memory ids] idx]
                             (if-let [node-id (get positions idx)]
                               [acc-g acc-memory (assoc ids idx node-id)]
@@ -186,11 +195,16 @@
                                     missing-value (nth missing-values missing-idx)
                                     base (keyword (str "delayed-" (name (:id operator))
                                                        "-arg" idx))]
-                                (let [[acc-g acc-memory node-id]
-                                      (add-generated-value acc-g acc-memory base missing-value)]
-                                  [acc-g acc-memory (assoc ids idx node-id)]))))
+                                (if-not (value-conforms? (nth input-specs idx nil)
+                                                         missing-value)
+                                  (reduced nil)
+                                  (let [[acc-g acc-memory node-id]
+                                        (add-generated-value acc-g acc-memory base missing-value)]
+                                    [acc-g acc-memory (assoc ids idx node-id)])))))
                           [g memory {}]
-                          (range arity))
+                          (range arity))]
+                :when (some? built)]
+            (let [[g memory child-ids] built
                   child-ids (mapv child-ids (range arity))
                   op-id (graph/unique-id g (keyword (str (name output-id) "-"
                                                          (name (:id operator)))))

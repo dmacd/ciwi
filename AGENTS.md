@@ -56,6 +56,10 @@ WILLIAM/Alice compression behavior before adding new mechanisms.
   CIWI timings only under warm-start conditions: dependencies loaded, runtime
   initialized, and first-run/JIT/import effects excluded. Do not add separate
   cold-start columns unless explicitly requested.
+- When timing Python WILLIAM from this workspace, set `NUMBA_CACHE_DIR` to a
+  writable `/tmp` path if Numba cannot initialize source-local caching under
+  the sandbox. This is benchmark environment hygiene, not an implementation
+  change.
 - When a performance gap appears, diagnose the root cause before changing the
   algorithm. Valid fixes are translation fixes, missing Python mechanisms, data
   structure issues, or implementation performance issues. Invalid fixes are

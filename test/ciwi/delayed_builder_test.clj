@@ -104,6 +104,20 @@
         element (sut/graph-element bad-inverse [-1] {:arity 1})]
     (is (empty? (sut/delayed-dag-build info {[:output] [element]} #{})))))
 
+(deftest delayed-dag-build-rejects-inverse-values-with-wrong-spec
+  (let [g (one-value-graph :out [0 1 0])
+        info (sut/build-info {:dl 8.0
+                              :graph g
+                              :memory (memory [:out [0 1 0]])
+                              :conditioned-nodes [:out]
+                              :condition-key [:array-int]})
+        element (sut/graph-element op/getitem
+                                   [-1]
+                                   {:arity 2
+                                    :input-specs [:array-int :array-bool]
+                                    :output-spec :array-int})]
+    (is (empty? (sut/delayed-dag-build info {[:array-int] [element]} #{})))))
+
 (deftest build-info-ordering-uses-description-length
   (let [info1 (sut/build-info {:dl 5.0})
         info2 (sut/build-info {:dl 10.0})

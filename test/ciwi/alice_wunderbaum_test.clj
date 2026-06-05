@@ -70,10 +70,23 @@
   (doseq [{:keys [name target expected threshold-rate opts]}
           [{:name "simple_repeat"
             :target (vec (take 1000 (cycle [140 -50])))
-            :expected [:repeat 500 [140 -50]]
+            :expected [:insert
+                       [:cumsum [:insert [0] 0 (vec (repeat 499 2))]]
+                       140
+                       (vec (repeat 500 -50))]
             :threshold-rate 94.0
             :opts {:max-popped 200
                    :max-yields 20}}
+           {:name "insert_repeat"
+            :target (vec (concat (repeat 100 45)
+                                  (repeat 250 87)))
+            :expected [:insert
+                       [:cumsum (vec (concat [0] (repeat 99 1)))]
+                       45
+                       (vec (repeat 250 87))]
+            :threshold-rate 92.0
+            :opts {:max-popped 10000
+                   :max-yields 1000}}
            {:name "repeat_with_noise"
             :target (first (:targets (repeat-with-noise-task)))
             :expected [:insert [100] -1 (vec (repeat 500 45))]
@@ -97,8 +110,12 @@
                (get-in result [:selected :target0])))
         (is (= :greedy-task
                (get-in result [:resource :mode])))
-        (when (= name "simply_linear")
-          (is (= 2 (count (:steps result)))))))))
+        (is (= (case name
+                 "simple_repeat" 3
+                 "insert_repeat" 2
+                 "simply_linear" 2
+                 1)
+               (count (:steps result))))))))
 
 (deftest alice-wunderbaum-repeat-with-noise-step-reaches-task-threshold
   (let [opts {:registry alice/basic-operator-registry

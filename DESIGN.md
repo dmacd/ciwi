@@ -431,6 +431,14 @@ materialized results. The implementation should remain functional and avoid
 mutable frontier/state machinery unless a concrete performance case is made and
 approved.
 
+Python's DAG enumerator adds deterministic sub-microbit jitter to operator
+description lengths when building task-domain graph elements:
+`default_rng(42).random() * 1e-6`. CIWI keeps those values in the Alice
+declaration table and passes them through `ciwi.enumerator/effective-dl`.
+This does not change the DL model in any meaningful compression sense, but it
+does change the order of otherwise-tied candidates. It is therefore part of the
+straight parity port, not a CIWI-specific heuristic.
+
 Node tuple enumeration follows Python's best-first ordering by tuple index DL,
 but uses persistent Clojure data. It starts with the all-zero tuple for each
 allowed tuple length, pops the cheapest tuple, and enqueues the one-index
@@ -460,6 +468,15 @@ therefore be conservative: a shape mismatch or impossible condition yields no
 inverse rather than a `nil` child. Unknown `nil` values can exist in propagation
 memory for bookkeeping, but they are not a valid way to make a selected
 compression artificially cheap.
+
+Delayed materialization also validates declaration specs after inversion or
+forward execution. A generated inverse child must conform to the selected
+declaration's corresponding input spec, and a forward-produced value must
+conform to the declaration output spec. This mirrors Python's delayed DAG build
+check that inverse outputs match node specs. The check matters because one
+runtime operator can have several declarations: for example, the generic
+`getitem` inverse can produce an integer index vector, but that result must not
+be accepted through the cheaper boolean-mask declaration.
 
 After the straight port proves parity, the same core can be adapted into a
 local resource-bounded `RewriteOperator` with explicit budgets for frontier
