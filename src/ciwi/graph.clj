@@ -277,6 +277,54 @@
   [g start-id]
   (mapv #(value-data g %) (leaves g start-id)))
 
+(defn- callable-operator-node?
+  [node]
+  (contains? #{:map :bmap} (:id (:operator node))))
+
+(defn- value-operator
+  [x]
+  (cond
+    (operator/operator? x) x
+    (keyword? x) (get operator/registry x)
+    :else nil))
+
+(defn- callable-commutative?
+  [g node]
+  (when (callable-operator-node? node)
+    (some->> (:children node)
+             first
+             (value-data g)
+             value-operator
+             :commutative?)))
+
+(defn commutes?
+  "Return Python-WILLIAM-style selected graph commutativity.
+
+  This is a structural property of a selected graph: value nodes commute when
+  all their options commute, operator nodes commute when the operator is
+  commutative or adopts commutativity from a callable first child, and all
+  children commute. It is distinct from a composite operator's input-swap
+  commutativity.
+  "
+  ([g id]
+   (commutes? g id #{}))
+  ([g id trace]
+   (if (contains? trace id)
+     true
+     (let [n (node g id)
+           trace (conj trace id)]
+       (cond
+         (value-node? n)
+         (every? #(commutes? g % trace) (:options n))
+
+         (operator-node? n)
+         (and (or (:commutative? (:operator n))
+                  (callable-commutative? g n))
+              (every? #(commutes? g % trace) (:children n)))
+
+         :else
+         false)))))
+
 (defn structural-key
   ([g id]
    (structural-key g id {}))

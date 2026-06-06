@@ -442,6 +442,15 @@ all occurrences are conditioned consistently. Sibling offsets are based on
 unique leaves, while explicitly conditioned children expand to their repeated
 selected-tree leaves, matching Python's mixed unique/repeated indexing.
 
+CIWI keeps two commutativity notions separate. `Operator/:commutative?` and
+composite operator commutativity mean child operands can be reordered for that
+operator expression. `ciwi.graph/commutes?` mirrors Python WILLIAM's
+`root.commutes`: every operator in the selected graph is locally commutative,
+or adopts commutativity from an operator-valued callable child such as
+`map :negate` or `bmap :add`. The latter is a structural graph property used
+for Python composite fixture parity, not proof that arbitrary composite inputs
+can be permuted.
+
 `ciwi.fix/fix-first` is the Clojure equivalent of Python WILLIAM's `Fix`
 operator. It captures the first input of any runtime `Operator` and returns a
 new runtime `Operator`, charging the captured value in the returned operator's

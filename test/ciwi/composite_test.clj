@@ -11,12 +11,19 @@
   (mapv #(mapv value/datum %) results))
 
 (defn- fixture-op
-  [id conditions call inverse]
-  (op/operator
-   {:id id
-    :conditions conditions
-    :call call
-    :inverse inverse}))
+  ([id conditions call inverse]
+   (fixture-op id conditions call inverse false))
+  ([id conditions call inverse commutative?]
+   (op/operator
+    {:id id
+     :conditions conditions
+     :commutative? commutative?
+     :call call
+     :inverse inverse})))
+
+(defn- structural-op
+  [id conditions commutative?]
+  (fixture-op id conditions (constantly nil) (constantly nil) commutative?))
 
 (defn- as-set
   [x]
@@ -39,12 +46,19 @@
               (fn [output cond-inputs cond]
                 (when (= 1 (count cond))
                   [[(set/difference (as-set output)
-                                    (as-set (first cond-inputs)))]]))))
+                                    (as-set (first cond-inputs)))]]))
+              false))
 
 (def ^:private python-composite-fixture-registry
   (merge op/registry
-         {:zip2d zip2d-op
-          :union union-op}))
+         {:abs (structural-op :abs [[]] true)
+          :bmap (structural-op :bmap [[0] [0 1] [0 2]] false)
+          :listwrap (structural-op :listwrap [[]] true)
+          :listslice (structural-op :listslice [[0 1 2]] false)
+          :sum (structural-op :sum [] true)
+          :union union-op
+          :urange (structural-op :urange [[]] true)
+          :zip2d zip2d-op}))
 
 (defn- shared-fixture-spec
   [expr]
@@ -260,6 +274,144 @@
     (is (:commutative? times))
     (is (not (:commutative? minus)))
     (is (not (:commutative? square-plus-y)))))
+
+(def ^:private python-commutativity-fixtures
+  [{:name "co0"
+    :expr [:insert [:input :indices [1]]
+           [:input :content 2]
+           [:input :rest [3 4]]]
+    :commutes? false}
+   {:name "co1"
+    :expr [:add [:mult [:input :a 2]
+                 [:input :b 3]]
+           [:input :c 5]]
+    :commutes? true}
+   {:name "co2"
+    :expr [:insert [:trange [:input :idx-start 1]
+                    [:input :idx-stop 7]
+                    [:input :idx-step 2]]
+           [:trange [:input :content-start 3]
+            [:input :content-stop 12]
+            [:input :content-step 3]]
+           [:trange [:input :rest-start 15]
+            [:input :rest-stop 23]
+            [:input :rest-step 2]]]
+    :commutes? false}
+   {:name "co3"
+    :expr [:sub [:mult [:input :a 3]
+                 [:input :b 4]]
+           [:add [:input :c 5]
+            [:negate [:input :d 2]]]]
+    :commutes? false}
+   {:name "co4"
+    :expr [:add [:negate [:input :x 3]]
+           [:sub [:input :y 12]
+            [:input :z 5]]]
+    :commutes? false}
+   {:name "co5"
+    :expr [:add [:mult [:input :a nil]
+                 [:input :b nil]]
+           [:insert [:input :indices nil]
+            [:input :content nil]
+            [:input :rest nil]]]
+    :commutes? false}
+   {:name "co6"
+    :expr [:repeat [:sub [:add [:input :a nil]
+                          [:input :b nil]]
+                    [:input :c nil]]
+           [:repeat [:input :n nil]
+            [:map [:input :f-neg op/negate]
+             [:input :xs nil]]]]
+    :commutes? false}
+   {:name "co7"
+    :expr [:abs [:add [:abs [:input :x nil]]
+            [:input :y nil]]]
+    :commutes? true}
+   {:name "co8"
+    :expr [:bmap [:input :f-add op/add]
+           [:input :x nil]
+           [:insert [:input :indices nil]
+            [:input :content nil]
+            [:input :rest nil]]]
+    :commutes? false}
+   {:name "co9"
+    :expr [:union [:zip2d [:brange [:input :start nil]
+                           [:input :stop nil]]
+                   [:repeat [:input :n nil]
+                    [:input :motif nil]]]
+           [:input :extra nil]]
+    :commutes? false}
+   {:name "co10"
+    :expr [:insert [:urange [:input :indices nil]]
+           [:urange [:input :content nil]]
+           [:urange [:input :rest nil]]]
+    :commutes? false}
+   {:name "co11"
+    :expr [:insert [:trange [:input :idx-start nil]
+                    [:input :idx-stop nil]
+                    [:input :idx-step nil]]
+           [:repeat [:input :n nil]
+            [:listwrap [:input :wrapped nil]]]
+           [:input :rest nil]]
+    :commutes? false}
+   {:name "co12"
+    :expr [:repeat [:input :n nil]
+           [:input :motif nil]]
+    :commutes? false}
+   {:name "co13"
+    :expr [:repeat [:sub [:add [:input :a nil]
+                          [:input :b nil]]
+                    [:input :c nil]]
+           [:repeat [:input :n nil]
+            [:map [:input :f-neg op/negate]
+             [:input :xs nil]]]]
+    :commutes? false}
+   {:name "co14"
+    :expr [:repeat [:input :n nil]
+           [:listslice [:input :xs nil]
+            [:input :start nil]
+            [:input :stop nil]]]
+    :commutes? false}
+   {:name "co15"
+    :expr [:add [:input :a nil]
+           [:input :b nil]]
+    :commutes? true}
+   {:name "co16"
+    :expr [:sum [:urange [:input :n nil]]]
+    :commutes? true}
+   {:name "co17"
+    :expr [:repeat [:input :n nil]
+           [:listslice [:input :xs nil]
+            [:add [:input :start-a nil]
+             [:input :start-b nil]]
+            [:sub [:input :stop-a nil]
+             [:input :stop-b nil]]
+            [:input :step nil]]]
+    :commutes? false}
+   {:name "co18"
+    :expr [:bmap [:input :f-add op/add]
+           [:input :x nil]
+           [:input :y nil]]
+    :commutes? true}
+   {:name "co19"
+    :expr [:map [:input :f-neg op/negate]
+           [:input :xs nil]]
+    :commutes? true}
+   {:name "co20"
+    :expr [:bmap [:input :f-repeat op/repeat]
+           [:input :x nil]
+           [:input :y nil]]
+    :commutes? false}
+   {:name "co21"
+    :expr [:map [:input :f-neg op/negate]
+           [:urange [:input :n nil]]]
+    :commutes? true}])
+
+(deftest python-composite-graph-commutativity-golden-cases
+  (doseq [{:keys [name expr commutes?]} python-commutativity-fixtures]
+    (let [{:keys [graph root]} (shared-fixture-spec expr)]
+      (is (= commutes? (graph/commutes? graph root))
+          name))))
 
 
 (deftest composite-inverts-nested-arithmetic-with-captured-constants
