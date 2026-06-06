@@ -171,8 +171,9 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
 1. Keep the documentation split clean. `PLAN.md` stays current after each turn,
    `DESIGN.md` records technical decisions, `AGENTS.md` records workflow rules,
    `style.md` records coding style, `alice-test-parity.md` records Alice
-   evidence, and `PYTHON-TEST-ROADMAP.md` records broader Python WILLIAM test
-   parity sequencing.
+   evidence, `optimizer-graph-search-parity.md` records optimizer-backed
+   numeric graph-search evidence, and `PYTHON-TEST-ROADMAP.md` records broader
+   Python WILLIAM test parity sequencing.
 2. Complete a straight Clojure port of the Python Wunderbaum/Alice path before
    adding resource-bounded local semantics. Preserve the Python search concepts:
    operator/count inputs, typed specs, generalized conditions, node-tuple
@@ -198,22 +199,17 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
 
 ## Near-Term Next Tasks
 
-- Review the residual `test_composite.py` non-targets: GraphViz/DOT import,
-  tuple reconstruction, and Python S-expression reconstruction remain out of
-  scope unless they block compression behavior evidence. The native spec
-  enumerator should be extended only as needed by Wunderbaum/Alice declarations
-  or learned composite loading.
-- If runtime parity remains the immediate priority, focus on `increasing_runs`,
-  `sprinkled`, `simply_linear`, and `map_negate`. `insert_repeat3` now reaches
-  the Python rate in seven accepted steps and is faster than the recorded Python
-  warm timing.
-- For performance profiling, continue with residual pure Clojure large-array
-  value-DL paths, materialization overhead, and any remaining repeated MDL
-  scoring. The current 1D vector DL path has been tightened, delayed-builder
-  de-duplication now avoids unconditional `pr-str` over large structural keys,
-  and primitive vector probes avoid lazy pipelines on large vectors. The
-  remaining `increasing_runs` gap is dominated by valid Python-basis probes over
-  the large free root before the accepted `cumsum`. Do not solve these gaps with
-  recognizer templates or task-specific shortcuts.
-- Keep updating `alice-test-parity.md` with measured core CIWI rate, exact
-  selected solution, timing, and Python comparison for each row.
+- The next macro step is optimizer-backed numeric graph-search parity. Use
+  `optimizer-graph-search-parity.md` as the evidence matrix for
+  `test_discrete_optimizer.py`, `TestMatrixRegressionDebugPipeline`, and later
+  clustering/classification rows.
+- Before porting matrix regression, add a small backend-neutral dense numeric
+  boundary in CIWI. Start with a pure Clojure/vector implementation for behavior
+  parity, and defer Neanderthal, DJL, or JAX coupling until the graph-search path
+  is correct and measured.
+- First implementation targets are residual-DL adaptive optimizer examples,
+  dense `dot` plus broadcast `add`, graph-level `try_to_optimize` over
+  permeable numeric leaves, and the matrix regression optimizer/pipeline rows.
+- Keep updating `alice-test-parity.md` only for plain Alice/Wunderbaum sequence
+  compression, and update `optimizer-graph-search-parity.md` for numeric
+  optimizer-backed rows.

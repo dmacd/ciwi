@@ -45,10 +45,15 @@ Recommended order inside Priority 1:
 These tests matter because they connect WILLIAM's symbolic graph search to
 continuous or mixed discrete/continuous parameter search.
 
+The live evidence matrix for this tranche is
+`optimizer-graph-search-parity.md`. Keep optimizer-backed graph search evidence
+separate from `alice-test-parity.md` so plain Alice/Wunderbaum sequence
+compression is not conflated with numeric parameter search.
+
 | Python tests | CIWI target | Notes |
 | --- | --- | --- |
-| `william/tests/test_discrete_optimizer.py` | CIWI already covers Newton, mixed int/float, adaptive grid, and joint sampling. Add the residual-DL adaptive examples that score `_jdesc_len_array_elias` once CIWI's value-DL helper is wired cleanly into optimizer objectives. | Keep this as optimizer protocol evidence, not Alice evidence. |
-| `william/tests/test_alice_pipeline.py::TestMatrixRegressionDebugPipeline` | Implement/verify `Dot` plus optimizer-backed `try_to_optimize`, then run matrix regression with `Dot` and `Add`. | This should be the first major post-core end-to-end demonstration. It proves graph search can produce a structure whose leaves are then optimized. |
+| `william/tests/test_discrete_optimizer.py` | Partial. CIWI covers Newton, mixed int/float, adaptive grid, and joint sampling. Add the residual-DL adaptive examples that score `_jdesc_len_array_elias` once CIWI's value-DL helper is wired cleanly into optimizer objectives. | Keep this as optimizer protocol evidence, not Alice evidence. |
+| `william/tests/test_alice_pipeline.py::TestMatrixRegressionDebugPipeline` | Next macro target. Implement/verify `Dot` plus optimizer-backed `try_to_optimize`, then run matrix regression with `Dot` and `Add`. | This should be the first major post-core end-to-end demonstration. It proves graph search can produce a structure whose leaves are then optimized. |
 | `william/tests/test_alice_pipeline.py::test_run_clustering_try_to_optimize_worker` | After matrix regression, add the clustering optimization worker with `Sub`, `Mult`, `Sum1`, `LessThan`, `GetItem`, and `Union`. | This is useful, but it pulls in more complex array operators and should not precede matrix regression. |
 
 ## Priority 3: Classification Demonstrations

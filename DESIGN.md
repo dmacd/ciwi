@@ -253,6 +253,44 @@ scoring shortcuts. They should be re-examined after CIWI has a proper dense
 primitive array backend, because that backend should own this kind of
 large-vector execution performance.
 
+## Dense Numerics Boundary
+
+CIWI will need first-class dense numeric values for optimizer-backed graph
+search and later ML domains, but graph semantics should not depend directly on
+any one concrete library. Dense values should enter the graph as CIWI values
+with stable shape, dtype/category, and backend metadata. Operators, value DL,
+propagation, Wunderbaum declarations, and optimizer objectives should call a
+small CIWI-owned protocol rather than importing Neanderthal, DJL, JAX, or a
+future custom backend directly.
+
+The first implementation should be deliberately small: a pure Clojure/vector
+backend for correctness, with only the matrix-regression operations needed by
+the next parity tests. That avoids locking CIWI into vector-specific code while
+also avoiding a native dependency before the optimizer-backed graph-search
+behavior is green.
+
+The expected boundary is roughly:
+
+```clojure
+(defprotocol DenseBackend
+  (dense-shape [x])
+  (dense-dtype [x])
+  (dense-dot [a b])
+  (dense-add [a b])
+  (dense-sub [a b])
+  (dense-mul [a b])
+  (dense-sum1 [x])
+  (dense-mask [x mask])
+  (dense->plain [x]))
+```
+
+`dense->plain` is intentionally explicit. Value description length, expected
+test values, and stable graph keys can use plain CIWI data while backend-owned
+storage can stay opaque during execution. Once matrix regression works, a
+Neanderthal or DJL backend can implement the same protocol. A later JAX/custom
+backend should fit at this boundary as well, but should not shape the v1 graph
+or operator APIs.
+
 `map` first tries the Python-style shortcut where the callable can operate on
 the whole collection. If that cannot invert the output directly, `map` falls
 back to scalar elementwise inversion. Elementwise inverse branches are grouped
