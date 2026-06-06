@@ -278,15 +278,28 @@ is easy to audit:
   specs, hashing, rewrite code, and tests.
 - `ciwi.dense.protocols` defines `DenseArray` and `DenseBackend`.
 - `ciwi.dense.vector` is the current pure Clojure/vector backend.
+- `ciwi.dense.djl` is the first opt-in real backend, backed by DJL's PyTorch
+  CPU engine under the `:djl` dependency alias.
 
-The first implementation is deliberately small: a pure Clojure/vector backend
+The default implementation is deliberately small: a pure Clojure/vector backend
 for correctness, with NumPy-ish names and the operations needed to start the
 optimizer-backed parity tranche. Numeric graph vectors now auto-promote to
 `ciwi.dense.vector/NDArray` in `ciwi.value/value`; structural lists, strings,
 sets, operators, graph ids, search state, and optimizer coordinate machinery
 remain native Clojure data. This avoids locking CIWI into vector-specific graph
-code while also avoiding a native dependency before optimizer-backed
-graph-search behavior is green.
+code.
+
+The DJL backend is opt-in because it introduces native engine dependencies and
+manager lifecycle concerns. It implements the same `DenseBackend` protocol and
+can be registered with `(dense/register-backend! djl/backend)`, then selected
+per constructor with `{:backend :ciwi.djl}` or installed process-wide with
+`(dense/set-default-backend! :ciwi.djl)`. It currently uses DJL/PyTorch for
+array construction, metadata, arithmetic, comparisons, `isnan`, `arange`,
+`tile`, `concat`, `cumsum`, vector `dot`, matrix `matMul`-backed `dot`, and
+axis `sum`. Index gather/scatter and first-difference preserve CIWI semantics
+through native flat-data fallbacks for now; those can move down into backend
+operations after optimizer/matrix regression parity gives us the right pressure
+to optimize them.
 
 The dense API should stay close to NumPy where that is not painful:
 
@@ -338,9 +351,9 @@ fingerprint is only a bucket key; matching buckets still use exact
 slots. Non-dense values continue to fingerprint and compare through exact
 `stable-key` data. For now, CIWI assumes only one active dense backend at a
 time, so equality and hashing only need to be deterministic within that backend.
-Once matrix regression works, a Neanderthal or DJL backend can implement the
-same protocol. A later JAX/custom backend should fit at this boundary as well,
-but should not shape the v1 graph or operator APIs.
+The DJL backend validates this boundary against a native engine. A later
+Neanderthal or JAX/custom backend should fit at the same boundary, but should
+not shape the v1 graph or operator APIs.
 
 `map` first tries the Python-style shortcut where the callable can operate on
 the whole collection. If that cannot invert the output directly, `map` falls

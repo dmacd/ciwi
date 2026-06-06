@@ -3,6 +3,13 @@
  :deps {org.clojure/clojure {:mvn/version "1.12.5"}}
  :aliases
  {:dev {:extra-paths ["dev" "notebooks" "test"]}
+  :djl {:extra-deps {ai.djl/api {:mvn/version "0.36.0"}
+                     ai.djl.pytorch/pytorch-engine {:mvn/version "0.36.0"}
+                     ai.djl.pytorch/pytorch-jni {:mvn/version "2.7.1-0.36.0"}
+                     ai.djl.pytorch/pytorch-native-cpu$linux-x86_64 {:mvn/version "2.7.1"}
+                     org.slf4j/slf4j-nop {:mvn/version "2.0.17"}}}
+  :test-djl {:extra-paths ["test"]
+             :main-opts ["-m" "ciwi.dense-djl-test"]}
   :test {:extra-paths ["test"]
          :main-opts ["-m" "ciwi.test-runner"]}
   :clerk {:extra-paths ["notebooks" "test"]

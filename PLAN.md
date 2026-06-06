@@ -27,15 +27,17 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   Python-compatible value DL model, Alice operator DL alignment, per-run DL and
   value-content caching, deferred selected-expression realization,
   threshold-aware candidate yielding, and several translation/performance
-  fixes; tests pass locally with 151 tests and 807 assertions.
+  fixes. Tests pass locally with 151 tests and 807 assertions on the default
+  vector backend, plus 8 tests and 40 assertions on the opt-in DJL backend.
 
 ## Current State
 
 - CIWI has immutable graph/value/operator data structures, propagation, MDL
   selection, graph-backed composites, Fix, local rewrite operators, bounded
   compression loops, a Clojure-native graph literal DSL, and a `ciwi.dense.*`
-  dense boundary with a vector backend used as the native representation for
-  numeric graph array values.
+  dense boundary. The default numeric graph value representation is the vector
+  backend; an opt-in `ciwi.dense.djl` backend now exercises the same boundary
+  against DJL/PyTorch CPU arrays.
 - Recognizer templates are disabled by default and must be explicitly injected.
   They are not Alice parity evidence.
 - `ciwi.wunderbaum` contains the first straight-port slice of Python
@@ -171,13 +173,14 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   such as `dag5` while rejecting unsupported condition sets.
 - Numeric graph array values now cross the value boundary through the
   `ciwi.dense.core` API. `ciwi.dense.protocols` defines the backend contract,
-  and `ciwi.dense.vector` is the current pure Clojure implementation.
-  Alice-basis operators, propagation, MDL/raw expression rendering, rewrite
-  enumeration, graph rewrite, library matchers, delayed-builder
-  materialization, and Wunderbaum inspection are dense-aware while symbolic
-  vectors/lists, graph ids, search state, and optimizer coordinate machinery
-  remain native Clojure data. Dense numeric missing values use `NaN`, and
-  tests normalize dense outputs only at assertion boundaries.
+  `ciwi.dense.vector` is the current default pure Clojure implementation, and
+  `ciwi.dense.djl` is an opt-in real backend under `:djl`. Alice-basis
+  operators, propagation, MDL/raw expression rendering, rewrite enumeration,
+  graph rewrite, library matchers, delayed-builder materialization, and
+  Wunderbaum inspection are dense-aware while symbolic vectors/lists, graph ids,
+  search state, and optimizer coordinate machinery remain native Clojure data.
+  Dense numeric missing values use `NaN`, and tests normalize dense outputs
+  only at assertion boundaries.
 
 ## Roadmap
 

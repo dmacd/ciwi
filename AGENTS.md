@@ -76,6 +76,12 @@ WILLIAM/Alice compression behavior before adding new mechanisms.
 ./bin/test
 ```
 
+When touching the dense backend boundary, also run the opt-in DJL backend tests:
+
+```bash
+./bin/clojure -M:djl:test-djl
+```
+
 Do not assume a global `clojure` binary is available.
 
 ## Git And Workspace

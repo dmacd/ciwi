@@ -104,9 +104,11 @@ than one real backend.
 | DJL first | Engine-agnostic Java NDArray/model abstraction; can switch among engines by dependencies/config; closer to JVM ML deployment. | Heavier dependency surface; engine/version management; may be more framework than needed for initial dot/residual tests. | Good candidate when we want ML model interop or GPU tensors, not necessary for the first parity slice. |
 | JAX bridge/custom backend now | Aligns with future differentiable/compiled backend ambitions; strong long-term story for gradient search and JIT-able kernels. | Highest integration complexity from Clojure/JVM; Python boundary or custom backend work could dominate the parity effort. | Do not start here. Design interfaces so this can be added later. |
 
-Current decision: the CIWI dense boundary is in place, the first implementation
-is vector-backed, numeric graph arrays use dense values with NaN missing slots,
-and CIWI defers committing to a native backend until the matrix regression
+Current decision: the CIWI dense boundary is in place. The default backend is
+vector-backed for correctness and stable test behavior; an opt-in DJL/PyTorch
+CPU backend now validates the same protocol against a real native NDArray
+engine. Numeric graph arrays use dense values with NaN missing slots. CIWI still
+defers making a native backend the default until the matrix regression
 graph-search path is behaviorally correct.
 
 ## Implementation Order
@@ -118,14 +120,18 @@ graph-search path is behaviorally correct.
    `dot`, `sum`, and spec/value-DL/hash recognition.
 2. Done: port the current numeric graph array operator basis to dense
    outputs/inputs while keeping symbolic vectors/lists native.
-3. Next: add residual-DL adaptive optimizer tests from
+3. Done: add `ciwi.dense.djl` as an opt-in DJL/PyTorch CPU backend under the
+   `:djl` dependency alias, with focused backend tests and a compression-level
+   smoke run using DJL as the process default backend.
+4. Next: add residual-DL adaptive optimizer tests from
    `test_discrete_optimizer.py`.
-4. Implement graph-level `try_to_optimize` as a composable recursive graph
+5. Implement graph-level `try_to_optimize` as a composable recursive graph
    search operator over permeable leaves.
-5. Add matrix regression `test_optimizer` and `test_try_to_optimize` parity.
-6. Wire optimizer-backed candidates into Alice/Wunderbaum compression step.
-7. Only then decide whether to add a Neanderthal or DJL backend for performance
-   and broader ML domains.
+6. Add matrix regression `test_optimizer` and `test_try_to_optimize` parity.
+7. Wire optimizer-backed candidates into Alice/Wunderbaum compression step.
+8. Only then decide whether DJL should become the default backend, whether to
+   add a Neanderthal backend for BLAS/LAPACK performance, or whether matrix
+   regression exposes protocol gaps.
 
 ## Sources
 
@@ -138,6 +144,10 @@ graph-search path is behaviorally correct.
   <https://docs.djl.ai/master/docs/engine.html>. DJL presents a Java
   engine-agnostic ML framework with selectable engines and NDArray/model
   abstractions.
+- DJL API and PyTorch engine docs: <https://djl.ai/api/> and
+  <https://djl.ai/engines/pytorch/pytorch-engine/>. These document the
+  `ai.djl:api:0.36.0` API artifact and the PyTorch CPU engine/native artifact
+  pairing used by CIWI's first real backend.
 - JAX extension docs: <https://docs.jax.dev/en/latest/extensions.html>. JAX has
   extension APIs for custom interpreters and backend-adjacent integration, which
   is useful context for a future backend but too large a dependency direction
