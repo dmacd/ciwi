@@ -501,18 +501,17 @@
                                   target-ids
                                   value-dl-cache
                                   opts)
-          [queue order] (expand-graph wb queue graph memory build-dl opts order)
           emit? (or (not threshold?)
                     (< (:dl summary) (double threshold-dl)))]
       (cond
         (and threshold? emit?)
         (reduced [queue order (inc yielded) (conj emitted summary) true])
 
-        emit?
-        [queue order (inc yielded) (conj emitted summary) false]
-
         :else
-        [queue order yielded emitted false]))))
+        (let [[queue order] (expand-graph wb queue graph memory build-dl opts order)]
+          (if emit?
+            [queue order (inc yielded) (conj emitted summary) false]
+            [queue order yielded emitted false]))))))
 
 (defn- process-frontier-item
   [wb opts seen target-ids value-dl-cache value-key-cache item queue order yielded]

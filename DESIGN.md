@@ -210,6 +210,14 @@ Alice-basis sequence semantics follow Python `test_alice.py`: `brange` is
 keyword/record as its callable child, `insert` partitions output into inserted
 indices/content/rest, and `cumsum` inverts by first differences.
 
+Large vector operator probes use implementation-specific fast paths only when
+they preserve the same concrete values. Elementwise operations and `cumsum` /
+first-difference construction switch to strict transient-backed loops for
+large vectors, while small vectors stay on Clojure's simpler `mapv`/sequence
+paths. `concat` avoids lazy concatenation by building directly into a vector.
+These are primitive execution optimizations, not recognizers or symbolic
+scoring shortcuts.
+
 CIWI also contains broader sequence-edit and boolean infrastructure where it is
 useful for graph rewrite tests. Those operators are available to callers that
 inject them, but they are not part of the default Alice parity claim unless the
@@ -475,6 +483,8 @@ the threshold, but it does not yield them to the caller, and it stops after the
 first yielded graph below the threshold. Alice uses this for one-percent
 compression steps so yielded candidate counts correspond to accepted
 compression candidates rather than every explored frontier materialization.
+Once a threshold-accepted graph has been scored, CIWI returns it without
+expanding descendants that will be discarded by the stopping rule.
 
 `ciwi.alice-wunderbaum` is the Alice-facing greedy runner over that core with
 an explicit declaration table for the Python `test_alice.py` operator basis. It

@@ -33,10 +33,44 @@
   [x]
   (and (sequential? x) (not (string? x))))
 
+(defn- strict-vec
+  [x]
+  (if (vector? x)
+    x
+    (vec x)))
+
+(defn- mapv1-strict
+  [f xs]
+  (let [xs (strict-vec xs)
+        n (count xs)]
+    (loop [idx 0
+           result (transient [])]
+      (if (= idx n)
+        (persistent! result)
+        (recur (inc idx)
+               (conj! result (f (nth xs idx))))))))
+
+(defn- mapv2-strict
+  [f xs ys]
+  (let [xs (strict-vec xs)
+        ys (strict-vec ys)
+        n (count xs)]
+    (when (= n (count ys))
+      (loop [idx 0
+             result (transient [])]
+        (if (= idx n)
+          (persistent! result)
+          (recur (inc idx)
+                 (conj! result (f (nth xs idx) (nth ys idx)))))))))
+
+(def ^:private strict-map-threshold 4096)
+
 (defn- elementwise1
   [f x]
   (if (seqish? x)
-    (mapv f x)
+    (if (>= (count x) strict-map-threshold)
+      (mapv1-strict f x)
+      (mapv f x))
     (f x)))
 
 (defn- elementwise2
@@ -44,13 +78,19 @@
   (cond
     (and (seqish? x) (seqish? y))
     (when (= (count x) (count y))
-      (mapv f x y))
+      (if (>= (count x) strict-map-threshold)
+        (mapv2-strict f x y)
+        (mapv f x y)))
 
     (seqish? x)
-    (mapv #(f % y) x)
+    (if (>= (count x) strict-map-threshold)
+      (mapv1-strict #(f % y) x)
+      (mapv #(f % y) x))
 
     (seqish? y)
-    (mapv #(f x %) y)
+    (if (>= (count y) strict-map-threshold)
+      (mapv1-strict #(f x %) y)
+      (mapv #(f x %) y))
 
     :else
     (f x y)))
@@ -173,13 +213,40 @@
 
 (defn- cumsum-call
   [xs]
-  (when (and (vector? xs) (every? number? xs))
-    (vec (rest (reductions + 0 xs)))))
+  (when (vector? xs)
+    (if (< (count xs) strict-map-threshold)
+      (when (every? number? xs)
+        (vec (rest (reductions + 0 xs))))
+      (let [n (count xs)]
+        (loop [idx 0
+               total 0
+               result (transient [])]
+          (if (= idx n)
+            (persistent! result)
+            (let [x (nth xs idx)]
+              (when (number? x)
+                (let [total (+ total x)]
+                  (recur (inc idx)
+                         total
+                         (conj! result total)))))))))))
 
 (defn- diff-call
   [xs]
-  (when (and (vector? xs) (every? number? xs))
-    (vec (map - xs (cons 0 xs)))))
+  (when (vector? xs)
+    (if (< (count xs) strict-map-threshold)
+      (when (every? number? xs)
+        (vec (map - xs (cons 0 xs))))
+      (let [n (count xs)]
+        (loop [idx 0
+               previous 0
+               result (transient [])]
+          (if (= idx n)
+            (persistent! result)
+            (let [x (nth xs idx)]
+              (when (number? x)
+                (recur (inc idx)
+                       x
+                       (conj! result (- x previous)))))))))))
 
 (defn- unique-indices
   [indices]
@@ -670,7 +737,7 @@
     :call (fn [[left right]]
             (if (and (string? left) (string? right))
               (str left right)
-              (vec (clojure.core/concat left right))))
+              (into (strict-vec left) right)))
     :inverse (fn [output cond-inputs cond]
                (when (= 1 (count cond))
                  (let [known (first cond-inputs)]

@@ -16,9 +16,9 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
 - The implementation includes Python-scale core Wunderbaum parity rows, greedy
   Alice/Wunderbaum task runs, lazy best-first node tuple enumeration, a
   Python-compatible value DL model, Alice operator DL alignment, per-run DL and
-  value-key caching, deferred selected-expression realization, and several
-  translation/performance fixes; tests pass locally with 122 tests and 598
-  assertions.
+  value-key caching, deferred selected-expression realization, threshold-aware
+  candidate yielding, and several translation/performance fixes; tests pass
+  locally with 122 tests and 598 assertions.
 
 ## Current State
 
@@ -38,6 +38,10 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   scoring path that preserves the Python DL formula. Alice/Wunderbaum
   declarations also preserve Python `TaskDomain` operator DL in materialized
   graphs.
+- Large-vector primitive probes now use strict vector loops where that is
+  faster and preserve the original simple sequence paths for small vectors.
+  This is an execution optimization for the Python Alice operator basis, not a
+  new recognizer or shortcut.
 - Python-scale `simple_repeat`, `insert_repeat`, `insert_repeat2`,
   `insert_repeat3`, `repeat_with_noise`, `simply_linear`, `sprinkled`,
   `increasing_runs`, and `map_negate` pass through the injected Alice operator
@@ -133,8 +137,11 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   warm timing.
 - For performance profiling, continue with residual pure Clojure large-array
   value-DL paths, materialization overhead, and any remaining repeated MDL
-  scoring. The current 1D vector DL path has been tightened, and delayed-builder
-  de-duplication now avoids unconditional `pr-str` over large structural keys.
-  Do not solve these gaps with recognizer templates or task-specific shortcuts.
+  scoring. The current 1D vector DL path has been tightened, delayed-builder
+  de-duplication now avoids unconditional `pr-str` over large structural keys,
+  and primitive vector probes avoid lazy pipelines on large vectors. The
+  remaining `increasing_runs` gap is dominated by valid Python-basis probes over
+  the large free root before the accepted `cumsum`. Do not solve these gaps with
+  recognizer templates or task-specific shortcuts.
 - Keep updating `alice-test-parity.md` with measured core CIWI rate, exact
   selected solution, timing, and Python comparison for each row.
