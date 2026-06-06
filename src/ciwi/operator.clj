@@ -547,17 +547,52 @@
                   (value/datum (apply-op f [(value/value x)])))
                 xs))))))
 
-(defn- first-elementwise-inversions
+(defn- cartesian-product
+  [colls]
+  (reduce (fn [prefixes coll]
+            (for [prefix prefixes
+                  x coll]
+              (conj prefix x)))
+          [[]]
+          colls))
+
+(defn- elementwise-inversions
   [f output]
   (when (seqish? output)
-    (loop [remaining (vec output)
-           result []]
-      (if (seq remaining)
-        (let [x (first remaining)
-              inversions (invert-op f (value/value x) [] [])]
-          (when-let [input (-> inversions first first value/datum)]
-            (recur (rest remaining) (conj result input))))
-        [[result]]))))
+    (let [output (vec output)
+          output-count (count output)
+          empty-positions (vec (clojure.core/repeat output-count []))
+          inversions-by-type
+          (loop [idx 0
+                 by-type {}]
+            (if (= idx output-count)
+              by-type
+              (let [inversions (mapv (fn [values]
+                                       (value/datum (first values)))
+                                     (invert-op f (value/value (nth output idx)) [] []))]
+                (if (seq inversions)
+                  (let [grouped (group-by type inversions)
+                        by-type (reduce-kv
+                                 (fn [acc typ inferred-values]
+                                   (update acc typ
+                                           (fn [positions]
+                                             (assoc (or positions empty-positions)
+                                                    idx
+                                                    (vec inferred-values)))))
+                                 by-type
+                                 grouped)]
+                    (recur (inc idx) by-type))
+                  nil))))]
+      (when (seq inversions-by-type)
+        (->> inversions-by-type
+             vals
+             (keep (fn [position-inversions]
+                     (when (and (every? seq position-inversions)
+                                (<= (reduce * 1 (map count position-inversions))
+                                    100))
+                       position-inversions)))
+             (mapcat cartesian-product)
+             (mapv (fn [xs] [(vec xs)])))))))
 
 (defn- map-inversions
   [output cond-inputs cond]
@@ -566,7 +601,7 @@
       (or (seq (mapv (fn [values]
                        [(value/datum (first values))])
                      (invert-op f (value/value output) [] [])))
-          (first-elementwise-inversions f output)))))
+          (elementwise-inversions f output)))))
 
 (defn partition-by-frequency
   "Partition output as `[indices content rest]` using the most common value as rest."

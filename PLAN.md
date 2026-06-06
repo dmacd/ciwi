@@ -18,13 +18,14 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   the serial `test_wunderbaum.py::test_wunderbaum_iteration` solution case,
   native fixture parity for Python `test_conditions.py` condition shapes, and
   representative `test_composite.py` behavior slices including the full
-  `co0`-`co21` graph commutativity table.
+  `co0`-`co21` graph commutativity table and selected callable/sequence-edit
+  inverse rows.
 - The implementation includes Python-scale core Wunderbaum parity rows, greedy
   Alice/Wunderbaum task runs, lazy best-first node tuple enumeration, a
   Python-compatible value DL model, Alice operator DL alignment, per-run DL and
   value-key caching, deferred selected-expression realization, threshold-aware
   candidate yielding, and several translation/performance fixes; tests pass
-  locally with 132 tests and 714 assertions.
+  locally with 134 tests and 720 assertions.
 
 ## Current State
 
@@ -139,9 +140,15 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
 - Native composite behavior parity now covers Python `test_composite.py`
   shared-DAG execution for `dag4` and `dag5`, the `dag5` extra-branch inverse,
   exact inverse rows for `co2`, `co3`, and `co4`, and the full `co0`-`co21`
-  graph commutativity table. The broader `zip2d`, `union`, and related
-  non-Alice operators used by these cases remain test-local fixture operators;
-  they are not added to the Alice operator basis.
+  graph commutativity table. It also covers `co0` insert inversion, `co12`
+  repeat inversion, `co7` nested `abs` inversion, and `trees13`
+  `map(abs, x)` inverse branching/branch-cap behavior. The broader `zip2d`,
+  `union`, `abs`, and related non-Alice operators used by these cases remain
+  test-local fixture operators; they are not added to the Alice operator basis.
+- `map` inversion now mirrors Python WILLIAM's elementwise fallback more
+  closely: when a callable cannot invert the whole output directly, CIWI groups
+  scalar inverse branches by type, takes Cartesian products per type, and drops
+  a type branch whose product exceeds 100 alternatives.
 
 ## Roadmap
 
@@ -175,11 +182,11 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
 
 ## Near-Term Next Tasks
 
-- Continue `test_composite.py` expansion. Next useful slices are additional
-  inverse rows that exercise callable/map and sequence-edit behavior, and then
-  the spec synchronization cases. Do not port S-expression reconstruction as
-  parser parity; keep native graph/composite specs. The broader test map is
-  `PYTHON-TEST-ROADMAP.md`.
+- Continue `test_composite.py` expansion. Next useful slices are remaining
+  inverse rows that require additional fixture operators such as `listwrap`,
+  `urange`, `getitem`/`setitem` variants, and then the spec synchronization
+  cases. Do not port S-expression reconstruction as parser parity; keep native
+  graph/composite specs. The broader test map is `PYTHON-TEST-ROADMAP.md`.
 - If runtime parity remains the immediate priority, focus on `increasing_runs`,
   `sprinkled`, `simply_linear`, and `map_negate`. `insert_repeat3` now reaches
   the Python rate in seven accepted steps and is faster than the recorded Python

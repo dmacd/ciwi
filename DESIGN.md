@@ -240,6 +240,13 @@ scoring shortcuts. They should be re-examined after CIWI has a proper dense
 primitive array backend, because that backend should own this kind of
 large-vector execution performance.
 
+`map` first tries the Python-style shortcut where the callable can operate on
+the whole collection. If that cannot invert the output directly, `map` falls
+back to scalar elementwise inversion. Elementwise inverse branches are grouped
+by inferred value type, Cartesian products are produced per type, and any type
+branch with more than 100 combinations is dropped, matching Python's protection
+against explosive callable inversions such as long `map(abs, x)` outputs.
+
 CIWI also contains broader sequence-edit and boolean infrastructure where it is
 useful for graph rewrite tests. Those operators are available to callers that
 inject them, but they are not part of the default Alice parity claim unless the

@@ -25,6 +25,28 @@
   [id conditions commutative?]
   (fixture-op id conditions (constantly nil) (constantly nil) commutative?))
 
+(defn- abs-call
+  [x]
+  (when-not (number? x)
+    (throw (ex-info "abs expects a scalar number" {:x x})))
+  (if (neg? x) (- x) x))
+
+(defn- abs-inverse
+  [output _cond-inputs cond]
+  (when (and (empty? cond)
+             (number? output)
+             (not (neg? output)))
+    (cond-> [[output]]
+      (pos? output) (conj [(- output)]))))
+
+(def ^:private abs-op
+  (fixture-op :abs
+              [[]]
+              (fn [[x]]
+                (abs-call x))
+              abs-inverse
+              true))
+
 (defn- as-set
   [x]
   (if (set? x)
@@ -51,7 +73,7 @@
 
 (def ^:private python-composite-fixture-registry
   (merge op/registry
-         {:abs (structural-op :abs [[]] true)
+         {:abs abs-op
           :bmap (structural-op :bmap [[0] [0 1] [0 2]] false)
           :listwrap (structural-op :listwrap [[]] true)
           :listslice (structural-op :listslice [[0 1 2]] false)
@@ -512,6 +534,56 @@
                                        [(value/value 3)
                                         (value/value 43)]
                                        [0 1]))))))
+
+(deftest python-composite-sequence-edit-inverse-golden-cases
+  (let [co0 (fixture-composite
+             :co0
+             [:insert [:input :indices [1]]
+              [:input :content 2]
+              [:input :rest [3 4]]])
+        co12 (fixture-composite
+              :co12
+              [:repeat [:input :n nil]
+               [:input :motif nil]])]
+    (is (= [[(vec (range 7)) [7 8]]]
+           (data-results (op/invert-op co0
+                                       (value/value (vec (range 9)))
+                                       [(value/value (vec (range 7)))]
+                                       [0]))))
+    (is (= [[8 [132 1542]]]
+           (data-results (op/invert-op co12
+                                       (value/value (vec (take 16
+                                                               (cycle [132 1542]))))
+                                       []
+                                       []))))))
+
+(deftest python-composite-callable-and-abs-inverse-golden-cases
+  (let [co7 (fixture-composite
+             :co7
+             [:abs [:add [:abs [:input :x nil]]
+                    [:input :y nil]]])
+        map-abs (fixture-composite
+                 :trees13
+                 [:map abs-op
+                  [:input :xs nil]])]
+    (is (= [[9] [-9]]
+           (data-results (op/invert-op co7
+                                       (value/value 12)
+                                       [(value/value 3)]
+                                       [1]))))
+    (is (= [[[1 0 0]] [[-1 0 0]]]
+           (data-results (op/invert-op map-abs
+                                       (value/value [1 0 0])
+                                       []
+                                       []))))
+    (is (empty? (data-results (op/invert-op map-abs
+                                            (value/value [1 -7 0])
+                                            []
+                                            []))))
+    (is (empty? (data-results (op/invert-op map-abs
+                                            (value/value [1 7 9 3 4 2 8])
+                                            []
+                                            []))))))
 
 (deftest composite-inversion-returns-no-results-for-unsatisfied-or-invalid-local-equations
   (let [product (sut/operator :product
