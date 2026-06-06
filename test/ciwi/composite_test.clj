@@ -1,12 +1,110 @@
 (ns ciwi.composite-test
   (:require [ciwi.composite :as sut]
+            [ciwi.graph :as graph]
             [ciwi.operator :as op]
             [ciwi.value :as value]
+            [clojure.set :as set]
             [clojure.test :refer [deftest is]]))
 
 (defn- data-results
   [results]
   (mapv #(mapv value/datum %) results))
+
+(defn- fixture-op
+  [id conditions call inverse]
+  (op/operator
+   {:id id
+    :conditions conditions
+    :call call
+    :inverse inverse}))
+
+(defn- as-set
+  [x]
+  (if (set? x)
+    x
+    (set x)))
+
+(def ^:private zip2d-op
+  (fixture-op :zip2d
+              [[]]
+              (fn [[xs ys]]
+                (mapv vector xs ys))
+              (constantly nil)))
+
+(def ^:private union-op
+  (fixture-op :union
+              [[0] [1]]
+              (fn [[left right]]
+                (set/union (as-set left) (as-set right)))
+              (fn [output cond-inputs cond]
+                (when (= 1 (count cond))
+                  [[(set/difference (as-set output)
+                                    (as-set (first cond-inputs)))]]))))
+
+(def ^:private python-composite-fixture-registry
+  (merge op/registry
+         {:zip2d zip2d-op
+          :union union-op}))
+
+(defn- shared-fixture-spec
+  [expr]
+  (letfn [(next-id [state prefix]
+            (let [counter (inc (:counter state))]
+              [(assoc state :counter counter)
+               (keyword (str (name prefix) counter))]))
+            (operator-for [head]
+              (get python-composite-fixture-registry head))
+            (remember-input [state g input-id sample]
+              (if-let [node-id (get-in state [:input-nodes input-id])]
+                [state g node-id]
+                (let [[state node-id] (next-id state :v)]
+                  [(-> state
+                       (update :input-order conj input-id)
+                       (assoc-in [:input-nodes input-id] node-id))
+                   (graph/add-value g node-id sample)
+                   node-id])))
+            (build [state g form]
+              (cond
+                (and (vector? form) (= :input (first form)))
+                (let [[_ input-id sample] form]
+                  (remember-input state g input-id sample))
+
+                (and (vector? form) (operator-for (first form)))
+                (let [operator (operator-for (first form))
+                      [state g child-ids]
+                      (reduce (fn [[state acc ids] child]
+                                (let [[state acc child-id] (build state acc child)]
+                                  [state acc (conj ids child-id)]))
+                              [state g []]
+                              (rest form))
+                      [state parent-id] (next-id state :v)
+                      [state op-id] (next-id state :op)]
+                  [state
+                   (-> g
+                       (graph/add-value parent-id nil)
+                       (graph/add-operator op-id operator parent-id child-ids))
+                   parent-id])
+
+                :else
+                (let [[state node-id] (next-id state :v)]
+                  [state (graph/add-value g node-id form) node-id])))]
+    (let [[state g root-id] (build {:counter 0
+                                    :input-order []
+                                    :input-nodes {}}
+                                   (graph/empty-graph)
+                                   expr)
+          g (graph/set-roots g [root-id])
+          leaf-position (zipmap (graph/leaves g root-id) (range))]
+      {:graph g
+       :root root-id
+       :input-groups (mapv (fn [input-id]
+                             [(leaf-position (get-in state
+                                                     [:input-nodes input-id]))])
+                           (:input-order state))})))
+
+(defn- fixture-composite
+  [id expr]
+  (sut/operator id (shared-fixture-spec expr)))
 
 (deftest composite-operator-calls-through-graph-propagation
   (let [cop (sut/operator :mul-plus [:add [:mult 0 1] 2])]
@@ -110,6 +208,46 @@
                                        [(value/value 5)]
                                        [0]))))))
 
+(deftest python-dag-composite-execution-golden-cases
+  (let [dag4 (fixture-composite
+              :dag4
+              [:zip2d [:brange [:input :x0 3]
+                       [:add [:input :x0 3]
+                        [:input :length 4]]]
+               [:repeat [:input :length 4]
+                [:input :y [9]]]])
+        dag5 (fixture-composite
+              :dag5
+              [:union [:zip2d [:brange [:input :x0 3]
+                               [:add [:input :x0 3]
+                                [:input :length 4]]]
+                       [:repeat [:input :length 4]
+                        [:input :y [9]]]]
+               [:input :extra #{[9 8]}]])]
+    (is (= [[1]]
+           (:conditions dag4)))
+    (is (= [[1]]
+           (:conditions dag5)))
+    (is (= [[3 9] [4 9] [5 9] [6 9]]
+           (value/datum (op/apply-op dag4
+                                     [(value/value 3)
+                                      (value/value 4)
+                                      (value/value [9])]))))
+    (is (= #{[3 9] [4 9] [5 9] [6 9] [9 8]}
+           (value/datum (op/apply-op dag5
+                                     [(value/value 3)
+                                      (value/value 4)
+                                      (value/value [9])
+                                      (value/value #{[9 8]})]))))
+    (is (= [[#{[9 8]}]]
+           (data-results (op/invert-op dag5
+                                       (value/value #{[3 9] [4 9] [5 9]
+                                                      [6 9] [9 8]})
+                                       [(value/value 3)
+                                        (value/value 4)
+                                        (value/value [9])]
+                                       [0 1 2]))))))
+
 (deftest composite-commutativity-is-inferred-symbolically
   (let [plus (sut/operator :plus [:add [:input :x 0] [:input :y 0]])
         times (sut/operator :times [:mult [:input :x 0] [:input :y 0]])
@@ -158,6 +296,70 @@
                                        (value/value 13)
                                        [(value/value -3)]
                                        [0]))))))
+
+(deftest python-composite-inverse-golden-cases
+  (let [co2 (fixture-composite
+             :co2
+             [:insert [:trange [:input :idx-start 1]
+                       [:input :idx-stop 7]
+                       [:input :idx-step 2]]
+              [:trange [:input :content-start 23]
+               [:input :content-stop 32]
+               [:input :content-step 3]]
+              [:trange [:input :rest-start 15]
+               [:input :rest-stop 23]
+               [:input :rest-step 2]]])
+        co3 (fixture-composite
+             :co3
+             [:sub [:mult [:input :a 3]
+                    [:input :b 4]]
+              [:add [:input :c 5]
+               [:negate [:input :d 2]]]])
+        co4 (fixture-composite
+             :co4
+             [:add [:negate [:input :x 3]]
+              [:sub [:input :y 12]
+               [:input :z 5]]])]
+    (is (= [[23 32 3 15 23 2]]
+           (data-results (op/invert-op co2
+                                       (value/value [15 23 17 26 19 29 21])
+                                       [(value/value 1)
+                                        (value/value 7)
+                                        (value/value 2)]
+                                       [0 1 2]))))
+    (is (= [[1 7 2 15 23 2]]
+           (data-results (op/invert-op co2
+                                       (value/value [15 23 17 26 19 29 21])
+                                       [(value/value 23)
+                                        (value/value 32)
+                                        (value/value 3)]
+                                       [3 4 5]))))
+    (is (= [[13 33 10 15 10 -1]]
+           (data-results (op/invert-op co2
+                                       (value/value [15 13 14 13 12 23 11])
+                                       [(value/value 1)
+                                        (value/value 9)
+                                        (value/value 4)]
+                                       [0 1 2]))))
+    (is (= [[2]]
+           (data-results (op/invert-op co3
+                                       (value/value 9)
+                                       [(value/value 3)
+                                        (value/value 4)
+                                        (value/value 5)]
+                                       [0 1 2]))))
+    (is (= [[-6]]
+           (data-results (op/invert-op co4
+                                       (value/value 13)
+                                       [(value/value 12)
+                                        (value/value 5)]
+                                       [1 2]))))
+    (is (= [[25]]
+           (data-results (op/invert-op co4
+                                       (value/value 15)
+                                       [(value/value 3)
+                                        (value/value 43)]
+                                       [0 1]))))))
 
 (deftest composite-inversion-returns-no-results-for-unsatisfied-or-invalid-local-equations
   (let [product (sut/operator :product

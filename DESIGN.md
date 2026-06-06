@@ -422,6 +422,11 @@ in a placeholder template are captured as constants. Composite inversion also
 uses these input groups: all leaves in a repeated group must infer the same
 value.
 
+Composite operators can also be built from explicit native graph specs carrying
+`:graph`, `:root`, and `:input-groups`. This path is used for Python-style DAG
+fixtures where repeated logical leaves must be the same value node rather than
+duplicate literal leaves grouped after the fact.
+
 Python condition fixture parity is expressed through those same native
 composite literals rather than through DOT imports. The expected conditions are
 still the Python fixture conditions; the representation difference is only how

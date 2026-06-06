@@ -16,13 +16,14 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   `test_bottleneck.py::test_min_desc_len` and `test_propagation.py`
   propagation parity, `test_delayed_builder.py` materialization parity, and
   the serial `test_wunderbaum.py::test_wunderbaum_iteration` solution case,
-  plus native fixture parity for Python `test_conditions.py` condition shapes.
+  native fixture parity for Python `test_conditions.py` condition shapes, and
+  a first representative `test_composite.py` behavior slice.
 - The implementation includes Python-scale core Wunderbaum parity rows, greedy
   Alice/Wunderbaum task runs, lazy best-first node tuple enumeration, a
   Python-compatible value DL model, Alice operator DL alignment, per-run DL and
   value-key caching, deferred selected-expression realization, threshold-aware
   candidate yielding, and several translation/performance fixes; tests pass
-  locally with 129 tests and 681 assertions.
+  locally with 131 tests and 692 assertions.
 
 ## Current State
 
@@ -134,6 +135,11 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   imports. The condition implementation now mirrors Python's callable
   condition adoption for `map`-style operators and its repeated-leaf DAG
   projection rules.
+- Native composite behavior parity now covers Python `test_composite.py`
+  shared-DAG execution for `dag4` and `dag5`, the `dag5` extra-branch inverse,
+  and exact inverse rows for `co2`, `co3`, and `co4`. The broader `zip2d` and
+  `union` operators used by these cases remain test-local fixture operators;
+  they are not added to the Alice operator basis.
 
 ## Roadmap
 
@@ -167,9 +173,11 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
 
 ## Near-Term Next Tasks
 
-- Move from condition fixtures to representative `test_composite.py`
-  execution, inversion, commutativity, spec synchronization, and shared-leaf
-  cases. The broader test map is `PYTHON-TEST-ROADMAP.md`.
+- Continue `test_composite.py` expansion. Next useful slices are the full
+  `co0`-`co21` commutativity table, additional inverse rows that exercise
+  callable/map and sequence-edit behavior, and then the spec synchronization
+  cases. Do not port S-expression reconstruction as parser parity; keep native
+  graph/composite specs. The broader test map is `PYTHON-TEST-ROADMAP.md`.
 - If runtime parity remains the immediate priority, focus on `increasing_runs`,
   `sprinkled`, `simply_linear`, and `map_negate`. `insert_repeat3` now reaches
   the Python rate in seven accepted steps and is faster than the recorded Python
