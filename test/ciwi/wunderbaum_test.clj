@@ -15,6 +15,59 @@
                        :input-specs [:int :int]
                        :output-spec :array-int}]}))
 
+(def ^:private python-wunderbaum-operator-declarations
+  [{:op :map :input-specs [:operator :array-int] :output-spec :array-int :dl 8.0}
+   {:op :brange :input-specs [:int :int] :output-spec :array-int :dl 8.0}
+   {:op :add :input-specs [:int :int] :output-spec :int :dl 8.0}
+   {:op :add :input-specs [:array-int :int] :output-spec :array-int :dl 8.0}
+   {:op :add :input-specs [:array-int :array-int] :output-spec :array-int :dl 8.0}
+   {:op :mult :input-specs [:int :int] :output-spec :int :dl 8.0}
+   {:op :mult :input-specs [:array-int :int] :output-spec :array-int :dl 8.0}
+   {:op :mult :input-specs [:array-int :array-int] :output-spec :array-int :dl 8.0}
+   {:op :negate :input-specs [:int] :output-spec :int :dl 8.0}
+   {:op :negate :input-specs [:array-int] :output-spec :array-int :dl 8.0}
+   {:op :concat :input-specs [:array-int :array-int] :output-spec :array-int :dl 8.0}
+   {:op :repeat :input-specs [:int :array-int] :output-spec :array-int :dl 8.0}
+   {:op :getitem :input-specs [:array-int :int] :output-spec :int :dl 8.0}
+   {:op :getitem :input-specs [:array-int :array-int] :output-spec :array-int :dl 8.0}
+   {:op :getitem :input-specs [:array-int :array-bool] :output-spec :array-int :dl 8.0}
+   {:op :setitem :input-specs [:array-int :array-int :array-int]
+    :output-spec :array-int :dl 8.0}])
+
+(def ^:private python-wunderbaum-registry
+  (select-keys op/registry
+               [:map :brange :add :mult :negate :concat :repeat :getitem :setitem]))
+
+(def ^:private python-wunderbaum-solution
+  [:setitem [:repeat 3 [45]] [:negate [-1 -2]] [:negate [-87 -87]]])
+
+(defn- expression-products
+  [expression-sets]
+  (if (empty? expression-sets)
+    '(())
+    (for [head (first expression-sets)
+          tail (expression-products (rest expression-sets))]
+      (cons head tail))))
+
+(defn- option-expressions
+  [g id]
+  (let [n (graph/node g id)]
+    (cond
+      (graph/value-node? n)
+      (if (seq (:options n))
+        (into #{}
+              (mapcat #(option-expressions g %))
+              (:options n))
+        #{(graph/value-data g id)})
+
+      (graph/operator-node? n)
+      (let [child-expressions (map #(option-expressions g %) (:children n))]
+        (into #{}
+              (map #(into [(:id (:operator n))] %))
+              (expression-products child-expressions)))
+
+      :else #{})))
+
 (deftest wunderbaum-requires-injected-registry
   (is (thrown-with-msg?
        clojure.lang.ExceptionInfo
@@ -63,6 +116,40 @@
            (get-in result [:selected :target0])))
     (is (< (:dl result)
            (mdl/graph-dl (:graph initial))))))
+
+(deftest python-wunderbaum-finds-setitem-repeat-negate-solution
+  (let [wb (sut/wunderbaum
+            {:registry python-wunderbaum-registry
+             :ops-with-counts python-wunderbaum-operator-declarations})
+        targets [(value/value [45 87 87]
+                              {:spec :array-int
+                               :permeable? false
+                               :name "target"})
+                 (value/value [45]
+                              {:spec :array-int
+                               :permeable? false
+                               :name "target2"})
+                 (value/value 3
+                              {:spec :int
+                               :name "free"})]
+        result (some (fn [[idx candidate]]
+                       (let [expressions (option-expressions (:graph candidate) :target0)]
+                         (when (contains? expressions python-wunderbaum-solution)
+                           (assoc candidate
+                                  :candidate-index idx
+                                  :expressions expressions))))
+                     (map-indexed vector
+                                  (sut/iterate wb
+                                               targets
+                                               {:max-popped 50000
+                                                :max-yields 9500
+                                                :max-node-tuples 1000})))]
+    (is (some? result))
+    (when result
+      (is (contains? (:expressions result) python-wunderbaum-solution))
+      (is (= [45 87 87]
+             (graph/value-data (:graph result) :target0)))
+      (is (< (:candidate-index result) 9500)))))
 
 (deftest wunderbaum-uses-multiple-conditioned-nodes-for-inversion
   (let [wb (sut/wunderbaum

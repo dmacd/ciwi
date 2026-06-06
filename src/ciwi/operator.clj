@@ -481,6 +481,11 @@
 
       :else nil)))
 
+(defn- array-like-vector?
+  [x]
+  (and (vector? x)
+       (every? #(or (number? %) (boolean? %)) x)))
+
 (defn- missing-sentinel
   [x]
   (cond
@@ -498,6 +503,25 @@
                 value))
             (range (count output))
             output))))
+
+(defn- setitem-source-inversions
+  [output xs]
+  (when (= (count xs) (count output))
+    (let [diffs (vec (keep-indexed (fn [idx old]
+                                     (when (not= old (nth output idx))
+                                       idx))
+                                   xs))]
+      (cond
+        (and (seq diffs)
+             (array-like-vector? xs)
+             (array-like-vector? output))
+        [[diffs (mapv #(nth output %) diffs)]]
+
+        (= 1 (count diffs))
+        (let [idx (first diffs)]
+          [[idx (nth output idx)]])
+
+        :else nil))))
 
 (declare registry)
 
@@ -848,15 +872,7 @@
                                 {:xs xs :idx idx :item item}))))
     :inverse (fn [output cond-inputs condition]
                (case (vec condition)
-                 [0] (let [xs (vec (first cond-inputs))]
-                       (when (= (count xs) (count output))
-                         (let [diffs (keep-indexed (fn [idx old]
-                                                     (when (not= old (nth output idx))
-                                                       idx))
-                                                   xs)]
-                           (when (= 1 (count diffs))
-                             (let [idx (first diffs)]
-                               [[idx (nth output idx)]])))))
+                 [0] (setitem-source-inversions output (vec (first cond-inputs)))
                  [1] (let [idx (first cond-inputs)]
                        (cond
                          (integer? idx)

@@ -14,13 +14,14 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   rows in Python `test_alice.py`, plus the first round of warm-runtime fixes
   from profiling the largest gaps, and full Python
   `test_bottleneck.py::test_min_desc_len` and `test_propagation.py`
-  propagation parity plus `test_delayed_builder.py` materialization parity.
+  propagation parity, `test_delayed_builder.py` materialization parity, and
+  the serial `test_wunderbaum.py::test_wunderbaum_iteration` solution case.
 - The implementation includes Python-scale core Wunderbaum parity rows, greedy
   Alice/Wunderbaum task runs, lazy best-first node tuple enumeration, a
   Python-compatible value DL model, Alice operator DL alignment, per-run DL and
   value-key caching, deferred selected-expression realization, threshold-aware
   candidate yielding, and several translation/performance fixes; tests pass
-  locally with 127 tests and 645 assertions.
+  locally with 128 tests and 651 assertions.
 
 ## Current State
 
@@ -120,6 +121,12 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   `with_mult` fixtures as exact native `brange` output-conditioned
   materializations, plus the same-node binary input regression and
   description-length ordering behavior from `test_delayed_builder.py`.
+- Standalone Wunderbaum parity now covers the Python
+  `setitem(repeat(...), negate(...), negate(...))` solution shape from
+  `test_wunderbaum.py::test_wunderbaum_iteration` using an injected registry
+  and explicit declarations for that test's operator set. The test compares
+  native graph option expressions rather than MDL-selected expressions because
+  Python checks structural resemblance to the solution graph.
 
 ## Roadmap
 
@@ -153,8 +160,7 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
 
 ## Near-Term Next Tasks
 
-- Move to the standalone Wunderbaum `setitem/repeat/negate` parity case, then
-  composite/condition fixture expansion. The broader test map is
+- Move to composite/condition fixture expansion. The broader test map is
   `PYTHON-TEST-ROADMAP.md`.
 - If runtime parity remains the immediate priority, focus on `increasing_runs`,
   `sprinkled`, `simply_linear`, and `map_negate`. `insert_repeat3` now reaches

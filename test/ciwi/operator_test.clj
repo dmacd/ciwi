@@ -69,8 +69,14 @@
          (:data (sut/apply-op sut/setitem [(value/value [342 6 8 252])
                                            (value/value [false true true false])
                                            (value/value [78 34])]))))
-  (is (= [[3 78]]
+  (is (= [[[3] [78]]]
          (raw-inversions sut/setitem [342 6 8 78] [[342 6 8 252]] [0])))
+  (is (= [[[1 2] [87 87]]]
+         (raw-inversions sut/setitem [45 87 87] [[45 45 45]] [0])))
+  (is (= [[4 "x"]]
+         (raw-inversions sut/setitem ["-" "-" "-" "-" "x"]
+                         [["-" "-" "-" "-" "-"]]
+                         [0])))
   (is (= [[[342 nil nil 252] [78 34]]]
          (raw-inversions sut/setitem [342 78 34 252] [[false true true false]] [1])))
   (is (= [[["-" "-" "-" "-" ""] "x"]]

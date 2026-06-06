@@ -225,6 +225,10 @@ Additional Python core-test operators are added when a parity target requires
 them. `trange` follows Python's `(start stop step)` range operator and inverts
 strict arithmetic integer ranges. `mean` is a pure forward numeric sequence
 operator used by propagation parity; it does not fabricate inverse values.
+For `setitem`, CIWI preserves scalar single-edit behavior for string-like
+vectors, but numeric and boolean vectors use Python NumPy-array semantics:
+given a source array and output array, inversion can return all changed indices
+and assigned values in one step.
 
 Large vector operator probes use implementation-specific fast paths only when
 they preserve the same concrete values. Elementwise operations and `cumsum` /
