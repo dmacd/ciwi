@@ -12,14 +12,14 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
 
 - Current local state has Python-scale core parity evidence for all sequence
   rows in Python `test_alice.py`, plus the first round of warm-runtime fixes
-  from profiling the largest gaps, and the first Python bottleneck golden MDL
-  parity slice.
+  from profiling the largest gaps, and full Python
+  `test_bottleneck.py::test_min_desc_len` parity.
 - The implementation includes Python-scale core Wunderbaum parity rows, greedy
   Alice/Wunderbaum task runs, lazy best-first node tuple enumeration, a
   Python-compatible value DL model, Alice operator DL alignment, per-run DL and
   value-key caching, deferred selected-expression realization, threshold-aware
   candidate yielding, and several translation/performance fixes; tests pass
-  locally with 123 tests and 610 assertions.
+  locally with 124 tests and 618 assertions.
 
 ## Current State
 
@@ -105,9 +105,9 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
 - `ciwi.mdl/graph-description` now implements Python-style cross-section MDL
   selection. It jointly enumerates raw-vs-option choices across a section,
   shares already-seen value descriptions, and propagates traces to stop cycles.
-  The small Python `test_bottleneck.py::test_min_desc_len` section fixtures
-  `section1` through `section4` now match Python DL constants and selected
-  operators.
+  Python `test_bottleneck.py::test_min_desc_len` fixtures now match Python DL
+  constants and selected operators, including `mult_negate`,
+  `mult_negate_add`, and `regression` at Python scale.
 
 ## Roadmap
 
@@ -141,14 +141,9 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
 
 ## Near-Term Next Tasks
 
-- Continue Python `test_bottleneck.py::test_min_desc_len` parity with the
-  larger `mult_negate_add` and `regression` fixtures, and decide whether
-  `mult_negate` is useful enough to port now given that its expected selection
-  is the empty/raw bottleneck.
-- After bottleneck parity, move to propagation golden cases, delayed-builder
-  exact materialization, Wunderbaum `setitem/repeat/negate`, and
-  composite/condition fixture expansion. The broader test map is
-  `PYTHON-TEST-ROADMAP.md`.
+- Move to Python propagation golden cases, then delayed-builder exact
+  materialization, Wunderbaum `setitem/repeat/negate`, and composite/condition
+  fixture expansion. The broader test map is `PYTHON-TEST-ROADMAP.md`.
 - If runtime parity remains the immediate priority, focus on `increasing_runs`,
   `sprinkled`, `simply_linear`, and `map_negate`. `insert_repeat3` now reaches
   the Python rate in seven accepted steps and is faster than the recorded Python
