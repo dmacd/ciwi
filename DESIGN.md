@@ -569,6 +569,12 @@ only the newly generated root. Stable value keys are cached by `Value` identity
 inside a Wunderbaum candidate stream, matching Python's cached `Value.hash`
 behavior without mutating the records.
 
+Python's materialized memory map includes an entry for the operator node. CIWI
+keeps operator materialization in the immutable graph and keeps delayed-builder
+memory focused on value-node data. Parity tests therefore compare the native
+graph operator shape plus value memory, not a Python-style operator memory
+entry.
+
 Whole-result de-duplication uses a delayed-builder structural key rather than
 the public graph structural key. The key remains exact: value leaves include
 their raw data, memory entries include exact raw values, and hash values are

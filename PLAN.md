@@ -14,13 +14,13 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   rows in Python `test_alice.py`, plus the first round of warm-runtime fixes
   from profiling the largest gaps, and full Python
   `test_bottleneck.py::test_min_desc_len` and `test_propagation.py`
-  propagation parity.
+  propagation parity plus `test_delayed_builder.py` materialization parity.
 - The implementation includes Python-scale core Wunderbaum parity rows, greedy
   Alice/Wunderbaum task runs, lazy best-first node tuple enumeration, a
   Python-compatible value DL model, Alice operator DL alignment, per-run DL and
   value-key caching, deferred selected-expression realization, threshold-aware
   candidate yielding, and several translation/performance fixes; tests pass
-  locally with 126 tests and 631 assertions.
+  locally with 127 tests and 645 assertions.
 
 ## Current State
 
@@ -116,6 +116,10 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   These cases exercise partial propagation, multiple inverse branches,
   `trange`, `mean`, cyclic value dependencies, and the CIWI-native `nil` hole
   representation for Python's internal integer-array unknown sentinel.
+- Delayed-builder parity now covers Python's `Array[int]` simple and
+  `with_mult` fixtures as exact native `brange` output-conditioned
+  materializations, plus the same-node binary input regression and
+  description-length ordering behavior from `test_delayed_builder.py`.
 
 ## Roadmap
 
@@ -149,9 +153,9 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
 
 ## Near-Term Next Tasks
 
-- Move to delayed-builder exact materialization, then Wunderbaum
-  `setitem/repeat/negate`, and composite/condition fixture expansion. The
-  broader test map is `PYTHON-TEST-ROADMAP.md`.
+- Move to the standalone Wunderbaum `setitem/repeat/negate` parity case, then
+  composite/condition fixture expansion. The broader test map is
+  `PYTHON-TEST-ROADMAP.md`.
 - If runtime parity remains the immediate priority, focus on `increasing_runs`,
   `sprinkled`, `simply_linear`, and `map_negate`. `insert_repeat3` now reaches
   the Python rate in seven accepted steps and is faster than the recorded Python

@@ -29,7 +29,52 @@
                  (< (abs (- (double x) (double y))) 1.0e-9))
                (map vector left right))))
 
-(deftest delayed-dag-build-simple
+(defn- delayed-brange-build
+  [data]
+  (let [g (graph/set-roots (one-value-graph :d data) [:d])
+        info (sut/build-info {:dl 8.0
+                              :graph g
+                              :memory (memory [:d data])
+                              :conditioned-nodes [:d]
+                              :condition-key [:array-int]})
+        element (sut/graph-element op/brange
+                                   [-1]
+                                   {:arity 2
+                                    :input-specs [:int :int]
+                                    :output-spec :array-int
+                                    :dl 8.000000773956048})]
+    (first (sut/delayed-dag-build info {[:array-int] [element]} #{}))))
+
+(deftest python-delayed-dag-build-simple-and-mult-fixtures
+  ;; Python's "with_mult" test uses the same first Array[int] element as the
+  ;; simple test. In the current Python Wunderbaum element order that element is
+  ;; output-conditioned BRange, so both fixtures materialize brange(start, stop).
+  (doseq [{:keys [name data expected-args]}
+          [{:name "simple"
+            :data [1 2 3]
+            :expected-args [1 4]}
+           {:name "with_mult"
+            :data [2 3 4]
+            :expected-args [2 5]}]]
+    (let [result (delayed-brange-build data)
+          g' (:graph result)
+          op-node (graph/node g' (:operator-id result))
+          [start-id stop-id] (:children op-node)]
+      (is (some? result) name)
+      (is (= :d (:root result)) name)
+      (is (= :brange (get-in op-node [:operator :id])) name)
+      (is (= [:d] (graph/roots g')) name)
+      (is (= data (graph/value-data g' :d)) name)
+      (is (= expected-args
+             [(graph/value-data g' start-id)
+              (graph/value-data g' stop-id)])
+          name)
+      (is (= expected-args
+             [(value-at (:memory result) start-id)
+              (value-at (:memory result) stop-id)])
+          name))))
+
+(deftest delayed-dag-build-forward-attachment-smoke-test
   (let [g (one-value-graph :d [2 3 4])
         info (sut/build-info {:dl 8.0
                               :graph g
