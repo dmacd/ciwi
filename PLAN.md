@@ -19,7 +19,7 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   Python-compatible value DL model, Alice operator DL alignment, per-run DL and
   value-key caching, deferred selected-expression realization, threshold-aware
   candidate yielding, and several translation/performance fixes; tests pass
-  locally with 124 tests and 618 assertions.
+  locally with 124 tests and 622 assertions.
 
 ## Current State
 
@@ -107,7 +107,9 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   shares already-seen value descriptions, and propagates traces to stop cycles.
   Python `test_bottleneck.py::test_min_desc_len` fixtures now match Python DL
   constants and selected operators, including `mult_negate`,
-  `mult_negate_add`, and `regression` at Python scale.
+  `mult_negate_add`, and `regression` at Python scale. The large bottleneck
+  golden cases are expressed as native EDN value/operator/root graph specs, not
+  as DOT imports.
 
 ## Roadmap
 

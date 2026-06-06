@@ -5,7 +5,6 @@
             [ciwi.value :as value]
             [clojure.edn :as edn]
             [clojure.java.io :as io]
-            [clojure.string :as str]
             [clojure.test :refer [deftest is testing]]))
 
 (defn- approx=
@@ -197,118 +196,66 @@
                           (graph/roots graph)))))))))
 
 (def ^:private fixture-operators
-  {"add" op/add
-   "mult" op/mult
-   "negate" op/negate
-   "sub" op/sub})
+  {:add op/add
+   :mult op/mult
+   :negate op/negate
+   :sub op/sub})
 
-(defn- fixture-resource
+(def ^:private bottleneck-fixtures
+  (delay
+    (edn/read-string
+     (slurp (or (io/resource "ciwi/fixtures/min_desc_len/bottleneck.edn")
+                (throw (ex-info "Missing bottleneck fixture data" {})))))))
+
+(defn- bottleneck-fixture
   [name]
-  (or (io/resource (str "ciwi/fixtures/min_desc_len/" name ".dot"))
-      (throw (ex-info "Missing DOT fixture" {:name name}))))
+  (or (get @bottleneck-fixtures name)
+      (throw (ex-info "Missing bottleneck fixture" {:name name}))))
 
-(defn- dot-id
-  [raw-id]
-  (keyword raw-id))
-
-(defn- parse-dot-value
-  [label]
-  (edn/read-string (if (str/starts-with? label "a")
-                     (subs label 1)
-                     label)))
-
-(defn- parse-dot-node-line
-  [line]
-  (when-let [[_ raw-id root-marker label]
-             (re-find #"^([^\s\[\*]+)(\*)?\s+\[label=\"([^\"]+)\"" line)]
-    (if-let [operator (get fixture-operators label)]
-      {:kind :operator
-       :raw-id raw-id
-       :id (dot-id raw-id)
-       :operator operator}
-      {:kind :value
-       :raw-id raw-id
-       :id (dot-id raw-id)
-       :root? (boolean root-marker)
-       :value (parse-dot-value label)})))
-
-(defn- parse-dot-edge-line
-  [line]
-  (when-let [[_ source target]
-             (re-find #"\"([^\"]+)\"\s+->\s+\"([^\"]+)\"" line)]
-    {:source source
-     :target target}))
-
-(defn- dot-fixture-graph
-  [name]
-  (let [lines (str/split-lines (slurp (fixture-resource name)))
-        node-entries (keep parse-dot-node-line lines)
-        edge-entries (keep parse-dot-edge-line lines)
-        value-raw-ids (into #{}
-                            (map :raw-id)
-                            (filter #(= :value (:kind %)) node-entries))
-        op-raw-ids (into #{}
-                         (map :raw-id)
-                         (filter #(= :operator (:kind %)) node-entries))
-        op-shapes (reduce (fn [shapes {:keys [source target]}]
-                            (cond
-                              (and (contains? value-raw-ids source)
-                                   (contains? op-raw-ids target))
-                              (assoc-in shapes [target :parent] (dot-id source))
-
-                              (and (contains? op-raw-ids source)
-                                   (contains? value-raw-ids target))
-                              (update-in shapes [source :children]
-                                         (fnil conj [])
-                                         (dot-id target))
-
-                              :else shapes))
-                          {}
-                          edge-entries)
-        g (reduce (fn [g {:keys [id value]}]
-                    (graph/add-value g id value))
-                  (graph/empty-graph)
-                  (filter #(= :value (:kind %)) node-entries))
-        g (reduce (fn [g {:keys [raw-id id operator]}]
-                    (let [{:keys [parent children]} (get op-shapes raw-id)]
-                      (graph/add-operator g id operator parent children)))
+(defn- bottleneck-fixture-graph
+  [{:keys [values operators roots]}]
+  (let [g (reduce-kv (fn [g id value]
+                       (graph/add-value g id value))
+                     (graph/empty-graph)
+                     values)
+        g (reduce (fn [g {:keys [id op parent children]}]
+                    (graph/add-operator g id (get fixture-operators op) parent children))
                   g
-                  (filter #(= :operator (:kind %)) node-entries))
-        roots (into []
-                    (comp (filter :root?)
-                          (map :id))
-                    node-entries)]
+                  operators)]
     (graph/set-roots g roots)))
 
-(defn- selected-operator-kinds
-  [g description]
-  (mapv #(get-in (graph/node g %) [:operator :id])
-        (:selected description)))
+(defn- value-alias
+  [{:keys [values value-aliases]} x]
+  (or (some (fn [[label value-id]]
+              (when (= x (get values value-id))
+                label))
+            value-aliases)
+      x))
 
-(defn- selected-root-expressions
-  [g]
-  (mapv #(sut/selected-expression g %)
-        (graph/roots g)))
+(defn- canonical-selected-expression
+  [fixture expression]
+  (if (and (vector? expression)
+           (contains? fixture-operators (first expression)))
+    (into [(first expression)]
+          (map #(canonical-selected-expression fixture %) (rest expression)))
+    (value-alias fixture expression)))
 
-(deftest python-bottleneck-dot-golden-cases
-  (doseq [{:keys [name expected-dl expected-selected min-clone]}
-          [{:name "mult_negate"
-            :expected-dl 8760.879357497288
-            :expected-selected []}
-           {:name "mult_negate_add"
-            :expected-dl 573.8697633677614
-            :expected-selected [:add :negate :mult]
-            :min-clone "mult_negate_add_min_clone"}
-           {:name "regression"
-            :expected-dl 19582.338006270023
-            :expected-selected [:add :add :add :add]
-            :min-clone "regression_min_clone"}]]
-    (testing name
-      (let [g (dot-fixture-graph name)
+(deftest python-bottleneck-native-golden-cases
+  (doseq [name [:mult-negate :mult-negate-add :regression]]
+    (testing (name name)
+      (let [fixture (bottleneck-fixture name)
+            g (bottleneck-fixture-graph fixture)
             description (sut/graph-description g)]
-        (is (approx= expected-dl (:dl description)))
-        (is (= expected-selected
-               (selected-operator-kinds g description)))
-        (when min-clone
-          (is (= (selected-root-expressions (dot-fixture-graph min-clone))
-                 (selected-root-expressions g))))))))
+        (is (approx= (:expected-dl fixture) (:dl description)))
+        (is (= (set (:expected-selected fixture))
+               (set (:selected description))))
+        (is (= (count (:expected-selected fixture))
+               (count (:selected description))))
+        (is (= (:expected-selected-expressions fixture)
+               (into {}
+                     (map (fn [root-id]
+                            [root-id
+                             (canonical-selected-expression
+                              fixture
+                              (sut/selected-expression g root-id))])
+                          (graph/roots g)))))))))
