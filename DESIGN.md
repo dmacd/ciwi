@@ -221,6 +221,12 @@ Alice-basis sequence semantics follow Python `test_alice.py`: `brange` is
 keyword/record as its callable child, `insert` partitions output into inserted
 indices/content/rest, and `cumsum` inverts by first differences.
 
+Primitive inverses should follow Python's suitability checks before attempting
+shape-specific work. For example, Python `Repeat._inverse` only accepts
+list/string/array outputs; CIWI mirrors that by returning no repeat inversions
+for scalar outputs rather than treating scalar `count` errors as exceptional
+search results.
+
 Additional Python core-test operators are added when a parity target requires
 them. `trange` follows Python's `(start stop step)` range operator and inverts
 strict arithmetic integer ranges. `mean` is a pure forward numeric sequence
@@ -439,6 +445,13 @@ composite literals rather than through DOT imports. The expected conditions are
 still the Python fixture conditions; the representation difference is only how
 CIWI builds the graph under test. Repeated `:input` ids model shared logical
 leaves in Python DAG fixtures.
+
+Some Python composite rows require operators outside the Alice search basis,
+such as `abs`, `toint`, `tofloat`, `urange`, `listwrap`, `zip2d`, `union`, and
+`bmap`. CIWI keeps those as test-local fixture operators unless another parity
+target needs them in the injected runtime registry. This preserves the proof
+boundary: these rows validate graph-backed composite propagation/inversion, not
+an expanded Alice primitive basis.
 
 Condition extraction mirrors Python's selected-tree behavior in two important
 DAG cases. First, callable operators such as `map` and `bmap` adopt conditions

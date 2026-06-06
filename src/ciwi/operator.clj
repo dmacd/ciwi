@@ -191,25 +191,26 @@
 
 (defn- repeat-inversions
   [output cond-inputs cond]
-  (let [lgh (count output)]
-    (case (vec cond)
-      [] (when-let [[reps motif] (repeated-motif output)]
-           [[reps motif]])
-      [0] (let [rep-num (first cond-inputs)]
-            (when (and (integer? rep-num)
-                       (pos? rep-num)
-                       (zero? (mod lgh rep-num)))
-              (let [motif (prefix-motif output (/ lgh rep-num))]
-                (when (same-seqish? output (repeat-call rep-num motif))
-                  [[motif]]))))
-      [1] (let [motif (first cond-inputs)]
-            (when (and (seq-literal? motif)
-                       (pos? (count motif))
-                       (zero? (mod lgh (count motif))))
-              (let [reps (/ lgh (count motif))]
-                (when (same-seqish? output (repeat-call reps motif))
-                  [[reps]]))))
-      ())))
+  (when (seq-literal? output)
+    (let [lgh (count output)]
+      (case (vec cond)
+        [] (when-let [[reps motif] (repeated-motif output)]
+             [[reps motif]])
+        [0] (let [rep-num (first cond-inputs)]
+              (when (and (integer? rep-num)
+                         (pos? rep-num)
+                         (zero? (mod lgh rep-num)))
+                (let [motif (prefix-motif output (/ lgh rep-num))]
+                  (when (same-seqish? output (repeat-call rep-num motif))
+                    [[motif]]))))
+        [1] (let [motif (first cond-inputs)]
+              (when (and (seq-literal? motif)
+                         (pos? (count motif))
+                         (zero? (mod lgh (count motif))))
+                (let [reps (/ lgh (count motif))]
+                  (when (same-seqish? output (repeat-call reps motif))
+                    [[reps]]))))
+        ()))))
 
 (defn- cumsum-call
   [xs]

@@ -47,6 +47,183 @@
               abs-inverse
               true))
 
+(defn- toint-scalar
+  [x]
+  (cond
+    (true? x) 1
+    (false? x) 0
+    (integer? x) x
+    (number? x) (long x)
+    (string? x) (Long/parseLong x)
+    :else (throw (ex-info "toint expects a scalar bool/number/string" {:x x}))))
+
+(defn- tofloat-scalar
+  [x]
+  (cond
+    (true? x) 1.0
+    (false? x) 0.0
+    (number? x) (double x)
+    (string? x) (Double/parseDouble x)
+    :else (throw (ex-info "tofloat expects a scalar bool/number/string" {:x x}))))
+
+(defn- whole-or-elementwise
+  [f x]
+  (if (and (sequential? x) (not (string? x)))
+    (mapv f x)
+    (f x)))
+
+(defn- int-like?
+  [x]
+  (and (number? x) (== x (long x))))
+
+(defn- bool-code?
+  [x]
+  (or (= x 0) (= x 1) (= x 0.0) (= x 1.0)))
+
+(defn- conversion-inverse
+  [output target]
+  (let [convert-branch (fn [f]
+                         (if (and (sequential? output) (not (string? output)))
+                           (mapv f output)
+                           (f output)))
+        bool-branch (fn []
+                      (when (if (and (sequential? output) (not (string? output)))
+                              (every? bool-code? output)
+                              (bool-code? output))
+                        [(convert-branch #(= % 1))]))]
+    (case target
+      :int
+      (when (if (and (sequential? output) (not (string? output)))
+              (every? integer? output)
+              (integer? output))
+        (cond-> [[(convert-branch double)]
+                 [(convert-branch str)]]
+          (bool-branch) (conj (bool-branch))))
+
+      :float
+      (when (if (and (sequential? output) (not (string? output)))
+              (every? number? output)
+              (number? output))
+        (cond-> []
+          (if (and (sequential? output) (not (string? output)))
+            (every? int-like? output)
+            (int-like? output))
+          (conj [(convert-branch long)])
+
+          true
+          (conj [(convert-branch #(str (double %)))])
+
+          (bool-branch)
+          (conj (bool-branch)))))))
+
+(def ^:private toint-op
+  (fixture-op :toint
+              [[]]
+              (fn [[x]]
+                (whole-or-elementwise toint-scalar x))
+              (fn [output _cond-inputs cond]
+                (when (empty? cond)
+                  (conversion-inverse output :int)))))
+
+(def ^:private tofloat-op
+  (fixture-op :tofloat
+              [[]]
+              (fn [[x]]
+                (whole-or-elementwise tofloat-scalar x))
+              (fn [output _cond-inputs cond]
+                (when (empty? cond)
+                  (conversion-inverse output :float)))))
+
+(def ^:private listwrap-op
+  (fixture-op :listwrap
+              [[]]
+              (fn [[x]]
+                [x])
+              (fn [output _cond-inputs cond]
+                (when (and (empty? cond)
+                           (sequential? output)
+                           (= 1 (count output)))
+                  [[(first output)]]))
+              true))
+
+(def ^:private urange-op
+  (fixture-op :urange
+              [[]]
+              (fn [[stop]]
+                (vec (range stop)))
+              (fn [output _cond-inputs cond]
+                (when (and (empty? cond)
+                           (vector? output)
+                           (seq output)
+                           (every? integer? output)
+                           (= output (vec (range (inc (peek output))))))
+                  [[(inc (peek output))]]))
+              true))
+
+(defn- callable-fixture-op
+  [f]
+  (cond
+    (op/operator? f) f
+    (keyword? f) (get op/registry f)
+    :else nil))
+
+(defn- transpose
+  [rows]
+  (when (seq rows)
+    (apply mapv vector rows)))
+
+(defn- bmap-inverse
+  [output cond-inputs cond]
+  (let [cond (vec cond)]
+    (when (and (seq cond)
+               (= 0 (first cond)))
+      (let [f (callable-fixture-op (first cond-inputs))
+            known-children (subvec cond 1)
+            known-values (subvec (vec cond-inputs) 1)
+            func-cond (mapv dec known-children)]
+        (when (and f
+                   (contains? (set (:conditions f)) func-cond)
+                   (vector? output)
+                   (every? vector? known-values)
+                   (every? #(= (count output) (count %)) known-values))
+          (let [inversions
+                (loop [idx 0
+                       total-branches 1
+                       result []]
+                  (if (= idx (count output))
+                    result
+                    (let [func-cond-inputs (mapv #(nth % idx) known-values)
+                          invs (mapv (fn [values]
+                                       (mapv value/datum values))
+                                     (op/invert-op f
+                                                   (value/value (nth output idx))
+                                                   (mapv value/value func-cond-inputs)
+                                                   func-cond))
+                          total-branches (* total-branches (count invs))]
+                      (when (and (seq invs)
+                                 (<= total-branches 100))
+                        (recur (inc idx) total-branches (conj result invs))))))]
+            (when (seq inversions)
+              (let [branch-count (apply min (map count inversions))]
+                (mapv (fn [branch-idx]
+                        (mapv vec
+                              (transpose
+                               (mapv #(nth % branch-idx) inversions))))
+                      (range branch-count))))))))))
+
+(def ^:private bmap-op
+  (fixture-op :bmap
+              [[0] [0 1] [0 2]]
+              (fn [[f xs ys]]
+                (when-let [f (callable-fixture-op f)]
+                  (when (= (count xs) (count ys))
+                    (mapv (fn [x y]
+                            (value/datum (op/apply-op f [(value/value x)
+                                                         (value/value y)])))
+                          xs
+                          ys))))
+              bmap-inverse))
+
 (defn- as-set
   [x]
   (if (set? x)
@@ -74,12 +251,14 @@
 (def ^:private python-composite-fixture-registry
   (merge op/registry
          {:abs abs-op
-          :bmap (structural-op :bmap [[0] [0 1] [0 2]] false)
-          :listwrap (structural-op :listwrap [[]] true)
+          :bmap bmap-op
+          :listwrap listwrap-op
           :listslice (structural-op :listslice [[0 1 2]] false)
           :sum (structural-op :sum [] true)
+          :tofloat tofloat-op
+          :toint toint-op
           :union union-op
-          :urange (structural-op :urange [[]] true)
+          :urange urange-op
           :zip2d zip2d-op}))
 
 (defn- shared-fixture-spec
@@ -584,6 +763,81 @@
                                             (value/value [1 7 9 3 4 2 8])
                                             []
                                             []))))))
+
+(deftest python-composite-concat-and-conversion-inverse-golden-cases
+  (let [trees0 (fixture-composite
+                :trees0
+                [:concat [:input :left nil]
+                 [:input :right nil]])
+        map-toint (fixture-composite
+                   :trees12
+                   [:map toint-op
+                    [:input :xs nil]])
+        map-tofloat (fixture-composite
+                     :trees17
+                     [:map tofloat-op
+                      [:input :xs nil]])]
+    (is (= [[(vec (range 1 10))]]
+           (data-results (op/invert-op trees0
+                                       (value/value (vec (range 10)))
+                                       [(value/value [0])]
+                                       [0]))))
+    (is (= [[[0.0 7.0]] [["0" "7"]]]
+           (data-results (op/invert-op map-toint
+                                       (value/value [0 7])
+                                       []
+                                       []))))
+    (is (= [[(vec (range 100))]
+            [(mapv #(str (double %)) (range 100))]]
+           (data-results (op/invert-op map-tofloat
+                                       (value/value (mapv double (range 100)))
+                                       []
+                                       []))))))
+
+(deftest python-composite-urange-listwrap-and-bmap-inverse-golden-cases
+  (let [trees7 (fixture-composite
+                :trees7
+                [:bmap op/add
+                 [:input :xs nil]
+                 [:urange [:input :n nil]]])
+        co10 (fixture-composite
+              :co10
+              [:insert [:urange [:input :indices nil]]
+               [:urange [:input :content nil]]
+               [:urange [:input :rest nil]]])
+        co11 (fixture-composite
+              :co11
+              [:insert [:trange [:input :idx-start nil]
+                        [:input :idx-stop nil]
+                        [:input :idx-step nil]]
+               [:repeat [:input :n nil]
+                [:listwrap [:input :wrapped nil]]]
+               [:input :rest nil]])
+        sparse-pic (assoc (vec (repeat 30 0))
+                          3 1
+                          14 1
+                          25 1)]
+    (is (= [[6]]
+           (data-results (op/invert-op trees7
+                                       (value/value (vec (range 6)))
+                                       [(value/value (vec (repeat 6 0)))]
+                                       [0]))))
+    (is (= [[[0 -1 1 0 0 1 1 0 0 -1]]]
+           (data-results (op/invert-op trees7
+                                       (value/value [0 0 3 3 4 6 7 7 8 8])
+                                       [(value/value 10)]
+                                       [1]))))
+    (is (empty? (data-results (op/invert-op co10
+                                            (value/value (vec (concat (range 5)
+                                                                      (range 9))))
+                                            [(value/value 0)]
+                                            [2]))))
+    (is (= [[3 36 11 (vec (repeat 27 0))]]
+           (data-results (op/invert-op co11
+                                       (value/value sparse-pic)
+                                       [(value/value 3)
+                                        (value/value 1)]
+                                       [3 4]))))))
 
 (deftest composite-inversion-returns-no-results-for-unsatisfied-or-invalid-local-equations
   (let [product (sut/operator :product
