@@ -422,6 +422,12 @@ in a placeholder template are captured as constants. Composite inversion also
 uses these input groups: all leaves in a repeated group must infer the same
 value.
 
+Python condition fixture parity is expressed through those same native
+composite literals rather than through DOT imports. The expected conditions are
+still the Python fixture conditions; the representation difference is only how
+CIWI builds the graph under test. Repeated `:input` ids model shared logical
+leaves in Python DAG fixtures.
+
 `ciwi.fix/fix-first` is the Clojure equivalent of Python WILLIAM's `Fix`
 operator. It captures the first input of any runtime `Operator` and returns a
 new runtime `Operator`, charging the captured value in the returned operator's

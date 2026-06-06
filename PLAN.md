@@ -15,13 +15,15 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   from profiling the largest gaps, and full Python
   `test_bottleneck.py::test_min_desc_len` and `test_propagation.py`
   propagation parity, `test_delayed_builder.py` materialization parity, and
-  the serial `test_wunderbaum.py::test_wunderbaum_iteration` solution case.
+  the serial `test_wunderbaum.py::test_wunderbaum_iteration` solution case,
+  plus the first native condition-fixture tranche from Python
+  `test_conditions.py`.
 - The implementation includes Python-scale core Wunderbaum parity rows, greedy
   Alice/Wunderbaum task runs, lazy best-first node tuple enumeration, a
   Python-compatible value DL model, Alice operator DL alignment, per-run DL and
   value-key caching, deferred selected-expression realization, threshold-aware
   candidate yielding, and several translation/performance fixes; tests pass
-  locally with 128 tests and 651 assertions.
+  locally with 129 tests and 660 assertions.
 
 ## Current State
 
@@ -127,6 +129,10 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   and explicit declarations for that test's operator set. The test compares
   native graph option expressions rather than MDL-selected expressions because
   Python checks structural resemblance to the solution graph.
+- Native condition extraction now covers the first Python `test_conditions.py`
+  fixture tranche: `co0`-`co4` and `dag0`-`dag3`. These are expressed as
+  Clojure composite literals with `[:input id sample]` placeholders, including
+  repeated ids for shared logical leaves, instead of DOT imports.
 
 ## Roadmap
 
@@ -160,7 +166,11 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
 
 ## Near-Term Next Tasks
 
-- Move to composite/condition fixture expansion. The broader test map is
+- Continue composite/condition fixture expansion. The first condition tranche
+  covers `co0`-`co4` and `dag0`-`dag3`; remaining condition coverage is
+  `co5`-`co21` and `dag4`-`dag7`, followed by representative
+  `test_composite.py` execution, inversion, commutativity, spec
+  synchronization, and shared-leaf cases. The broader test map is
   `PYTHON-TEST-ROADMAP.md`.
 - If runtime parity remains the immediate priority, focus on `increasing_runs`,
   `sprinkled`, `simply_linear`, and `map_negate`. `insert_repeat3` now reaches
