@@ -1,5 +1,6 @@
 (ns ciwi.conditions
-  (:require [ciwi.graph :as graph]))
+  (:require [ciwi.graph :as graph]
+            [ciwi.operator :as op]))
 
 (defn normalize-condition
   "Canonicalize a condition as a vector of distinct leaf indices.
@@ -99,6 +100,80 @@
   [g value-id]
   (first (:options (graph/node g value-id))))
 
+(defn- callable-operator
+  [x]
+  (cond
+    (op/operator? x) x
+    (keyword? x) (get op/registry x)
+    :else nil))
+
+(defn- callable-condition-operator?
+  [operator]
+  (contains? #{:map :bmap} (:id operator)))
+
+(defn- adopted-callable-conditions
+  [g op-node]
+  (let [operator (:operator op-node)]
+    (if (callable-condition-operator? operator)
+      (if-let [callable (some->> (:children op-node)
+                                 first
+                                 (graph/value-data g)
+                                 callable-operator)]
+        (mapv (fn [condition]
+                (vec (cons 0 (map inc condition))))
+              (:conditions callable))
+        [])
+      (:conditions operator))))
+
+(defn- tree-leaves
+  "Selected-tree leaves, preserving repeated child positions.
+
+  `graph/leaves` intentionally returns unique reachable leaves. Python
+  WILLIAM's condition code uses a separate repeated-leaf walk when projecting
+  raw tree conditions for DAGs, so the condition path needs this local helper.
+  "
+  ([g value-id]
+   (tree-leaves g value-id #{}))
+  ([g value-id trace]
+   (if (contains? trace value-id)
+     [value-id]
+     (if-let [op-id (first-option g value-id)]
+       (mapcat #(tree-leaves g % (conj trace value-id))
+               (:children (graph/node g op-id)))
+       [value-id]))))
+
+(defn- filter-repeating-leaves
+  [raw-conditions repeated-leaves arity]
+  (let [conditions
+        (keep
+         (fn [condition]
+           (let [condition-set (set condition)]
+             (loop [idx 0
+                    leaves repeated-leaves
+                    seen {}
+                    projected []
+                    projected-idx 0]
+               (if-let [leaf-id (first leaves)]
+                 (let [conditioned? (contains? condition-set idx)]
+                   (if-let [previous (find seen leaf-id)]
+                     (when (= (val previous) conditioned?)
+                       (recur (inc idx)
+                              (next leaves)
+                              seen
+                              projected
+                              projected-idx))
+                     (recur (inc idx)
+                            (next leaves)
+                            (assoc seen leaf-id conditioned?)
+                            (cond-> projected
+                              conditioned? (conj projected-idx))
+                            (inc projected-idx))))
+                 projected))))
+         raw-conditions)]
+    (if (seq conditions)
+      (vec conditions)
+      [(vec (range arity))])))
+
 (defn- offsets-for
   [counts]
   (vec (butlast (reductions + 0 counts))))
@@ -114,37 +189,65 @@
   ([g op-id trace]
    (if (contains? trace op-id)
      []
-     (let [{:keys [operator children]} (graph/node g op-id)
+     (let [{:keys [children] :as op-node} (graph/node g op-id)
            trace (conj trace op-id)
-           counts (mapv #(count (graph/leaves g %)) children)
-           offsets (offsets-for counts)]
-       (if-not (seq (:conditions operator))
+           repeated-counts (mapv #(count (tree-leaves g %)) children)
+           offsets (offsets-for (mapv #(count (graph/leaves g %)) children))
+           operator-conditions (adopted-callable-conditions g op-node)]
+       (if-not (seq operator-conditions)
          []
-         (->> (:conditions operator)
+         (->> operator-conditions
               (mapcat
                (fn [condition]
                  (let [condition-set (set condition)
                        child-conditions
-                       (mapv (fn [child-idx child-id child-leaf-count]
-                               (cond
-                                 (contains? condition-set child-idx)
-                                 [(vec (range child-leaf-count))]
+                       (loop [idx 0
+                              remaining children
+                              counts repeated-counts
+                              inferred #{}
+                              result []]
+                         (if-let [child-id (first remaining)]
+                           (let [child-leaf-count (first counts)]
+                             (cond
+                               (contains? condition-set idx)
+                               (recur (inc idx)
+                                      (next remaining)
+                                      (next counts)
+                                      inferred
+                                      (conj result [(vec (range child-leaf-count))]))
 
-                                 (first-option g child-id)
-                                 (tree-conditions g (first-option g child-id) trace)
+                               (contains? inferred child-id)
+                               nil
 
-                                 :else
-                                 [[]]))
-                             (range)
-                             children
-                             counts)]
-                   (condition-combinations child-conditions offsets))))
+                               (first-option g child-id)
+                               (recur (inc idx)
+                                      (next remaining)
+                                      (next counts)
+                                      (conj inferred child-id)
+                                      (conj result
+                                            (tree-conditions g
+                                                             (first-option g child-id)
+                                                             trace)))
+
+                               :else
+                               (recur (inc idx)
+                                      (next remaining)
+                                      (next counts)
+                                      (conj inferred child-id)
+                                      (conj result [[]]))))
+                           result))]
+                   (when child-conditions
+                     (condition-combinations child-conditions offsets)))))
               (mapv normalize-condition)))))))
 
 (defn get-conditions
   "Return filtered root-leaf conditions for a value node."
   [g value-id]
   (if-let [op-id (first-option g value-id)]
-    (filter-redundant (tree-conditions g op-id)
-                      (count (graph/leaves g value-id)))
+    (let [arity (count (graph/leaves g value-id))]
+      (filter-redundant
+       (filter-repeating-leaves (tree-conditions g op-id)
+                                (vec (tree-leaves g value-id))
+                                arity)
+       arity))
     [[]]))

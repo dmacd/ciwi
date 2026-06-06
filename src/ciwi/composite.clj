@@ -108,17 +108,30 @@
   [condition input-groups constant-indices]
   (let [condition-set (set condition)]
     (when (every? condition-set constant-indices)
-      (->> input-groups
-           (keep-indexed (fn [idx leaf-idxs]
-                           (when (some condition-set leaf-idxs)
-                             idx)))
-           conditions/normalize-condition))))
+      (loop [idx 0
+             remaining input-groups
+             result []]
+        (if-let [leaf-idxs (first remaining)]
+          (let [states (mapv #(contains? condition-set %) leaf-idxs)]
+            (cond
+              (every? true? states)
+              (recur (inc idx) (next remaining) (conj result idx))
+
+              (some true? states)
+              nil
+
+              :else
+              (recur (inc idx) (next remaining) result)))
+          (conditions/normalize-condition result))))))
 
 (defn- composite-conditions
   [g root input-groups constant-indices]
-  (->> (conditions/get-conditions g root)
-       (keep #(raw-condition->input-condition % input-groups constant-indices))
-       (#(conditions/filter-redundant % (count input-groups)))))
+  (let [projected (keep #(raw-condition->input-condition % input-groups constant-indices)
+                        (conditions/get-conditions g root))
+        projected (if (seq projected)
+                    projected
+                    [(vec (range (count input-groups)))])]
+    (conditions/filter-redundant projected (count input-groups))))
 
 (defn- memory-with-inputs
   [base leaves input-groups inputs]

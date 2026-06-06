@@ -16,14 +16,13 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   `test_bottleneck.py::test_min_desc_len` and `test_propagation.py`
   propagation parity, `test_delayed_builder.py` materialization parity, and
   the serial `test_wunderbaum.py::test_wunderbaum_iteration` solution case,
-  plus the first native condition-fixture tranche from Python
-  `test_conditions.py`.
+  plus native fixture parity for Python `test_conditions.py` condition shapes.
 - The implementation includes Python-scale core Wunderbaum parity rows, greedy
   Alice/Wunderbaum task runs, lazy best-first node tuple enumeration, a
   Python-compatible value DL model, Alice operator DL alignment, per-run DL and
   value-key caching, deferred selected-expression realization, threshold-aware
   candidate yielding, and several translation/performance fixes; tests pass
-  locally with 129 tests and 660 assertions.
+  locally with 129 tests and 681 assertions.
 
 ## Current State
 
@@ -129,10 +128,12 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   and explicit declarations for that test's operator set. The test compares
   native graph option expressions rather than MDL-selected expressions because
   Python checks structural resemblance to the solution graph.
-- Native condition extraction now covers the first Python `test_conditions.py`
-  fixture tranche: `co0`-`co4` and `dag0`-`dag3`. These are expressed as
-  Clojure composite literals with `[:input id sample]` placeholders, including
-  repeated ids for shared logical leaves, instead of DOT imports.
+- Native condition extraction now covers Python `test_conditions.py` fixture
+  shapes `co0`-`co21` and `dag0`-`dag7`, including the `co15` order-only
+  fixture. These are expressed as native graph/composite specs instead of DOT
+  imports. The condition implementation now mirrors Python's callable
+  condition adoption for `map`-style operators and its repeated-leaf DAG
+  projection rules.
 
 ## Roadmap
 
@@ -166,12 +167,9 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
 
 ## Near-Term Next Tasks
 
-- Continue composite/condition fixture expansion. The first condition tranche
-  covers `co0`-`co4` and `dag0`-`dag3`; remaining condition coverage is
-  `co5`-`co21` and `dag4`-`dag7`, followed by representative
-  `test_composite.py` execution, inversion, commutativity, spec
-  synchronization, and shared-leaf cases. The broader test map is
-  `PYTHON-TEST-ROADMAP.md`.
+- Move from condition fixtures to representative `test_composite.py`
+  execution, inversion, commutativity, spec synchronization, and shared-leaf
+  cases. The broader test map is `PYTHON-TEST-ROADMAP.md`.
 - If runtime parity remains the immediate priority, focus on `increasing_runs`,
   `sprinkled`, `simply_linear`, and `map_negate`. `insert_repeat3` now reaches
   the Python rate in seven accepted steps and is faster than the recorded Python

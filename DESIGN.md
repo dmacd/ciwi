@@ -428,6 +428,15 @@ still the Python fixture conditions; the representation difference is only how
 CIWI builds the graph under test. Repeated `:input` ids model shared logical
 leaves in Python DAG fixtures.
 
+Condition extraction mirrors Python's selected-tree behavior in two important
+DAG cases. First, callable operators such as `map` and `bmap` adopt conditions
+from the operator-valued first child, offset by the callable argument position.
+Second, condition tree walks preserve repeated selected-tree leaf positions
+while the final condition projection collapses repeated value nodes only when
+all occurrences are conditioned consistently. Sibling offsets are based on
+unique leaves, while explicitly conditioned children expand to their repeated
+selected-tree leaves, matching Python's mixed unique/repeated indexing.
+
 `ciwi.fix/fix-first` is the Clojure equivalent of Python WILLIAM's `Fix`
 operator. It captures the first input of any runtime `Operator` and returns a
 new runtime `Operator`, charging the captured value in the returned operator's
