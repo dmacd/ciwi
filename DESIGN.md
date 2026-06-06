@@ -34,11 +34,11 @@ A value is data plus optional metadata used by search and propagation:
               :permeable? false})
 
 ;; Numeric vectors are promoted to ciwi.dense arrays at the value boundary:
-;; #ciwi.value.Value{:data #ciwi.dense.NDArray{:backend :ciwi.vector,
-;;                                             :dtype :int64,
-;;                                             :shape [4],
-;;                                             :data [0 1 2 3],
-;;                                             :flat [0 1 2 3]},
+;; #ciwi.value.Value{:data #ciwi.dense.vector.NDArray{:backend :ciwi.vector,
+;;                                                    :dtype :int64,
+;;                                                    :shape [4],
+;;                                                    :data [0 1 2 3],
+;;                                                    :flat [0 1 2 3]},
 ;;                   :name "target",
 ;;                   :spec :array-int,
 ;;                   :permeable? false,
@@ -271,14 +271,22 @@ Operators, value DL, propagation, Wunderbaum declarations, and optimizer
 objectives should call a small CIWI-owned protocol rather than importing
 Neanderthal, DJL, JAX, or a future custom backend directly.
 
+The dense boundary lives under the `ciwi.dense.*` subpackage so backend coupling
+is easy to audit:
+
+- `ciwi.dense.core` is the public array API imported by operators, value DL,
+  specs, hashing, rewrite code, and tests.
+- `ciwi.dense.protocols` defines `DenseArray` and `DenseBackend`.
+- `ciwi.dense.vector` is the current pure Clojure/vector backend.
+
 The first implementation is deliberately small: a pure Clojure/vector backend
 for correctness, with NumPy-ish names and the operations needed to start the
 optimizer-backed parity tranche. Numeric graph vectors now auto-promote to
-`ciwi.dense/NDArray` in `ciwi.value/value`; structural lists, strings, sets,
-operators, graph ids, search state, and optimizer coordinate machinery remain
-native Clojure data. This avoids locking CIWI into vector-specific graph code
-while also avoiding a native dependency before optimizer-backed graph-search
-behavior is green.
+`ciwi.dense.vector/NDArray` in `ciwi.value/value`; structural lists, strings,
+sets, operators, graph ids, search state, and optimizer coordinate machinery
+remain native Clojure data. This avoids locking CIWI into vector-specific graph
+code while also avoiding a native dependency before optimizer-backed
+graph-search behavior is green.
 
 The dense API should stay close to NumPy where that is not painful:
 
@@ -291,6 +299,15 @@ The dense API should stay close to NumPy where that is not painful:
 (dense/size x)
 (dense/ravel x)
 (dense/tolist x)
+(dense/from-flat [0 1 2] [3])
+(dense/with-flat x [4 5 6 7])
+(dense/arange 4)
+(dense/tile 3 x)
+(dense/concatenate [x y])
+(dense/take-indices x [2 0])
+(dense/put x [1] [9])
+(dense/cumsum x)
+(dense/diff x)
 (dense/isnan x)
 (dense/add x y)
 (dense/subtract x y)
@@ -313,12 +330,17 @@ the dense protocol directly.
 
 `tolist` is intentionally explicit and should not be used repeatedly in scoring
 or search hot loops. Value description length and stable graph keys should use
-dense shape/dtype/ravel or backend-provided summaries. For now, CIWI assumes
-only one active dense backend at a time, so equality and hashing only need to be
-deterministic within that backend. Once matrix regression works, a Neanderthal
-or DJL backend can implement the same protocol. A later JAX/custom backend
-should fit at this boundary as well, but should not shape the v1 graph or
-operator APIs.
+dense shape/dtype/ravel or backend-provided summaries. For delayed-builder
+de-duplication and `unique-hash`, CIWI first uses a deterministic
+`content-fingerprint` over dtype, shape, and normalized contents. That
+fingerprint is only a bucket key; matching buckets still use exact
+`content-equal?` comparison, with dense `NaN` values treated as equal missing
+slots. Non-dense values continue to fingerprint and compare through exact
+`stable-key` data. For now, CIWI assumes only one active dense backend at a
+time, so equality and hashing only need to be deterministic within that backend.
+Once matrix regression works, a Neanderthal or DJL backend can implement the
+same protocol. A later JAX/custom backend should fit at this boundary as well,
+but should not shape the v1 graph or operator APIs.
 
 `map` first tries the Python-style shortcut where the callable can operate on
 the whole collection. If that cannot invert the output directly, `map` falls
@@ -704,10 +726,11 @@ compression artificially cheap.
 Python's delayed DAG builder also filters inverse-generated values that already
 exist in memory and yields only the first unseen materialization for a delayed
 attachment. CIWI's delayed builder mirrors that by comparing generated values
-using stable value keys and de-duplicating by the whole root set rather than by
-only the newly generated root. Stable value keys are cached by `Value` identity
-inside a Wunderbaum candidate stream, matching Python's cached `Value.hash`
-behavior without mutating the records.
+through content fingerprints and de-duplicating by the whole root set rather
+than by only the newly generated root. The fingerprint is a bucket key; exact
+value comparison still runs inside matching buckets. Fingerprints are cached by
+`Value` identity inside a Wunderbaum candidate stream, matching Python's cached
+`Value.hash` behavior without mutating the records.
 
 Python's materialized memory map includes an entry for the operator node. CIWI
 keeps operator materialization in the immutable graph and keeps delayed-builder

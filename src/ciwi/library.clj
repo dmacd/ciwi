@@ -1,7 +1,7 @@
 (ns ciwi.library
   (:refer-clojure :exclude [load-file])
   (:require [ciwi.composite :as composite]
-            [ciwi.dense :as dense]
+            [ciwi.dense.core :as dense]
             [ciwi.operator :as op]
             [ciwi.rewrite :as rewrite]
             [clojure.edn :as edn]
@@ -84,12 +84,13 @@
           step (- (second values) start)
           n (count values)]
       (when (= values (mapv #(+ start (* step %)) (range n)))
-        {:range-start 0
-         :start start
-         :step step
-         :n n
-         :base (dense/array (vec (range n)))
-         :scaled (dense/array (mapv #(* step %) (range n)))})))))
+        (let [base (dense/arange n)]
+          {:range-start 0
+           :start start
+           :step step
+           :n n
+           :base base
+           :scaled (dense/multiply base step)}))))))
 
 (defn- square-range
   [xs]

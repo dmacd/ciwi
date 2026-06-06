@@ -111,9 +111,11 @@ graph-search path is behaviorally correct.
 
 ## Implementation Order
 
-1. Done: add `ciwi.dense` protocol and pure Clojure/vector implementation with
-   NumPy-ish metadata/accessors, NaN missing-value normalization, elementwise
-   arithmetic/comparison, `dot`, `sum`, and spec/value-DL/hash recognition.
+1. Done: add the `ciwi.dense.*` boundary: `ciwi.dense.core` public API,
+   `ciwi.dense.protocols` backend contract, and `ciwi.dense.vector` pure
+   Clojure backend with NumPy-ish metadata/accessors, NaN missing-value
+   normalization, elementwise arithmetic/comparison, sequence-edit helpers,
+   `dot`, `sum`, and spec/value-DL/hash recognition.
 2. Done: port the current numeric graph array operator basis to dense
    outputs/inputs while keeping symbolic vectors/lists native.
 3. Next: add residual-DL adaptive optimizer tests from

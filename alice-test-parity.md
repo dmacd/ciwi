@@ -29,15 +29,15 @@ debugging and performance comparison only. They are not Alice parity evidence.
 
 | Python task | Length | Python threshold | Python rate | Python ms | Core CIWI status | Core CIWI rate | Core CIWI ms | Core CIWI solution | Recognizer CIWI rate | Recognizer CIWI ms | Recognizer baseline solution | Python solution |
 | --- | ---: | ---: | ---: | ---: | --- | ---: | ---: | --- | ---: | ---: | --- | --- |
-| `simple_repeat` | 1,000 | 94.0 | 98.056137 | 35.4 | passes greedy core, 3 steps / 3 candidates; matches Python cumsum/insert shape | 98.056137 | 28.3 | `[:insert [:cumsum [:insert [0] 0 C2x499]] 140 C-50x500]` | 99.636156 | 87 | `[:repeat 500 [140 -50]]` | `(Array[int] (insert (Array[int] (cumsum (Array[int] (insert Array[int] int Array[int])))) int Array[int]))` |
-| `insert_repeat` | 350 | 92.0 | 93.075788 | 23.3 | passes greedy core, 2 steps / 2 candidates; matches Python cumsum/insert shape | 93.075788 | 11.5 | `[:insert [:cumsum I0+99x1] 45 C87x250]` | 98.611733 | 18 | `[:insert [:brange 0 100] 45 [:repeat 250 [87]]]` | `(Array[int] (insert (Array[int] (cumsum Array[int])) int Array[int]))` |
-| `insert_repeat2` | 645 | 92.0 | 92.325943 | 43.7 | passes greedy core, 3 steps / 3 candidates; matches Python shared-DAG concat/insert shape | 92.325943 | 12.3 | `[:insert [:concat I0+9 I10+34] [:insert I0+9 45 C87x25] C164x610]` | 98.943455 | 23 | `[:insert [:brange 0 35] [:insert [:brange 0 10] 45 [:repeat 25 [87]]] [:repeat 610 [164]]]` | `((= $ Array[int]) (Array[int] (insert (Array[int] (concat _1 Array[int])) (Array[int] (insert _1 int Array[int])) Array[int])))` |
-| `insert_repeat3` | 1,210 | 93.0 | 93.830537 | 10,677 | passes greedy core, 7 steps / 7 candidates; matches Python nested cumsum/getitem/insert skeleton; default regression covers the hard fourth step | 93.830537 | 4,968 | `C_insert_repeat3` | 68.028790 | 105 | `[:insert [:brange 0 600] [:insert I3 [:insert [:brange 0 100] 45 [:repeat 250 [87]]] [:repeat 250 [62]]] [:repeat 610 [164]]]` | `P_insert_repeat3` |
-| `repeat_with_noise` | 501 | 90.0 | 96.279777 | 5.2 | passes greedy core, 1 step / 1 candidate; matches Python one-step plain insert under Python DL | 96.279777 | 2.4 | `[:insert [100] -1 C45x500]` | 99.103288 | 16 | `[:insert [100] -1 [:repeat 500 [45]]]` | `(Array[int] (insert Array[int] int Array[int]))` |
-| `simply_linear` | 1,000 | 97.0 | 99.506286 | 12.0 | passes greedy core, 2 steps / 2 candidates; matches Python cumsum/insert shape under Python DL | 99.506286 | 27.4 | `[:cumsum [:insert [0] -18 C6x999]]` | 99.785287 | 122 | `[:add [:mult [:brange 0 1000] 6] -18]` | `(Array[int] (cumsum (Array[int] (insert Array[int] int Array[int]))))` |
-| `sprinkled` | 10,000 | 75.0 | 79.294650 | 6 | passes greedy core, 1 step / 1 candidate; matches Python plain insert shape | 79.294650 | 14.7 | `[:insert S 1 C0x9900]` | 93.074107 | 249 | `[:insert S 1 [:repeat 9900 [0]]]` | `(Array[int] (insert Array[int] int Array[int]))` |
-| `increasing_runs` | 125,250 | 99.9 | 99.905472 | 88 | passes greedy core, 3 steps / 3 candidates; matches Python insert/cumsum/cumsum shape | 99.905472 | 437 | `[:insert [:cumsum [:cumsum D_inc]] 64 C123x124750]` | 99.274754 | 2,705 | `[:insert R 64 [:repeat 124750 [123]]]` | `(Array[int] (insert (Array[int] (cumsum (Array[int] (cumsum Array[int])))) int Array[int]))` |
-| `map_negate` | 1,000 | 98.0 | 99.521131 | 12 | passes greedy core, 2 steps / 2 candidates; matches Python cumsum/insert shape | 99.521131 | 13.8 | `[:cumsum [:insert [0] 0 C-1x999]]` | 99.826700 | 66 | `[:mult [:brange 0 1000] -1]` | `(Array[int] (cumsum (Array[int] (insert Array[int] int Array[int]))))` |
+| `simple_repeat` | 1,000 | 94.0 | 98.056137 | 35.4 | passes greedy core, 3 steps / 3 candidates; matches Python cumsum/insert shape | 98.056137 | 48.9 | `[:insert [:cumsum [:insert [0] 0 C2x499]] 140 C-50x500]` | 99.636156 | 87 | `[:repeat 500 [140 -50]]` | `(Array[int] (insert (Array[int] (cumsum (Array[int] (insert Array[int] int Array[int])))) int Array[int]))` |
+| `insert_repeat` | 350 | 92.0 | 93.075788 | 23.3 | passes greedy core, 2 steps / 2 candidates; matches Python cumsum/insert shape | 93.075788 | 25.5 | `[:insert [:cumsum I0+99x1] 45 C87x250]` | 98.611733 | 18 | `[:insert [:brange 0 100] 45 [:repeat 250 [87]]]` | `(Array[int] (insert (Array[int] (cumsum Array[int])) int Array[int]))` |
+| `insert_repeat2` | 645 | 92.0 | 92.325943 | 43.7 | passes greedy core, 3 steps / 3 candidates; matches Python shared-DAG concat/insert shape | 92.325943 | 18.8 | `[:insert [:concat I0+9 I10+34] [:insert I0+9 45 C87x25] C164x610]` | 98.943455 | 23 | `[:insert [:brange 0 35] [:insert [:brange 0 10] 45 [:repeat 25 [87]]] [:repeat 610 [164]]]` | `((= $ Array[int]) (Array[int] (insert (Array[int] (concat _1 Array[int])) (Array[int] (insert _1 int Array[int])) Array[int])))` |
+| `insert_repeat3` | 1,210 | 93.0 | 93.830537 | 10,677 | passes greedy core, 7 steps / 7 candidates; matches Python nested cumsum/getitem/insert skeleton; default regression covers the hard fourth step | 93.830537 | 4,501.8 | `C_insert_repeat3` | 68.028790 | 105 | `[:insert [:brange 0 600] [:insert I3 [:insert [:brange 0 100] 45 [:repeat 250 [87]]] [:repeat 250 [62]]] [:repeat 610 [164]]]` | `P_insert_repeat3` |
+| `repeat_with_noise` | 501 | 90.0 | 96.279777 | 5.2 | passes greedy core, 1 step / 1 candidate; matches Python one-step plain insert under Python DL | 96.279777 | 3.2 | `[:insert [100] -1 C45x500]` | 99.103288 | 16 | `[:insert [100] -1 [:repeat 500 [45]]]` | `(Array[int] (insert Array[int] int Array[int]))` |
+| `simply_linear` | 1,000 | 97.0 | 99.506286 | 12.0 | passes greedy core, 2 steps / 2 candidates; matches Python cumsum/insert shape under Python DL | 99.506286 | 21.3 | `[:cumsum [:insert [0] -18 C6x999]]` | 99.785287 | 122 | `[:add [:mult [:brange 0 1000] 6] -18]` | `(Array[int] (cumsum (Array[int] (insert Array[int] int Array[int]))))` |
+| `sprinkled` | 10,000 | 75.0 | 79.294650 | 6 | passes greedy core, 1 step / 1 candidate; matches Python plain insert shape | 79.294650 | 35.6 | `[:insert S 1 C0x9900]` | 93.074107 | 249 | `[:insert S 1 [:repeat 9900 [0]]]` | `(Array[int] (insert Array[int] int Array[int]))` |
+| `increasing_runs` | 125,250 | 99.9 | 99.905472 | 88 | passes greedy core, 3 steps / 3 candidates; matches Python insert/cumsum/cumsum shape | 99.905472 | 1,424.6 | `[:insert [:cumsum [:cumsum D_inc]] 64 C123x124750]` | 99.274754 | 2,705 | `[:insert R 64 [:repeat 124750 [123]]]` | `(Array[int] (insert (Array[int] (cumsum (Array[int] (cumsum Array[int])))) int Array[int]))` |
+| `map_negate` | 1,000 | 98.0 | 99.521131 | 12 | passes greedy core, 2 steps / 2 candidates; matches Python cumsum/insert shape | 99.521131 | 19.7 | `[:cumsum [:insert [0] 0 C-1x999]]` | 99.826700 | 66 | `[:mult [:brange 0 1000] -1]` | `(Array[int] (cumsum (Array[int] (insert Array[int] int Array[int]))))` |
 
 ## Exact Long Values
 
@@ -180,11 +180,12 @@ Current root-cause notes from the core path:
 - Runtime profiling found several such implementation issues. `insert_repeat3`
   was slowed by repeated attachment reachability walks during graph expansion;
   CIWI now computes a per-expansion attachment context. `increasing_runs` was
-  slowed by repeated large-vector spec inference, repeated stable value-key
-  construction, and an O(n * unique) unconditioned `getitem` inverse. CIWI now
-  carries inferred specs on materialized `Value` records, caches delayed-builder
-  value keys by `Value` identity, and computes the `getitem` inverse index map
-  in one pass. The 1D homogeneous-vector DL path also avoids double array
+  slowed by repeated large-vector spec inference, repeated stable value
+  comparison, and an O(n * unique) unconditioned `getitem` inverse. CIWI now
+  carries inferred specs on materialized `Value` records, buckets
+  delayed-builder duplicate checks by value-content fingerprint with exact
+  comparison inside matching buckets, and computes the `getitem` inverse index
+  map in one pass. The 1D homogeneous-vector DL path also avoids double array
   analysis, avoids flattening already-flat vectors, and computes Gaussian
   statistics with direct passes over the vector. Large vector operator probes
   now avoid lazy sequence pipelines for elementwise work and concat, while

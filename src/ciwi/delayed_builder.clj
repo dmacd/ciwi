@@ -131,23 +131,23 @@
           {}
           (map vector gen-cond conditioned-nodes)))
 
-(defn- raw-value-key
+(defn- raw-value-fingerprint
   [x]
   (let [v (value/value x)]
-    [(spec/value-spec v) (hashing/stable-key (:data v))]))
+    [(spec/value-spec v) (hashing/content-fingerprint (:data v))]))
 
-(defn- value-key
+(defn- value-fingerprint
   ([x]
-   (raw-value-key x))
+   (raw-value-fingerprint x))
   ([cache x]
    (if (and cache (value/value? x))
-     (let [k (IdentityKey. x :delayed-value-key)]
+     (let [k (IdentityKey. x :delayed-value-fingerprint)]
        (if-let [entry (find @cache k)]
          (val entry)
-         (let [value-key (raw-value-key x)]
-           (swap! cache assoc k value-key)
-           value-key)))
-     (raw-value-key x))))
+         (let [fingerprint (raw-value-fingerprint x)]
+           (swap! cache assoc k fingerprint)
+           fingerprint)))
+     (raw-value-fingerprint x))))
 
 (defn- compare-structural-keys
   [left right]
@@ -194,16 +194,30 @@
         (sort-by (comp pr-str first))
         vec)])
 
-(defn- memory-value-keys
+(defn- memory-value-fingerprint-buckets
   [cache memory]
-  (into #{}
-        (map #(value-key cache (entry-value %)))
-        (vals memory)))
+  (reduce (fn [buckets entry]
+            (let [v (entry-value entry)]
+              (update buckets (value-fingerprint cache v) (fnil conj []) v)))
+          {}
+          (vals memory)))
+
+(defn- duplicate-value-in-bucket?
+  [candidate bucket]
+  (let [candidate-data (:data (value/value candidate))]
+    (boolean
+     (some (fn [existing]
+             (hashing/content-equal? candidate-data
+                                     (:data (value/value existing))))
+           bucket))))
 
 (defn- duplicate-generated-value?
-  [cache existing-value-keys missing-values]
+  [cache existing-value-buckets missing-values]
   (boolean
-   (some #(contains? existing-value-keys (value-key cache %))
+   (some (fn [missing-value]
+           (let [fingerprint (value-fingerprint cache missing-value)]
+             (when-let [bucket (get existing-value-buckets fingerprint)]
+               (duplicate-value-in-bucket? missing-value bucket))))
          missing-values)))
 
 (defn- dedupe-results
@@ -275,12 +289,14 @@
         (let [output (memory-value memory output-id)
               known-inputs (mapv #(memory-value memory %) known-child-ids)
               missing-positions (vec (remove (set known-positions) (range arity)))
-              value-key-cache (:value-key-cache opts)
-              existing-value-keys (memory-value-keys value-key-cache memory)]
+              value-content-cache (:value-content-cache opts)
+              existing-value-buckets (memory-value-fingerprint-buckets
+                                      value-content-cache
+                                      memory)]
           (for [missing-values (try-invert-op operator output known-inputs known-positions)
                 :when (= (count missing-positions) (count missing-values))
-                :when (not (duplicate-generated-value? value-key-cache
-                                                       existing-value-keys
+                :when (not (duplicate-generated-value? value-content-cache
+                                                       existing-value-buckets
                                                        missing-values))
                 :let [built
                   (reduce (fn [[acc-g acc-memory ids] idx]

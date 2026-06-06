@@ -1,6 +1,6 @@
 (ns ciwi.search-test
   (:require [ciwi.composite :as composite]
-            [ciwi.dense :as dense]
+            [ciwi.dense.core :as dense]
             [ciwi.graph :as graph]
             [ciwi.library :as library]
             [ciwi.mdl :as mdl]

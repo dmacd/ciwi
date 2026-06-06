@@ -25,17 +25,17 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
 - The implementation includes Python-scale core Wunderbaum parity rows, greedy
   Alice/Wunderbaum task runs, lazy best-first node tuple enumeration, a
   Python-compatible value DL model, Alice operator DL alignment, per-run DL and
-  value-key caching, deferred selected-expression realization, threshold-aware
-  candidate yielding, and several translation/performance fixes; tests pass
-  locally with 148 tests and 786 assertions.
+  value-content caching, deferred selected-expression realization,
+  threshold-aware candidate yielding, and several translation/performance
+  fixes; tests pass locally with 151 tests and 807 assertions.
 
 ## Current State
 
 - CIWI has immutable graph/value/operator data structures, propagation, MDL
   selection, graph-backed composites, Fix, local rewrite operators, bounded
-  compression loops, a Clojure-native graph literal DSL, and a vector-backed
-  `ciwi.dense` slice used as the native representation for numeric graph array
-  values.
+  compression loops, a Clojure-native graph literal DSL, and a `ciwi.dense.*`
+  dense boundary with a vector backend used as the native representation for
+  numeric graph array values.
 - Recognizer templates are disabled by default and must be explicitly injected.
   They are not Alice parity evidence.
 - `ciwi.wunderbaum` contains the first straight-port slice of Python
@@ -73,10 +73,12 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
 - Wunderbaum candidate summaries defer selected-expression realization until a
   candidate is accepted or explicitly inspected. Value DLs are cached across
   each candidate stream, existing `Value` records use identity cache keys, and
-  delayed-builder stable value keys are cached by `Value` identity. These
-  caches are explicit and caller-owned, so parallel local searches can choose
-  private caches for low contention or shared value caches for reuse over the
-  same immutable graph values.
+  delayed-builder generated-value de-duplication uses caller-owned
+  value-content caches keyed by deterministic content fingerprints with exact
+  comparison inside matching buckets. These caches are explicit and
+  caller-owned, so parallel local searches can choose private caches for low
+  contention or shared value caches for reuse over the same immutable graph
+  values.
 - Delayed graph materialization now skips non-executable operator
   calls/inverses, matching Python's invalid-probe behavior, and numeric inverse
   shape mismatches no longer generate `nil` children.
@@ -167,9 +169,11 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
 - Composite inverse requests now accept non-minimal condition sets only when
   they cover at least one advertised composite condition, matching Python cases
   such as `dag5` while rejecting unsupported condition sets.
-- Numeric graph array values now cross the value boundary as `ciwi.dense`
-  arrays. Alice-basis operators, propagation, MDL/raw expression rendering,
-  rewrite enumeration, graph rewrite, library matchers, delayed-builder
+- Numeric graph array values now cross the value boundary through the
+  `ciwi.dense.core` API. `ciwi.dense.protocols` defines the backend contract,
+  and `ciwi.dense.vector` is the current pure Clojure implementation.
+  Alice-basis operators, propagation, MDL/raw expression rendering, rewrite
+  enumeration, graph rewrite, library matchers, delayed-builder
   materialization, and Wunderbaum inspection are dense-aware while symbolic
   vectors/lists, graph ids, search state, and optimizer coordinate machinery
   remain native Clojure data. Dense numeric missing values use `NaN`, and

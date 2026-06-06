@@ -1,5 +1,5 @@
 (ns ciwi.test-helpers
-  (:require [ciwi.dense :as dense]
+  (:require [ciwi.dense.core :as dense]
             [ciwi.value :as value]))
 
 (defn plain

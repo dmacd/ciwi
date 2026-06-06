@@ -1,5 +1,5 @@
 (ns ciwi.value
-  (:require [ciwi.dense :as dense]
+  (:require [ciwi.dense.core :as dense]
             [ciwi.hashing :as hashing]))
 
 (defrecord Value [data name spec permeable? dummy?])

@@ -1,5 +1,5 @@
 (ns ciwi.graph-rewrite
-  (:require [ciwi.dense :as dense]
+  (:require [ciwi.dense.core :as dense]
             [ciwi.graph :as graph]
             [ciwi.mdl :as mdl]
             [ciwi.operator :as op]

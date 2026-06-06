@@ -1,6 +1,6 @@
 (ns ciwi.composite-test
   (:require [ciwi.composite :as sut]
-            [ciwi.dense :as dense]
+            [ciwi.dense.core :as dense]
             [ciwi.graph :as graph]
             [ciwi.operator :as op]
             [ciwi.test-helpers :as h]

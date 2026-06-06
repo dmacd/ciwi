@@ -1,5 +1,5 @@
 (ns ciwi.enumerative-rewrite-test
-  (:require [ciwi.dense :as dense]
+  (:require [ciwi.dense.core :as dense]
             [ciwi.enumerative-rewrite :as enum]
             [ciwi.graph :as graph]
             [ciwi.mdl :as mdl]

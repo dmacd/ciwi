@@ -1,5 +1,5 @@
 (ns ciwi.graph-rewrite-test
-  (:require [ciwi.dense :as dense]
+  (:require [ciwi.dense.core :as dense]
             [ciwi.graph :as graph]
             [ciwi.graph-rewrite :as graph-rewrite]
             [ciwi.mdl :as mdl]

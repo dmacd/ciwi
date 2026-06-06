@@ -1,5 +1,5 @@
 (ns ciwi.hashing
-  (:require [ciwi.dense :as dense])
+  (:require [ciwi.dense.core :as dense])
   (:import [java.math BigInteger]
            [java.security MessageDigest]
            [java.util IdentityHashMap]))
@@ -125,6 +125,39 @@
                 (pr-str x)]
           nil])))))
 
+(defn stable-key-fingerprint
+  "Return a deterministic fingerprint for non-dense structural values."
+  [x]
+  (let [digest (doto (MessageDigest/getInstance "SHA-256")
+                 (.update (.getBytes (pr-str (stable-key x)) "UTF-8")))]
+    [:stable-key-v1
+     (format "%064x" (BigInteger. 1 (.digest digest)))]))
+
+(defn content-fingerprint
+  "Return a fast deterministic content fingerprint.
+
+  Dense backends provide their own fingerprint over dtype, shape, and normalized
+  contents. Native values fall back to a hash of the exact stable key.
+  "
+  [x]
+  (if (dense/ndarray? x)
+    (dense/content-fingerprint x)
+    (stable-key-fingerprint x)))
+
+(defn content-equal?
+  "Exact content equality with dense missing-value semantics.
+
+  This is the exact fallback paired with `content-fingerprint`; callers should
+  use fingerprints for bucketing and this predicate only within matching
+  buckets.
+  "
+  [left right]
+  (if (or (dense/ndarray? left) (dense/ndarray? right))
+    (and (dense/ndarray? left)
+         (dense/ndarray? right)
+         (dense/same-content? left right))
+    (= (stable-key left) (stable-key right))))
+
 (defn stable-compare
   "Compare native values by their stable keys."
   [left right]
@@ -138,12 +171,14 @@
 (defn unique-hash
   "Return a positive deterministic 64-bit-ish hash as a BigInteger.
 
-  The hash is derived from the stable key, so map/set iteration order does not
-  affect it and type distinctions such as `1` vs `\"1\"` remain visible.
+  The hash is derived from the content fingerprint, so dense arrays can use
+  backend-provided fingerprints instead of forcing an exact stable key first.
+  Map/set iteration order does not affect native structural values because
+  their fingerprints still derive from `stable-key`.
   "
   [x]
   (let [digest (doto (MessageDigest/getInstance "SHA-256")
-                 (.update (.getBytes (pr-str (stable-key x)) "UTF-8")))
+                 (.update (.getBytes (pr-str (content-fingerprint x)) "UTF-8")))
         bytes (.digest digest)
         first-eight (byte-array 8)]
     (System/arraycopy bytes 0 first-eight 0 8)

@@ -1,5 +1,5 @@
 (ns ciwi.spec
-  (:require [ciwi.dense :as dense]
+  (:require [ciwi.dense.core :as dense]
             [ciwi.operator :as op]
             [ciwi.value :as value]))
 

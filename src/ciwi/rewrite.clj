@@ -1,5 +1,5 @@
 (ns ciwi.rewrite
-  (:require [ciwi.dense :as dense]
+  (:require [ciwi.dense.core :as dense]
             [ciwi.graph :as graph]
             [ciwi.mdl :as mdl]
             [ciwi.operator :as op]
@@ -199,11 +199,12 @@
       (let [start (first values)
             step (- (second values) start)]
         (when (= values (mapv #(+ start (* step %)) (range (count values))))
-          {:start start
-           :step step
-           :n (count values)
-           :base (dense/array (vec (range (count values))))
-           :scaled (dense/array (mapv #(* step %) (range (count values))))})))))
+          (let [base (dense/arange (count values))]
+            {:start start
+             :step step
+             :n (count values)
+             :base base
+             :scaled (dense/multiply base step)}))))))
 
 (defn- scale-mult-candidate
   [g node-id xs _opts]
@@ -311,7 +312,7 @@
   [xs]
   (let [values (array-values xs)]
     (when (and values (every? number? values))
-      (dense/array (vec (map - values (cons 0 values)))))))
+      (dense/diff xs))))
 
 (defn- cumsum-candidate
   [g node-id xs _opts]
