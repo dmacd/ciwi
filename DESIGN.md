@@ -227,6 +227,13 @@ list/string/array outputs; CIWI mirrors that by returning no repeat inversions
 for scalar outputs rather than treating scalar `count` errors as exceptional
 search results.
 
+Native fixtures use Clojure vectors as the stand-in for Python NumPy arrays and
+Clojure lists for Python lists when that distinction affects behavior. One
+important example is `insert`: Python's unconditioned frequency partition is
+array-only, while conditioned partitioning by indices or content also works on
+lists. CIWI mirrors that split instead of treating every sequential value as an
+array.
+
 Additional Python core-test operators are added when a parity target requires
 them. `trange` follows Python's `(start stop step)` range operator and inverts
 strict arithmetic integer ranges. `mean` is a pure forward numeric sequence
@@ -440,6 +447,11 @@ Composite operators can also be built from explicit native graph specs carrying
 fixtures where repeated logical leaves must be the same value node rather than
 duplicate literal leaves grouped after the fact.
 
+Composite inverse accepts over-conditioned calls when the requested condition
+set covers at least one advertised composite condition. This matches Python
+fixtures such as `dag5`, where the caller may supply more known leaves than the
+minimal condition requires, while still rejecting unsupported condition sets.
+
 Python condition fixture parity is expressed through those same native
 composite literals rather than through DOT imports. The expected conditions are
 still the Python fixture conditions; the representation difference is only how
@@ -470,6 +482,14 @@ or adopts commutativity from an operator-valued callable child such as
 `map :negate` or `bmap :add`. The latter is a structural graph property used
 for Python composite fixture parity, not proof that arbitrary composite inputs
 can be permuted.
+
+`ciwi.composite/composite-specs` is the native counterpart to Python composite
+spec synchronization. It takes a composite graph and an injected declaration
+table of `{:op :input-specs :output-spec}` entries, enumerates compatible
+declaration assignments across the graph, synchronizes repeated input leaves,
+and returns concrete CIWI keyword signatures. This deliberately uses the same
+simple spec model as Wunderbaum declarations instead of porting Python's
+generic runtime type objects.
 
 `ciwi.fix/fix-first` is the Clojure equivalent of Python WILLIAM's `Fix`
 operator. It captures the first input of any runtime `Operator` and returns a

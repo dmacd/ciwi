@@ -131,7 +131,7 @@
 
 (defn- seq-literal?
   [x]
-  (or (vector? x) (string? x)))
+  (or (seqish? x) (string? x)))
 
 (defn- valid-index?
   [xs idx]
@@ -607,8 +607,8 @@
 (defn partition-by-frequency
   "Partition output as `[indices content rest]` using the most common value as rest."
   [output]
-  (when (seq-literal? output)
-    (let [values (if (string? output) (vec output) (vec output))
+  (when (vector? output)
+    (let [values output
           value-counts (frequencies values)]
       (when (seq value-counts)
         (let [rest-value (->> value-counts
@@ -625,7 +625,7 @@
               content (if (and (seq content) (apply = content))
                         (first content)
                         content)
-              rest (if (string? output) (apply str rest) rest)]
+              rest rest]
           (when (and (> rest-count 1)
                      (seq indices))
             [[(vec indices) content rest]]))))))

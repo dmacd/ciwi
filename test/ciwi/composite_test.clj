@@ -160,6 +160,52 @@
                   [[(inc (peek output))]]))
               true))
 
+(defn- boolish-vector?
+  [x]
+  (and (vector? x)
+       (every? #(or (true? %) (false? %)) x)))
+
+(def ^:private bool-not-op
+  (fixture-op :not
+              [[]]
+              (fn [[x]]
+                (cond
+                  (or (true? x) (false? x)) (not x)
+                  (boolish-vector? x) (mapv not x)
+                  :else (throw (ex-info "not expects bool or bool vector" {:x x}))))
+              (fn [output _cond-inputs cond]
+                (when (empty? cond)
+                  (clojure.core/cond
+                    (or (true? output) (false? output)) [[(not output)]]
+                    (boolish-vector? output) [[(mapv not output)]])))
+              true))
+
+(def ^:private div-op
+  (fixture-op :div
+              [[0] [1]]
+              (fn [[x y]]
+                (cond
+                  (and (vector? x) (vector? y) (= (count x) (count y)))
+                  (mapv / x y)
+
+                  (vector? x)
+                  (mapv #(/ % y) x)
+
+                  (vector? y)
+                  (mapv #(/ x %) y)
+
+                  :else
+                  (/ x y)))
+              (fn [output cond-inputs cond]
+                (when (and (number? output)
+                           (not (zero? output))
+                           (= 1 (count cond)))
+                  (let [known (first cond-inputs)]
+                    (case (first cond)
+                      0 [[(/ known output)]]
+                      1 [[(* output known)]]
+                      nil))))))
+
 (defn- callable-fixture-op
   [f]
   (cond
@@ -224,6 +270,92 @@
                           ys))))
               bmap-inverse))
 
+(def ^:private cumop-op
+  (fixture-op :cumop
+              [[0]]
+              (fn [[f start xs]]
+                (when-let [f (callable-fixture-op f)]
+                  (loop [remaining xs
+                         current start
+                         result [start]]
+                    (if-let [remaining (seq remaining)]
+                      (let [current (value/datum (op/apply-op f [(value/value current)
+                                                                 (value/value (first remaining))]))]
+                        (recur (next remaining) current (conj result current)))
+                      result))))
+              (fn [output cond-inputs cond]
+                (when (and (= [0] (vec cond))
+                           (vector? output)
+                           (seq output))
+                  (when-let [f (callable-fixture-op (first cond-inputs))]
+                    (when (contains? (set (:conditions f)) [0])
+                      (let [inversions
+                            (loop [pairs (partition 2 1 output)
+                                   result []]
+                              (if-let [[previous current] (first pairs)]
+                                (let [invs (mapv (fn [values]
+                                                   (mapv value/datum values))
+                                                 (op/invert-op f
+                                                               (value/value current)
+                                                               [(value/value previous)]
+                                                               [0]))]
+                                  (when (seq invs)
+                                    (recur (next pairs) (conj result invs))))
+                                result))]
+                        (when (seq inversions)
+                          (let [branch-count (apply min (map count inversions))]
+                            (mapv (fn [branch-idx]
+                                    [(first output)
+                                     (mapv first
+                                           (mapv #(nth % branch-idx) inversions))])
+                                  (range branch-count)))))))))))
+
+(def ^:private table-op
+  (fixture-op :table
+              [[]]
+              (fn [[values positions]]
+                (mapv values positions))
+              (fn [output _cond-inputs cond]
+                (when (and (empty? cond)
+                           (vector? output)
+                           (seq output))
+                  (let [values (vec (sort (set output)))
+                        position (zipmap values (range))]
+                    [[values (mapv position output)]])))))
+
+(defn- missing-like
+  [x]
+  (if (string? x) "" nil))
+
+(defn- dec-composite-inverse
+  [output cond-inputs cond]
+  (when (and (= [1] (vec cond))
+             (vector? output)
+             (boolish-vector? (first cond-inputs))
+             (= (count output) (count (first cond-inputs))))
+    (let [mask (first cond-inputs)]
+      [[(mapv (fn [selected? x]
+                (if selected? (missing-like x) x))
+              mask
+              output)
+        (mapv (fn [selected? x]
+                (if selected? x (missing-like x)))
+              mask
+              output)]])))
+
+(def ^:private dec-op
+  (fixture-op :dec
+              [[1]]
+              (fn [[base mask xs]]
+                (value/datum
+                 (op/apply-op op/setitem
+                              [(value/value base)
+                               (value/value mask)
+                               (op/apply-op op/getitem
+                                            [(value/value xs)
+                                             (value/value mask)])])))
+              dec-composite-inverse))
+
 (defn- as-set
   [x]
   (if (set? x)
@@ -252,14 +384,33 @@
   (merge op/registry
          {:abs abs-op
           :bmap bmap-op
+          :cumop cumop-op
+          :dec dec-op
+          :div div-op
           :listwrap listwrap-op
           :listslice (structural-op :listslice [[0 1 2]] false)
+          :not bool-not-op
           :sum (structural-op :sum [] true)
+          :table table-op
           :tofloat tofloat-op
           :toint toint-op
           :union union-op
           :urange urange-op
           :zip2d zip2d-op}))
+
+(def ^:private native-composite-spec-declarations
+  [{:op :add :input-specs [:int :int] :output-spec :int}
+   {:op :mult :input-specs [:int :int] :output-spec :int}
+   {:op :brange :input-specs [:int :int] :output-spec :array-int}
+   {:op :repeat :input-specs [:int :array] :output-spec :array}
+   {:op :repeat :input-specs [:int :array-int] :output-spec :array-int}
+   {:op :zip2d :input-specs [:array-int :array] :output-spec :array}
+   {:op :getitem :input-specs [:array-float :array-bool] :output-spec :array-float}
+   {:op :getitem :input-specs [:array-float :array-int] :output-spec :array-float}
+   {:op :setitem :input-specs [:array-float :array-bool :array-float]
+    :output-spec :array-float}
+   {:op :setitem :input-specs [:array-float :array-int :array-float]
+    :output-spec :array-float}])
 
 (defn- shared-fixture-spec
   [expr]
@@ -462,6 +613,43 @@
                                         (value/value 4)
                                         (value/value [9])]
                                        [0 1 2]))))))
+
+(deftest native-composite-spec-synchronization-golden-cases
+  (let [dag4-spec (shared-fixture-spec
+                   [:zip2d [:brange [:input :x0 3]
+                            [:add [:input :x0 3]
+                             [:input :length 4]]]
+                    [:repeat [:input :length 4]
+                     [:input :y [9]]]])
+        dec-spec (shared-fixture-spec
+                  [:setitem [:input :base nil]
+                   [:input :mask nil]
+                   [:getitem [:input :xs nil]
+                    [:input :mask nil]]])
+        square-plus-y [:add [:mult [:input :x 2]
+                             [:input :x 2]]
+                       [:input :y 3]]]
+    (is (= #{{:input-specs [:int :int :array]
+              :output-spec :array}
+             {:input-specs [:int :int :array-int]
+              :output-spec :array}}
+           (set (sut/composite-specs dag4-spec
+                                     native-composite-spec-declarations))))
+    (is (= #{{:input-specs [:array-float :array-bool :array-float]
+              :output-spec :array-float}
+             {:input-specs [:array-float :array-int :array-float]
+              :output-spec :array-float}}
+           (set (sut/composite-specs dec-spec
+                                     native-composite-spec-declarations
+                                     {:fixed-output-spec :array-float}))))
+    (is (= #{{:input-specs [:int :int]
+              :output-spec :int}}
+           (set (sut/composite-specs square-plus-y
+                                     native-composite-spec-declarations
+                                     {:fixed-output-spec :int}))))
+    (is (empty? (sut/composite-specs dec-spec
+                                     native-composite-spec-declarations
+                                     {:fixed-output-spec :array-int})))))
 
 (deftest composite-commutativity-is-inferred-symbolically
   (let [plus (sut/operator :plus [:add [:input :x 0] [:input :y 0]])
@@ -838,6 +1026,210 @@
                                        [(value/value 3)
                                         (value/value 1)]
                                        [3 4]))))))
+
+(deftest python-composite-cumop-div-and-table-inverse-golden-cases
+  (let [trees6 (fixture-composite
+                :trees6
+                [:cumop op/mult
+                 [:input :start nil]
+                 [:input :xs nil]])
+        trees14 (fixture-composite
+                 :trees14
+                 [:cumop div-op
+                  [:input :start nil]
+                  [:input :xs nil]])
+        trees15 (fixture-composite
+                 :trees15
+                 [:bmap div-op
+                  [:input :xs nil]
+                  [:input :ys nil]])
+        trees18 (fixture-composite
+                 :trees18
+                 [:map toint-op
+                  [:map bool-not-op
+                   [:input :xs nil]]])
+        trees9 (fixture-composite
+                :trees9
+                [:table [:input :values nil]
+                 [:repeat [:add [:input :a nil]
+                           [:input :b nil]]
+                  [:map abs-op
+                   [:input :xs nil]]]])]
+    (is (= [[1 (vec (repeat 8 2))]]
+           (data-results (op/invert-op trees6
+                                       (value/value (mapv #(long (Math/pow 2 %))
+                                                          (range 9)))
+                                       []
+                                       []))))
+    (is (empty? (data-results (op/invert-op trees6
+                                            (value/value (apply list (range 1 9)))
+                                            []
+                                            []))))
+    (is (empty? (data-results (op/invert-op trees14
+                                            (value/value [1.0 2.0 0.0 4.5])
+                                            []
+                                            []))))
+    (is (= [[[3.0 5.0]]]
+           (data-results (op/invert-op trees15
+                                       (value/value [2.0 8.0])
+                                       [(value/value [6.0 40.0])]
+                                       [0]))))
+    (is (empty? (data-results (op/invert-op trees18
+                                            (value/value [13 -14 0 0 0])
+                                            []
+                                            []))))
+    (is (= [[[-1 5] 6 [1 0 0 0 0]]
+            [[-1 5] 6 [-1 0 0 0 0]]]
+           (data-results (op/invert-op trees9
+                                       (value/value (vec (take 30
+                                                               (cycle [5 -1 -1 -1 -1]))))
+                                       [(value/value 0)]
+                                       [1]))))))
+
+(deftest python-composite-insert-derived-inverse-golden-cases
+  (let [trees2 (fixture-composite
+                :trees2
+                [:insert [:input :indices nil]
+                 [:input :content nil]
+                 [:repeat [:input :n nil]
+                  [:input :motif nil]]])
+        trees10 (fixture-composite
+                 :trees10
+                 [:concat [:repeat [:input :left-n nil]
+                           [:input :left-motif nil]]
+                  [:repeat [:input :right-n nil]
+                   [:input :right-motif nil]]])
+        output (apply list [1 1 0 1 0 1 0 0 0 0])]
+    (is (= [[[0 0 0 0 0 0] 4 [1]]
+            [0 4 [1]]]
+           (data-results (op/invert-op trees2
+                                       (value/value output)
+                                       [(value/value [2 4 6 7 8 9])]
+                                       [0]))))
+    (is (= [[[1 1 1 1] 6 [0]]
+            [1 6 [0]]]
+           (data-results (op/invert-op trees2
+                                       (value/value output)
+                                       [(value/value [0 1 3 5])]
+                                       [0]))))
+    (is (= [[[2 4 6 7 8 9] 4 [1]]]
+           (data-results (op/invert-op trees2
+                                       (value/value output)
+                                       [(value/value 0)]
+                                       [1]))))
+    (is (= [[[0 1 3 5] 6 [0]]]
+           (data-results (op/invert-op trees2
+                                       (value/value output)
+                                       [(value/value 1)]
+                                       [1]))))
+    (doseq [[cond cond-inputs] [[[] []]
+                                [[2] [4]]
+                                [[3] [0]]
+                                [[1] [5]]
+                                [[2 3] [10 [0]]]]]
+      (is (empty? (data-results (op/invert-op trees2
+                                              (value/value output)
+                                              (mapv value/value cond-inputs)
+                                              cond)))))
+    (is (= [[6 [3]]]
+           (data-results (op/invert-op trees10
+                                       (value/value (vec (repeat 10 3)))
+                                       [(value/value 4)
+                                        (value/value [3])]
+                                       [0 1]))))))
+
+(deftest python-composite-setitem-getitem-inverse-golden-cases
+  (let [dec (fixture-composite
+             :dec
+             [:setitem [:input :base nil]
+              [:input :mask nil]
+              [:getitem [:input :xs nil]
+               [:input :mask nil]]])
+        cl-func (fixture-composite
+                 :cl_func
+                 [:dec [:input :base nil]
+                  [:equal [:input :left nil]
+                   [:input :right nil]]
+                  [:input :xs nil]])
+        insert-via-setitem (fixture-composite
+                            :insert
+                            [:setitem [:setitem [:input :base nil]
+                                       [:input :mask nil]
+                                       [:input :content nil]]
+                             [:not [:input :mask nil]]
+                             [:input :rest nil]])]
+    (is (= [[[1.0 nil nil 4.0]
+             [nil 2.0 3.0 nil]]]
+           (data-results (op/invert-op dec
+                                       (value/value [1.0 2.0 3.0 4.0])
+                                       [(value/value [false true true false])]
+                                       [1]))))
+    (is (= [[[nil 1.0 nil 0.0]
+             [1.0 nil 0.0 nil]]]
+           (data-results (op/invert-op cl-func
+                                       (value/value [1.0 1.0 0.0 0.0])
+                                       [(value/value [1.0 0.0 0.0 1.0])
+                                        (value/value [1.0 1.0 0.0 0.0])]
+                                       [1 2]))))
+    (is (= [[["" "" "" "" ""]
+             ["b" "d" "e"]
+             ["a" "c"]]]
+           (data-results (op/invert-op insert-via-setitem
+                                       (value/value ["a" "b" "c" "d" "e"])
+                                       [(value/value [false true false true true])]
+                                       [1]))))))
+
+(deftest python-composite-remaining-empty-inverse-golden-cases
+  (let [trees1 (fixture-composite
+                :trees1
+                [:concat [:input :left nil]
+                 [:repeat [:input :n nil]
+                  [:input :motif nil]]])
+        trees3 (fixture-composite
+                :trees3
+                [:zip2d [:concat [:repeat [:input :left-n nil]
+                                  [:input :left-motif nil]]
+                         [:brange [:input :left-start nil]
+                          [:input :left-stop nil]]]
+                 [:concat [:brange [:input :right-start nil]
+                           [:input :right-stop nil]]
+                  [:repeat [:input :right-n nil]
+                   [:input :right-motif nil]]]])
+        trees4 (fixture-composite
+                :trees4
+                [:insert [:urange [:input :index-stop nil]]
+                 [:input :content nil]
+                 [:concat [:repeat [:input :repeat-n nil]
+                           [:input :repeat-motif nil]]
+                  [:concat [:urange [:input :range-stop nil]]
+                   [:input :tail nil]]]])
+        zipped [[0 1] [0 2] [0 3] [0 4] [1 4] [2 4] [3 4] [4 4]]
+        good-output (apply list [9 9 9 9 9 3 3 3 3 3 0 1 2 3 4 100])
+        wrong-output (apply list [1 1 1 1 1 3 3 3 3 3 0 1 2 3 4 100])]
+    (is (empty? (data-results (op/invert-op trees1
+                                            (value/value (apply list [1 2 3 4 5 5 5 5]))
+                                            []
+                                            []))))
+    (is (empty? (data-results (op/invert-op trees3
+                                            (value/value zipped)
+                                            []
+                                            []))))
+    (is (empty? (data-results (op/invert-op trees4
+                                            (value/value good-output)
+                                            [(value/value 5)]
+                                            [0]))))
+    (is (empty? (data-results (op/invert-op trees4
+                                            (value/value good-output)
+                                            [(value/value 9)]
+                                            [1]))))
+    (doseq [[cond cond-inputs] [[[] []]
+                                [[2] [5]]
+                                [[0] [25]]
+                                [[1] [5]]]]
+      (is (empty? (data-results (op/invert-op trees4
+                                              (value/value wrong-output)
+                                              (mapv value/value cond-inputs)
+                                              cond)))))))
 
 (deftest composite-inversion-returns-no-results-for-unsatisfied-or-invalid-local-equations
   (let [product (sut/operator :product

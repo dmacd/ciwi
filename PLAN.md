@@ -19,14 +19,15 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   native fixture parity for Python `test_conditions.py` condition shapes, and
   representative `test_composite.py` behavior slices including the full
   `co0`-`co21` graph commutativity table, selected callable/sequence-edit
-  inverse rows, conversion-map inverse rows, and `urange`/`listwrap`/`bmap`
-  propagation through composites.
+  inverse rows, conversion-map inverse rows, `cumop`/`div`/`table` fixture
+  rows, `getitem`/`setitem` composite rows, and native composite spec
+  synchronization.
 - The implementation includes Python-scale core Wunderbaum parity rows, greedy
   Alice/Wunderbaum task runs, lazy best-first node tuple enumeration, a
   Python-compatible value DL model, Alice operator DL alignment, per-run DL and
   value-key caching, deferred selected-expression realization, threshold-aware
   candidate yielding, and several translation/performance fixes; tests pass
-  locally with 136 tests and 727 assertions.
+  locally with 141 tests and 758 assertions.
 
 ## Current State
 
@@ -146,15 +147,24 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   `map(abs, x)` inverse branching/branch-cap behavior. It now also covers
   `trees0` `concat` inversion, `trees12`/`trees17` conversion-map inversion,
   `trees7` `bmap(add, ...)` inversion through `urange`, the invalid `co10`
-  `urange/insert` row, and `co11` `trange/repeat/listwrap/insert` inversion.
-  The broader `zip2d`, `union`, `abs`, `toint`, `tofloat`, `urange`,
-  `listwrap`, `bmap`, and related non-Alice operators used by these cases
-  remain test-local fixture operators; they are not added to the Alice operator
-  basis.
+  `urange/insert` row, `co11` `trange/repeat/listwrap/insert` inversion,
+  `trees6`/`trees14` `cumop`, `trees15` `bmap(div, ...)`, `trees18`
+  invalid nested conversion, `trees2`/`trees9`/`trees10` insert/table/repeat
+  inversions, the remaining expected-empty inverse rows, and `cl_func`,
+  `insert`, and `dec` `getitem`/`setitem` composite rows. Native spec
+  synchronization now enumerates concrete CIWI keyword signatures over
+  graph-backed composites from injected operator declarations. The broader
+  `zip2d`, `union`, `abs`, `toint`, `tofloat`, `urange`, `listwrap`, `bmap`,
+  `cumop`, `div`, `table`, `dec`, and related non-Alice operators used by
+  these cases remain test-local fixture operators; they are not added to the
+  Alice operator basis.
 - `map` inversion now mirrors Python WILLIAM's elementwise fallback more
   closely: when a callable cannot invert the whole output directly, CIWI groups
   scalar inverse branches by type, takes Cartesian products per type, and drops
   a type branch whose product exceeds 100 alternatives.
+- Composite inverse requests now accept non-minimal condition sets only when
+  they cover at least one advertised composite condition, matching Python cases
+  such as `dag5` while rejecting unsupported condition sets.
 
 ## Roadmap
 
@@ -188,12 +198,11 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
 
 ## Near-Term Next Tasks
 
-- Continue `test_composite.py` expansion. Next useful slices are remaining
-  inverse rows that require `cumop`/`div`, richer `bmap` cases,
-  `getitem`/`setitem` variants, or additional native DAG fixtures, and then the
-  spec synchronization cases. Do not port S-expression reconstruction as parser
-  parity; keep native graph/composite specs. The broader test map is
-  `PYTHON-TEST-ROADMAP.md`.
+- Review the residual `test_composite.py` non-targets: GraphViz/DOT import,
+  tuple reconstruction, and Python S-expression reconstruction remain out of
+  scope unless they block compression behavior evidence. The native spec
+  enumerator should be extended only as needed by Wunderbaum/Alice declarations
+  or learned composite loading.
 - If runtime parity remains the immediate priority, focus on `increasing_runs`,
   `sprinkled`, `simply_linear`, and `map_negate`. `insert_repeat3` now reaches
   the Python rate in seven accepted steps and is faster than the recorded Python

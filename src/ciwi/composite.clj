@@ -4,6 +4,7 @@
             [ciwi.graph :as graph]
             [ciwi.operator :as op]
             [ciwi.propagation :as propagation]
+            [ciwi.spec :as spec]
             [ciwi.value :as value]))
 
 (defn leaf-ids
@@ -244,6 +245,128 @@
        (= (symbolic-key g root leaves input-groups identity)
           (symbolic-key g root leaves input-groups {0 1, 1 0}))))
 
+(defn- condition-covers?
+  [requested sufficient]
+  (let [requested (set requested)]
+    (every? requested sufficient)))
+
+(defn- cartesian-product
+  [colls]
+  (reduce (fn [prefixes coll]
+            (for [prefix prefixes
+                  x coll]
+              (conj prefix x)))
+          [[]]
+          colls))
+
+(defn- intersect-spec
+  [left right]
+  (cond
+    (nil? left) right
+    (nil? right) left
+    (= left right) left
+    (spec/conforms? left right) right
+    (spec/conforms? right left) left
+    :else nil))
+
+(defn- assign-spec
+  [specs value-id new-spec]
+  (let [merged (intersect-spec (get specs value-id) new-spec)]
+    (when merged
+      (assoc specs value-id merged))))
+
+(defn- declarations-by-op
+  [declarations]
+  (group-by :op declarations))
+
+(defn- operator-declaration-choices
+  [g declarations-by-id op-id]
+  (let [operator-id (:id (:operator (graph/node g op-id)))]
+    (get declarations-by-id operator-id)))
+
+(defn- apply-declaration
+  [g specs op-id {:keys [input-specs output-spec]}]
+  (let [{:keys [parent children]} (graph/node g op-id)]
+    (when-let [specs (assign-spec specs parent output-spec)]
+      (loop [specs specs
+             children children
+             input-specs input-specs]
+        (if-let [child-id (first children)]
+          (when-let [specs (assign-spec specs child-id (first input-specs))]
+            (recur specs (next children) (next input-specs)))
+          specs)))))
+
+(defn- apply-constant-specs
+  [g specs leaves input-groups]
+  (let [input-leaves (set (mapcat identity input-groups))]
+    (reduce (fn [specs [idx leaf-id]]
+              (if (or (nil? specs)
+                      (contains? input-leaves idx))
+                specs
+                (let [constant-spec (spec/value-spec (graph/value-data g leaf-id))]
+                  (if (= :unknown constant-spec)
+                    specs
+                    (assign-spec specs leaf-id constant-spec)))))
+            specs
+            (map-indexed vector leaves))))
+
+(defn- grouped-input-specs
+  [specs leaves input-groups]
+  (loop [groups input-groups
+         result []]
+    (if-let [leaf-idxs (first groups)]
+      (let [group-spec (reduce (fn [acc leaf-idx]
+                                 (intersect-spec acc
+                                                 (get specs (nth leaves leaf-idx))))
+                               nil
+                               leaf-idxs)]
+        (when group-spec
+          (recur (next groups) (conj result group-spec))))
+      result)))
+
+(defn composite-specs
+  "Enumerate concrete CIWI spec signatures for a native composite graph.
+
+  `declarations` is the same style of operator declaration table used by the
+  Wunderbaum path: each entry has `:op`, `:input-specs`, and `:output-spec`.
+  This intentionally stays in CIWI's keyword spec model instead of porting
+  Python's generic runtime type objects.
+  "
+  ([expr declarations]
+   (composite-specs expr declarations {}))
+  ([expr declarations {:keys [constant-indices fixed-output-spec]
+                       :or {constant-indices #{}}}]
+   (let [{:keys [graph root input-groups]} (graph-spec expr {})
+         leaves (leaf-ids graph root)
+         declared-constants (validate-constant-indices! (set constant-indices) (count leaves))
+         input-groups (default-input-groups (count leaves) declared-constants input-groups)
+         constant-indices (effective-constant-indices (count leaves)
+                                                      declared-constants
+                                                      input-groups)
+         input-groups (default-input-groups (count leaves) constant-indices input-groups)
+         op-ids (graph/operator-ids graph)
+         declarations-by-id (declarations-by-op declarations)
+         choices (mapv #(operator-declaration-choices graph declarations-by-id %) op-ids)]
+     (if (some empty? choices)
+       []
+       (->> (cartesian-product choices)
+            (keep (fn [declaration-combo]
+                    (let [initial-specs (cond-> {}
+                                          fixed-output-spec
+                                          (assoc root fixed-output-spec))
+                          specs (reduce (fn [specs [op-id declaration]]
+                                          (when specs
+                                            (apply-declaration graph specs op-id declaration)))
+                                        initial-specs
+                                        (map vector op-ids declaration-combo))
+                          specs (apply-constant-specs graph specs leaves input-groups)]
+                      (when specs
+                        (when-let [input-specs (grouped-input-specs specs leaves input-groups)]
+                          {:input-specs input-specs
+                           :output-spec (get specs root)})))))
+            distinct
+            vec)))))
+
 (defn operator
   "Create a graph-backed composite Operator from a Clojure graph literal.
 
@@ -275,5 +398,6 @@
        :call (fn [inputs]
                (call-composite graph root leaves input-groups constant-indices inputs))
        :inverse (fn [output cond-inputs cond]
-                  (inverse-composite graph root leaves input-groups constant-indices
-                                     output cond-inputs cond))}))))
+                  (when (some #(condition-covers? cond %) conditions)
+                    (inverse-composite graph root leaves input-groups constant-indices
+                                       output cond-inputs cond)))}))))
