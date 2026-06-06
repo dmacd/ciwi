@@ -30,7 +30,7 @@ WILLIAM's core compression machinery.
 | Python tests | CIWI target | Why next |
 | --- | --- | --- |
 | `william/tests/test_bottleneck.py::test_min_desc_len` | Covered. Small section fixtures use Clojure graph literals; larger Python-scale fixtures use native EDN value/operator/root graph specs plus expected selected expressions. Tests check Python DL constants and selected operator identities without GraphViz parsing. | This is the best direct proof that CIWI's global shared-DAG minimizer matches WILLIAM outside Alice. |
-| `william/tests/test_propagation.py::test_propagate_up` and `::test_random_propagation` | Port the `co2`, `co3`, `co4`, `matching/set_mean_add`, and `composite/trees2` behaviors as native graph fixtures. | Alice/Wunderbaum depends on propagation/inversion being correct under partial memory, unknown values, and multiple possible completions. |
+| `william/tests/test_propagation.py::test_propagate_up` and `::test_random_propagation` | Covered. CIWI uses native graph literals for `co2`, `co3`, `co4`, `matching/set_mean_add`, and `composite/trees2`. Expected memories are native node-id/value maps; Python's integer-array unknown sentinel is represented as CIWI `nil` holes. | Alice/Wunderbaum depends on propagation/inversion being correct under partial memory, unknown values, and multiple possible completions. |
 | `william/tests/test_delayed_builder.py` | Keep current delayed-builder regression coverage, then make the simple/mult fixtures exact against Python's expected structures and memory values. | Delayed building is where Wunderbaum candidates become actual DAGs; parity here prevents search-order wins from hiding materialization bugs. |
 | `william/tests/test_wunderbaum.py::test_wunderbaum_iteration` | Add the small `setitem(repeat(...), negate(...), negate(...))` solution case with injected `SetItem`, `Repeat`, `Negate`, and friends. Verify serial result first; later verify parallel result order/resource behavior. | This is the next end-to-end Wunderbaum case beyond Alice sequence compression, and it exercises a different operator family. |
 | `william/tests/test_conditions.py` | Expand condition tests from current helper parity to Python's `co0`-`co21` and `dag0`-`dag7` fixture shapes using CIWI graph literals. | Composite conditions decide which inversions/search attachments are legal. This is high leverage for learned composites later. |
@@ -38,10 +38,9 @@ WILLIAM's core compression machinery.
 
 Recommended order inside Priority 1:
 
-1. Propagation golden cases.
-2. Delayed-builder exact materialization cases.
-3. Wunderbaum `setitem/repeat/negate` solution case.
-4. Composite/condition fixture expansion.
+1. Delayed-builder exact materialization cases.
+2. Wunderbaum `setitem/repeat/negate` solution case.
+3. Composite/condition fixture expansion.
 
 ## Priority 2: Numeric Optimization as Search
 

@@ -13,13 +13,14 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
 - Current local state has Python-scale core parity evidence for all sequence
   rows in Python `test_alice.py`, plus the first round of warm-runtime fixes
   from profiling the largest gaps, and full Python
-  `test_bottleneck.py::test_min_desc_len` parity.
+  `test_bottleneck.py::test_min_desc_len` and `test_propagation.py`
+  propagation parity.
 - The implementation includes Python-scale core Wunderbaum parity rows, greedy
   Alice/Wunderbaum task runs, lazy best-first node tuple enumeration, a
   Python-compatible value DL model, Alice operator DL alignment, per-run DL and
   value-key caching, deferred selected-expression realization, threshold-aware
   candidate yielding, and several translation/performance fixes; tests pass
-  locally with 124 tests and 622 assertions.
+  locally with 126 tests and 631 assertions.
 
 ## Current State
 
@@ -110,6 +111,11 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   `mult_negate_add`, and `regression` at Python scale. The large bottleneck
   golden cases are expressed as native EDN value/operator/root graph specs, not
   as DOT imports.
+- Native propagation parity tests now cover Python `co2`, `co3`, `co4`,
+  `matching/set_mean_add`, and `composite/trees2` behavior without DOT parsing.
+  These cases exercise partial propagation, multiple inverse branches,
+  `trange`, `mean`, cyclic value dependencies, and the CIWI-native `nil` hole
+  representation for Python's internal integer-array unknown sentinel.
 
 ## Roadmap
 
@@ -143,9 +149,9 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
 
 ## Near-Term Next Tasks
 
-- Move to Python propagation golden cases, then delayed-builder exact
-  materialization, Wunderbaum `setitem/repeat/negate`, and composite/condition
-  fixture expansion. The broader test map is `PYTHON-TEST-ROADMAP.md`.
+- Move to delayed-builder exact materialization, then Wunderbaum
+  `setitem/repeat/negate`, and composite/condition fixture expansion. The
+  broader test map is `PYTHON-TEST-ROADMAP.md`.
 - If runtime parity remains the immediate priority, focus on `increasing_runs`,
   `sprinkled`, `simply_linear`, and `map_negate`. `insert_repeat3` now reaches
   the Python rate in seven accepted steps and is faster than the recorded Python

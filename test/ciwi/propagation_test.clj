@@ -19,6 +19,18 @@
       (graph/add-value :right nil)
       (graph/add-operator :add-out op/add :out [:left :right])))
 
+(defn- data-at
+  [mem id]
+  (:data (sut/value-at mem id)))
+
+(defn- memory-data
+  [mem ids]
+  (into {}
+        (keep (fn [id]
+                (when (contains? mem id)
+                  [id (data-at mem id)])))
+        ids))
+
 (deftest propagates-add-up
   (let [g (add-graph)
         mem (sut/memory {:left 3 :right 4})
@@ -71,6 +83,157 @@
     (is (nil? (sut/value-at missing-left :out)))
     (is (nil? (sut/value-at nil-output :left)))
     (is (nil? (:data (sut/value-at nil-output :out))))))
+
+(defn co2-graph
+  []
+  (-> (graph/empty-graph)
+      (graph/add-value :out nil)
+      (graph/add-value :indices nil)
+      (graph/add-value :indices-start nil)
+      (graph/add-value :indices-stop nil)
+      (graph/add-value :indices-step nil)
+      (graph/add-value :content nil)
+      (graph/add-value :content-start nil)
+      (graph/add-value :content-stop nil)
+      (graph/add-value :content-step nil)
+      (graph/add-value :rest nil)
+      (graph/add-value :rest-start nil)
+      (graph/add-value :rest-stop nil)
+      (graph/add-value :rest-step nil)
+      (graph/add-operator :indices-trange op/trange :indices
+                          [:indices-start :indices-stop :indices-step])
+      (graph/add-operator :content-trange op/trange :content
+                          [:content-start :content-stop :content-step])
+      (graph/add-operator :rest-trange op/trange :rest
+                          [:rest-start :rest-stop :rest-step])
+      (graph/add-operator :insert op/insert :out [:indices :content :rest])))
+
+(defn co3-graph
+  []
+  (-> (graph/empty-graph)
+      (graph/add-value :out nil)
+      (graph/add-value :prod nil)
+      (graph/add-value :a nil)
+      (graph/add-value :b nil)
+      (graph/add-value :sum nil)
+      (graph/add-value :c nil)
+      (graph/add-value :neg nil)
+      (graph/add-value :d nil)
+      (graph/add-operator :prod-mult op/mult :prod [:a :b])
+      (graph/add-operator :negate op/negate :neg [:d])
+      (graph/add-operator :sum-add op/add :sum [:c :neg])
+      (graph/add-operator :out-sub op/sub :out [:prod :sum])))
+
+(defn co4-graph
+  []
+  (-> (graph/empty-graph)
+      (graph/add-value :out nil)
+      (graph/add-value :neg nil)
+      (graph/add-value :x nil)
+      (graph/add-value :diff nil)
+      (graph/add-value :y nil)
+      (graph/add-value :z nil)
+      (graph/add-operator :negate op/negate :neg [:x])
+      (graph/add-operator :diff-sub op/sub :diff [:y :z])
+      (graph/add-operator :out-add op/add :out [:neg :diff])))
+
+(deftest python-propagate-up-golden-cases
+  (doseq [{:keys [name graph memory expected]}
+          [{:name "co2"
+            :graph (co2-graph)
+            :memory {:indices-start 1
+                     :indices-stop 7
+                     :indices-step 2
+                     :content-start 3
+                     :content-stop 12
+                     :content-step 3
+                     :rest-start 15
+                     :rest-stop 23
+                     :rest-step 2}
+            :expected {:out [15 3 17 6 19 9 21]
+                       :indices [1 3 5]
+                       :content [3 6 9]
+                       :rest [15 17 19 21]}}
+           {:name "co3 partial"
+            :graph (co3-graph)
+            :memory {:a 3 :b 4 :c 5 :d nil}
+            :expected {:prod 12}}
+           {:name "co4 partial right branch"
+            :graph (co4-graph)
+            :memory {:x nil :y 12 :z 5}
+            :expected {:diff 7}}
+           {:name "co4 partial left branch"
+            :graph (co4-graph)
+            :memory {:x 3 :y 43 :z nil}
+            :expected {:neg -3}}]]
+    (testing name
+      (let [result (first (sut/propagate graph (sut/memory memory) {:partial? true}))]
+        (is (= expected
+               (memory-data result (keys expected))))
+        (when-not (contains? expected :out)
+          (is (not (contains? result :out))))))))
+
+(defn set-mean-add-graph
+  []
+  (-> (graph/empty-graph)
+      (graph/add-value :out nil)
+      (graph/add-value :base nil)
+      (graph/add-value :mask nil)
+      (graph/add-value :item nil)
+      (graph/add-value :mean nil)
+      (graph/add-value :offset nil)
+      (graph/add-operator :patch op/setitem :out [:base :mask :item])
+      (graph/add-operator :mean-op op/mean :mean [:item])
+      (graph/add-operator :item-add op/add :item [:mean :offset])))
+
+(defn trees2-graph
+  []
+  (-> (graph/empty-graph)
+      (graph/add-value :out nil)
+      (graph/add-value :indices nil)
+      (graph/add-value :content nil)
+      (graph/add-value :rest nil)
+      (graph/add-value :repeat-n nil)
+      (graph/add-value :repeat-motif nil)
+      (graph/add-operator :insert op/insert :out [:indices :content :rest])
+      (graph/add-operator :repeat op/repeat :rest [:repeat-n :repeat-motif])))
+
+(deftest python-random-propagation-golden-cases
+  (doseq [{:keys [name graph memory observed-ids expected-results]}
+          [{:name "matching/set_mean_add"
+            :graph (set-mean-add-graph)
+            :memory {:out [33 17 18 35 37 39 19]
+                     :mask [true false false true true true false]}
+            :observed-ids [:out :base :mask :item :mean :offset]
+            :expected-results
+            [{:out [33 17 18 35 37 39 19]
+              :base [nil 17 18 nil nil nil 19]
+              :mask [true false false true true true false]
+              :item [33 35 37 39]
+              :mean 36.0
+              :offset [-3.0 -1.0 1.0 3.0]}]}
+           {:name "composite/trees2"
+            :graph (trees2-graph)
+            :memory {:out [1 1 0 1 0 1 0 0 0 0]
+                     :indices [2 4 6 7 8 9]}
+            :observed-ids [:out :indices :content :rest :repeat-n :repeat-motif]
+            :expected-results
+            [{:out [1 1 0 1 0 1 0 0 0 0]
+              :indices [2 4 6 7 8 9]
+              :content [0 0 0 0 0 0]
+              :rest [1 1 1 1]
+              :repeat-n 4
+              :repeat-motif [1]}
+             {:out [1 1 0 1 0 1 0 0 0 0]
+              :indices [2 4 6 7 8 9]
+              :content 0
+              :rest [1 1 1 1]
+              :repeat-n 4
+              :repeat-motif [1]}]}]]
+    (testing name
+      (let [results (sut/propagate graph (sut/memory memory))]
+        (is (= expected-results
+               (mapv #(memory-data % observed-ids) results)))))))
 
 (deftest propagates-nested-affine-graph-upward
   (let [g (affine-graph)

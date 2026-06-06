@@ -248,6 +248,33 @@
                        x
                        (conj! result (- x previous)))))))))))
 
+(defn- trange-call
+  [start stop step]
+  (when-not (zero? step)
+    (vec (range start stop step))))
+
+(defn- trange-inversions
+  [output cond]
+  (when (and (empty? cond)
+             (vector? output)
+             (seq output)
+             (every? integer? output))
+    (let [step (if (> (count output) 1)
+                 (- (second output) (first output))
+                 1)
+          stop (+ (peek output) step)]
+      (when (and (not (zero? step))
+                 (= output (trange-call (first output) stop step)))
+        [[(first output) stop step]]))))
+
+(defn- mean-call
+  [xs]
+  (when (and (seqish? xs)
+             (seq xs)
+             (every? number? xs))
+    (/ (double (reduce + xs))
+       (count xs))))
+
 (defn- unique-indices
   [indices]
   (loop [remaining indices
@@ -679,6 +706,25 @@
                                                 (+ (first output) (count output))))))
                  [[(first output) (inc (last output))]]))}))
 
+(def trange
+  (operator
+   {:id :trange
+    :conditions [[]]
+    :call (fn [[start stop step]]
+            (or (trange-call start stop step)
+                (throw (ex-info "trange expects a non-zero step"
+                                {:start start :stop stop :step step}))))
+    :inverse (fn [output _cond-inputs cond]
+               (trange-inversions output cond))}))
+
+(def mean
+  (operator
+   {:id :mean
+    :call (fn [[xs]]
+            (or (mean-call xs)
+                (throw (ex-info "mean expects a non-empty numeric sequence"
+                                {:xs xs}))))}))
+
 (def repeat
   (operator
    {:id :repeat
@@ -845,6 +891,8 @@
    :or logical-or
    :len len
    :brange brange
+   :trange trange
+   :mean mean
    :repeat repeat
    :map map-op
    :insert insert

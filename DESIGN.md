@@ -208,12 +208,23 @@ forward and inverse functions. Conservative inverse behavior is preferred:
 unknowns stay unknown, constraints validate known values, and unresolved local
 equations produce no inverse result rather than fabricating symbolic values.
 
+Python sometimes represents unknown holes inside numeric arrays with internal
+sentinel values, for example the integer-array sentinel emitted by `setitem`
+inversion. CIWI keeps those partial native values as vectors containing `nil`
+holes. This preserves the propagation semantics while avoiding Python-specific
+sentinel data in native fixtures and graph values.
+
 ## Core Operators
 
 Alice-basis sequence semantics follow Python `test_alice.py`: `brange` is
 `(start stop)`, `repeat` is `(repetitions motif)`, `map` accepts an operator
 keyword/record as its callable child, `insert` partitions output into inserted
 indices/content/rest, and `cumsum` inverts by first differences.
+
+Additional Python core-test operators are added when a parity target requires
+them. `trange` follows Python's `(start stop step)` range operator and inverts
+strict arithmetic integer ranges. `mean` is a pure forward numeric sequence
+operator used by propagation parity; it does not fabricate inverse values.
 
 Large vector operator probes use implementation-specific fast paths only when
 they preserve the same concrete values. Elementwise operations and `cumsum` /
