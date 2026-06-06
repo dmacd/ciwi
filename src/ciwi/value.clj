@@ -137,8 +137,14 @@
 
 (defn precision-array
   [xs]
-  (if (seq xs)
-    (reduce max (map precision-scalar xs))
+  (if-let [remaining (seq xs)]
+    (loop [remaining remaining
+           best (- max-precision)]
+      (if-let [remaining (seq remaining)]
+        (let [precision (precision-scalar (first remaining))]
+          (recur (next remaining)
+                 (max best precision)))
+        best))
     (- max-precision)))
 
 (defn desc-len-int
@@ -195,6 +201,38 @@
           (into [(count x)] (first child-shapes)))))
     []))
 
+(defn- scalar-vector-kind
+  [xs]
+  (loop [remaining (seq xs)
+         kind :empty]
+    (if-let [remaining (seq remaining)]
+      (let [x (first remaining)]
+        (cond
+          (or (true? x) (false? x))
+          (if (#{:empty :bool} kind)
+            (recur (next remaining) :bool)
+            nil)
+
+          (integer? x)
+          (case kind
+            :empty (recur (next remaining) :int)
+            :int (recur (next remaining) :int)
+            :float (recur (next remaining) :float)
+            nil)
+
+          (number? x)
+          (if (#{:empty :int :float} kind)
+            (recur (next remaining) :float)
+            nil)
+
+          (string? x)
+          (if (#{:empty :string} kind)
+            (recur (next remaining) :string)
+            nil)
+
+          :else nil))
+      kind)))
+
 (defn- flatten-array
   [x]
   (if (vector? x)
@@ -218,51 +256,42 @@
 (defn- python-array-info
   [x]
   (when (vector? x)
-    (when-let [shape (rectangular-shape x)]
-      (let [flat (vec (flatten-array x))
-            kind (homogeneous-kind flat)]
-        (when kind
-          {:shape shape
-           :flat flat
-           :kind kind
-           :size (product shape)})))))
+    (if-let [kind (scalar-vector-kind x)]
+      {:shape [(count x)]
+       :flat x
+       :kind kind
+       :size (count x)
+       :data x}
+      (when-let [shape (rectangular-shape x)]
+        (let [flat (vec (flatten-array x))
+              kind (homogeneous-kind flat)]
+          (when kind
+            {:shape shape
+             :flat flat
+             :kind kind
+             :size (product shape)
+             :data x}))))))
 
 (defn- array-elias
   [xs decimals]
-  (loop [remaining xs
-         sig-dl 0.0
-         all-nan? true]
-    (if-let [s (first remaining)]
-      (if (missing-number? s)
-        (recur (rest remaining) sig-dl all-nan?)
-        (recur (rest remaining)
-               (+ sig-dl
-                  (jelias-posneg (python-rint (* (double s)
-                                                 (pow10 decimals)))))
-               false))
-      [sig-dl all-nan?])))
+  (let [scale (pow10 decimals)]
+    (loop [remaining (seq xs)
+           sig-dl 0.0
+           all-nan? true]
+      (if-let [remaining (seq remaining)]
+        (let [s (first remaining)]
+          (if (missing-number? s)
+            (recur (next remaining) sig-dl all-nan?)
+            (recur (next remaining)
+                   (+ sig-dl
+                      (jelias-posneg (python-rint (* (double s) scale))))
+                   false)))
+        [sig-dl all-nan?]))))
 
 (defn- valid-number?
   [x]
   (and (number? x)
        (not (missing-number? x))))
-
-(defn- mean
-  [xs]
-  (/ (reduce + 0.0 xs) (double (count xs))))
-
-(defn- nanmean
-  [xs]
-  (let [valid (filter valid-number? xs)]
-    (when (seq valid)
-      (mean (map double valid)))))
-
-(defn- nanstd
-  [xs]
-  (when-let [mu (nanmean xs)]
-    (let [valid (map double (filter valid-number? xs))]
-      (Math/sqrt (/ (reduce + 0.0 (map #(let [d (- % mu)] (* d d)) valid))
-                    (double (count valid)))))))
 
 (defn jgaussian
   [x mu sigma]
@@ -272,25 +301,68 @@
           (log2 (Math/sqrt (/ Math/PI 2.0)))
           (log2 (* 2.0 (double sigma))))))
 
+(defn- valid-number-stats
+  [xs]
+  (loop [remaining (seq xs)
+         n 0
+         sum 0.0]
+    (if-let [remaining (seq remaining)]
+      (let [x (first remaining)]
+        (if (valid-number? x)
+          (recur (next remaining)
+                 (inc n)
+                 (+ sum (double x)))
+          (recur (next remaining) n sum)))
+      {:n n
+       :sum sum})))
+
+(defn- variance-sum
+  [xs mu]
+  (loop [remaining (seq xs)
+         total 0.0]
+    (if-let [remaining (seq remaining)]
+      (let [x (first remaining)]
+        (if (valid-number? x)
+          (let [d (- (double x) mu)]
+            (recur (next remaining)
+                   (+ total (* d d))))
+          (recur (next remaining) total)))
+      total)))
+
+(defn- gaussian-signal-dl
+  [xs scale mu sigma]
+  (loop [remaining (seq xs)
+         total 0.0
+         all-nan? true]
+    (if-let [remaining (seq remaining)]
+      (let [x (first remaining)]
+        (if (missing-number? x)
+          (recur (next remaining) total all-nan?)
+          (recur (next remaining)
+                 (+ total (jgaussian (* (double x) scale) mu sigma))
+                 false)))
+      [total all-nan?])))
+
+(defn- mean
+  [xs]
+  (/ (reduce + 0.0 xs) (double (count xs))))
+
 (defn desc-len-1d-array-gaussian
   [xs scale]
-  (if-let [mu0 (nanmean xs)]
-    (let [mu (* mu0 scale)
-          mu-dl (jelias-posneg (python-rint mu))
-          sigma (* (or (nanstd xs) 0.0) scale)]
-      (if (zero? sigma)
-        [mu-dl true]
-        (let [sigma-dl (jelias-posneg (python-rint sigma))
-              [sig-dl all-nan?]
-              (reduce (fn [[total all-nan?] x]
-                        (if (missing-number? x)
-                          [total all-nan?]
-                          [(+ total (jgaussian (* (double x) scale) mu sigma))
-                           false]))
-                      [0.0 true]
-                      xs)]
-          [(+ sig-dl mu-dl sigma-dl) all-nan?])))
-    [0.0 true]))
+  (let [{:keys [n sum]} (valid-number-stats xs)]
+    (if (pos? n)
+      (let [mu0 (/ sum (double n))
+            mu (* mu0 scale)
+            mu-dl (jelias-posneg (python-rint mu))
+            sigma (* (Math/sqrt (/ (variance-sum xs mu0)
+                                   (double n)))
+                     scale)]
+        (if (zero? sigma)
+          [mu-dl true]
+          (let [sigma-dl (jelias-posneg (python-rint sigma))
+                [sig-dl all-nan?] (gaussian-signal-dl xs scale mu sigma)]
+            [(+ sig-dl mu-dl sigma-dl) all-nan?])))
+      [0.0 true])))
 
 (defn- rows
   [x]
@@ -502,10 +574,9 @@
             [dl all-nan?]))))))
 
 (defn- array-desc-len
-  [x {:keys [mode] :or {mode :use-gaussian}}]
-  (let [{:keys [shape flat kind size] :as info}
-        (assoc (python-array-info x) :data x)]
-    (cond
+  [{:keys [shape flat kind size] :as info}
+   {:keys [mode] :or {mode :use-gaussian}}]
+  (cond
       (zero? size)
       0.0
 
@@ -538,11 +609,7 @@
         (+ dl dec-dl))
 
       :else
-      nil)))
-
-(defn- python-array?
-  [x]
-  (boolean (python-array-info x)))
+      nil))
 
 (defn- sequential-dl
   [xs opts]
@@ -625,28 +692,29 @@
        (operator-like? x)
        (double (:dl x))
 
-       (python-array? x)
-       (double (array-desc-len x opts))
-
-       (sequential? x)
-       (double (sequential-dl (vec x) opts))
-
-       (set? x)
-       (double (sequential-dl (hashing/sort-anything x) opts))
-
-       (map? x)
-       (double (+ (if (seq x) (jelias (count x)) 0.0)
-                  (reduce + 0.0
-                          (map (fn [[k v]]
-                                 (+ (desc-len-data k opts)
-                                    (desc-len-data v opts)))
-                               (sort (fn [[left _] [right _]]
-                                       (hashing/stable-compare left right))
-                                     x)))))
-
        :else
-       (double (+ (if (seq (pr-str x)) (jelias (count (pr-str x))) 0.0)
-                  (* 8.0 (count (pr-str x)))))))))
+       (if-let [array-info (python-array-info x)]
+         (double (array-desc-len array-info opts))
+         (cond
+           (sequential? x)
+           (double (sequential-dl (vec x) opts))
+
+           (set? x)
+           (double (sequential-dl (hashing/sort-anything x) opts))
+
+           (map? x)
+           (double (+ (if (seq x) (jelias (count x)) 0.0)
+                      (reduce + 0.0
+                              (map (fn [[k v]]
+                                     (+ (desc-len-data k opts)
+                                        (desc-len-data v opts)))
+                                   (sort (fn [[left _] [right _]]
+                                           (hashing/stable-compare left right))
+                                         x)))))
+
+           :else
+           (double (+ (if (seq (pr-str x)) (jelias (count (pr-str x))) 0.0)
+                      (* 8.0 (count (pr-str x)))))))))))
 
 (defn desc-len
   ([v]

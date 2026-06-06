@@ -34,8 +34,10 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
 - `ciwi.alice-wunderbaum` adds an Alice-facing greedy runner over that core.
   It is separate from the default `ciwi.alice` no-recognizer harness.
 - `ciwi.value` now ports Python WILLIAM's scalar, structural, array, and
-  Gaussian value description length model. Alice/Wunderbaum declarations also
-  preserve Python `TaskDomain` operator DL in materialized graphs.
+  Gaussian value description length model, with a faster 1D homogeneous-vector
+  scoring path that preserves the Python DL formula. Alice/Wunderbaum
+  declarations also preserve Python `TaskDomain` operator DL in materialized
+  graphs.
 - Python-scale `simple_repeat`, `insert_repeat`, `insert_repeat2`,
   `insert_repeat3`, `repeat_with_noise`, `simply_linear`, `sprinkled`,
   `increasing_runs`, and `map_negate` pass through the injected Alice operator
@@ -55,7 +57,10 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
 - Wunderbaum candidate summaries defer selected-expression realization until a
   candidate is accepted or explicitly inspected. Value DLs are cached across
   each candidate stream, existing `Value` records use identity cache keys, and
-  delayed-builder stable value keys are cached by `Value` identity.
+  delayed-builder stable value keys are cached by `Value` identity. These
+  caches are explicit and caller-owned, so parallel local searches can choose
+  private caches for low contention or shared value caches for reuse over the
+  same immutable graph values.
 - Delayed graph materialization now skips non-executable operator
   calls/inverses, matching Python's invalid-probe behavior, and numeric inverse
   shape mismatches no longer generate `nil` children.
@@ -126,6 +131,9 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   warm timing.
 - For performance profiling, start with pure Clojure large-array value-DL
   paths, structural-key/de-dupe work, and any remaining repeated MDL scoring.
-  Do not solve these gaps with recognizer templates or task-specific shortcuts.
+  The current 1D vector DL path has been tightened; the next isolated runtime
+  target is structural-key/de-dupe, preferably with cached exact fingerprints
+  and collision-safe fallback rather than ad hoc hash-only keys. Do not solve
+  these gaps with recognizer templates or task-specific shortcuts.
 - Keep updating `alice-test-parity.md` with measured core CIWI rate, exact
   selected solution, timing, and Python comparison for each row.

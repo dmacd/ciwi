@@ -36,7 +36,7 @@ debugging and performance comparison only. They are not Alice parity evidence.
 | `repeat_with_noise` | 501 | 90.0 | 96.279777 | 5.2 | passes greedy core, 1 step / 1 candidate; matches Python one-step plain insert under Python DL | 96.279777 | 4.8 | `[:insert [100] -1 C45x500]` | 99.103288 | 16 | `[:insert [100] -1 [:repeat 500 [45]]]` | `(Array[int] (insert Array[int] int Array[int]))` |
 | `simply_linear` | 1,000 | 97.0 | 99.506286 | 12.0 | passes greedy core, 2 steps / 2 candidates; matches Python cumsum/insert shape under Python DL | 99.506286 | 37.1 | `[:cumsum [:insert [0] -18 C6x999]]` | 99.785287 | 122 | `[:add [:mult [:brange 0 1000] 6] -18]` | `(Array[int] (cumsum (Array[int] (insert Array[int] int Array[int]))))` |
 | `sprinkled` | 10,000 | 75.0 | 79.294650 | 6 | passes greedy core, 1 step / 1 candidate; matches Python plain insert shape | 79.294650 | 61.5 | `[:insert S 1 C0x9900]` | 93.074107 | 249 | `[:insert S 1 [:repeat 9900 [0]]]` | `(Array[int] (insert Array[int] int Array[int]))` |
-| `increasing_runs` | 125,250 | 99.9 | 99.905472 | 88 | passes greedy core, 3 steps / 3 candidates; matches Python insert/cumsum/cumsum shape | 99.905472 | 924 | `[:insert [:cumsum [:cumsum D_inc]] 64 C123x124750]` | 99.274754 | 2,705 | `[:insert R 64 [:repeat 124750 [123]]]` | `(Array[int] (insert (Array[int] (cumsum (Array[int] (cumsum Array[int])))) int Array[int]))` |
+| `increasing_runs` | 125,250 | 99.9 | 99.905472 | 88 | passes greedy core, 3 steps / 3 candidates; matches Python insert/cumsum/cumsum shape | 99.905472 | 765 | `[:insert [:cumsum [:cumsum D_inc]] 64 C123x124750]` | 99.274754 | 2,705 | `[:insert R 64 [:repeat 124750 [123]]]` | `(Array[int] (insert (Array[int] (cumsum (Array[int] (cumsum Array[int])))) int Array[int]))` |
 | `map_negate` | 1,000 | 98.0 | 99.521131 | 12 | passes greedy core, 2 steps / 2 candidates; matches Python cumsum/insert shape | 99.521131 | 43.5 | `[:cumsum [:insert [0] 0 C-1x999]]` | 99.826700 | 66 | `[:mult [:brange 0 1000] -1]` | `(Array[int] (cumsum (Array[int] (insert Array[int] int Array[int]))))` |
 
 ## Exact Long Values
@@ -180,7 +180,9 @@ Current root-cause notes from the core path:
   construction, and an O(n * unique) unconditioned `getitem` inverse. CIWI now
   carries inferred specs on materialized `Value` records, caches delayed-builder
   value keys by `Value` identity, and computes the `getitem` inverse index map
-  in one pass.
+  in one pass. The 1D homogeneous-vector DL path also avoids double array
+  analysis, avoids flattening already-flat vectors, and computes Gaussian
+  statistics with direct passes over the vector.
 - Python's Wunderbaum operator elements include deterministic tiny additive DL
   jitter from `np.random.default_rng(42).random() * 1e-6`. This is not a
   semantic feature, but it is part of Python's search ordering. Without it,
@@ -210,8 +212,8 @@ Current root-cause notes from the core path:
   Python Alice basis it reaches the same cumsum/insert compression shape as
   Python WILLIAM.
 - `increasing_runs` reaches the Python insert/cumsum/cumsum shape at the same
-  compression rate. The remaining warm-runtime gap is now mostly pure Clojure
-  large-array DL/scoring and structural de-duplication work versus Python's
+  compression rate. The remaining warm-runtime gap is now mostly structural
+  de-duplication plus residual pure Clojure large-array scoring versus Python's
   NumPy/Numba-backed numeric paths.
 - All Python `test_alice.py` sequence rows now have core CIWI compression
   behavior evidence. Next work should either profile the remaining runtime gaps

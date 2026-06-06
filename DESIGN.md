@@ -240,6 +240,18 @@ hash work on cache hits. Raw non-`Value` inputs keep value-based cache keys.
 shares the value-DL cache across a candidate stream but creates fresh node
 caches per graph.
 
+These caches are explicit, caller-owned atoms rather than globals. Atomic
+updates make them safe to share across threads, and duplicate races are
+semantically harmless because cached values are deterministic. For parallel
+Wunderbaum this gives two valid modes: each search can own a private cache to
+avoid contention, or several searches can share a read-through value cache when
+they operate over the same immutable `Value` objects. Node-DL caches remain
+graph-local and should not be shared across graph versions. Future bounded
+local Wunderbaum runs on a large graph should preserve `Value` object identity
+for unchanged leaves, use per-search local caches by default, and optionally
+layer a shared value-analysis/value-DL cache above them if recomputation
+dominates contention.
+
 CIWI's value description length is a direct port of Python WILLIAM's
 `Value.desc_len(mode="use_gaussian")` model. Clojure vectors that are
 rectangular and homogeneous in numbers, booleans, or strings are treated as
@@ -249,6 +261,11 @@ integer/float precision handling, numeric-array Elias coding, 1D Gaussian
 array coding, 2D multivariate Gaussian point coding, simple 3D channel-wise
 Gaussian coding, boolean-array coding, string-array coding, and the default
 non-Gaussian mode used by Python's lower-level `description.desc_len`.
+The 1D vector path avoids flattening/copying already-flat vectors and computes
+numeric Gaussian statistics with direct passes over the vector rather than
+lazy filtered sequence chains. This is an implementation optimization, not a
+symbolic summary: values are still fully realized and scored with the same DL
+formula.
 
 The exact Elias delta helper remains available as `ciwi.value/elias-discrete`
 for enumerator index ordering. Alice/Wunderbaum operator declarations use
