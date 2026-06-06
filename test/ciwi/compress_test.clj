@@ -8,7 +8,8 @@
 (defn one-target
   [x]
   (-> (graph/empty-graph)
-      (graph/add-value :out x)))
+      (graph/add-value :out x)
+      (graph/set-roots [:out])))
 
 (defn recognizer-opts
   ([] (recognizer-opts {}))
@@ -58,7 +59,8 @@
   (let [g (-> (graph/empty-graph)
               (graph/add-value :range [0 1 2 3 4])
               (graph/add-value :repeat [:z :z :z :z])
-              (graph/add-value :affine [10 12 14 16 18]))
+              (graph/add-value :affine [10 12 14 16 18])
+              (graph/set-roots [:range :repeat :affine]))
         exhaustive (sut/compress-exhaustive
                     g
                     (recognizer-opts {:parallel? false}))

@@ -1,6 +1,6 @@
 # CIWI Plan
 
-Last updated: 2026-06-05.
+Last updated: 2026-06-06.
 
 ## Objective
 
@@ -12,13 +12,14 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
 
 - Current local state has Python-scale core parity evidence for all sequence
   rows in Python `test_alice.py`, plus the first round of warm-runtime fixes
-  from profiling the largest gaps.
+  from profiling the largest gaps, and the first Python bottleneck golden MDL
+  parity slice.
 - The implementation includes Python-scale core Wunderbaum parity rows, greedy
   Alice/Wunderbaum task runs, lazy best-first node tuple enumeration, a
   Python-compatible value DL model, Alice operator DL alignment, per-run DL and
   value-key caching, deferred selected-expression realization, threshold-aware
   candidate yielding, and several translation/performance fixes; tests pass
-  locally with 122 tests and 598 assertions.
+  locally with 123 tests and 610 assertions.
 
 ## Current State
 
@@ -41,7 +42,8 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
 - Large-vector primitive probes now use strict vector loops where that is
   faster and preserve the original simple sequence paths for small vectors.
   This is an execution optimization for the Python Alice operator basis, not a
-  new recognizer or shortcut.
+  new recognizer or shortcut. Revisit these paths after CIWI has a proper dense
+  primitive array layer; they may become unnecessary complexity.
 - Python-scale `simple_repeat`, `insert_repeat`, `insert_repeat2`,
   `insert_repeat3`, `repeat_with_noise`, `simply_linear`, `sprinkled`,
   `increasing_runs`, and `map_negate` pass through the injected Alice operator
@@ -97,12 +99,23 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   summary to avoid double-counting shared leaves; synthetic defaults such as
   `1` and `1.5` are normal permeable values and are charged if selected, as in
   Python's bottleneck accounting.
+- Graphs now carry explicit scored roots. Root-ness is not inferred from
+  parent links, so a target value can also be reused as a child in another
+  target's selected expression.
+- `ciwi.mdl/graph-description` now implements Python-style cross-section MDL
+  selection. It jointly enumerates raw-vs-option choices across a section,
+  shares already-seen value descriptions, and propagates traces to stop cycles.
+  The small Python `test_bottleneck.py::test_min_desc_len` section fixtures
+  `section1` through `section4` now match Python DL constants and selected
+  operators.
 
 ## Roadmap
 
 1. Keep the documentation split clean. `PLAN.md` stays current after each turn,
    `DESIGN.md` records technical decisions, `AGENTS.md` records workflow rules,
-   `style.md` records coding style, and `alice-test-parity.md` records evidence.
+   `style.md` records coding style, `alice-test-parity.md` records Alice
+   evidence, and `PYTHON-TEST-ROADMAP.md` records broader Python WILLIAM test
+   parity sequencing.
 2. Complete a straight Clojure port of the Python Wunderbaum/Alice path before
    adding resource-bounded local semantics. Preserve the Python search concepts:
    operator/count inputs, typed specs, generalized conditions, node-tuple
@@ -128,9 +141,14 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
 
 ## Near-Term Next Tasks
 
-- Decide the next parity target after sequence rows: either continue profiling
-  the remaining warm-runtime gaps in the core Alice/Wunderbaum path, or broaden
-  parity beyond `test_alice.py` sequence compression tasks.
+- Continue Python `test_bottleneck.py::test_min_desc_len` parity with the
+  larger `mult_negate_add` and `regression` fixtures, and decide whether
+  `mult_negate` is useful enough to port now given that its expected selection
+  is the empty/raw bottleneck.
+- After bottleneck parity, move to propagation golden cases, delayed-builder
+  exact materialization, Wunderbaum `setitem/repeat/negate`, and
+  composite/condition fixture expansion. The broader test map is
+  `PYTHON-TEST-ROADMAP.md`.
 - If runtime parity remains the immediate priority, focus on `increasing_runs`,
   `sprinkled`, `simply_linear`, and `map_negate`. `insert_repeat3` now reaches
   the Python rate in seven accepted steps and is faster than the recorded Python

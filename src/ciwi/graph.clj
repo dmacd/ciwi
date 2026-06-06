@@ -2,11 +2,11 @@
   (:require [ciwi.operator :as operator]
             [ciwi.value :as value]))
 
-(defrecord Graph [nodes])
+(defrecord Graph [nodes roots])
 
 (defn empty-graph
   []
-  (->Graph {}))
+  (->Graph {} []))
 
 (defn value-node?
   [node]
@@ -40,6 +40,10 @@
   [g id output]
   (assoc-in g [:nodes id] (value-node id output)))
 
+(defn roots
+  [g]
+  (:roots g))
+
 (defn- require-value-node
   [g id role]
   (let [n (node g id)]
@@ -69,6 +73,25 @@
               (assoc-in [:nodes id] (operator-node id op parent children))
               (update-in [:nodes parent :options] conj id))
           children))
+
+(defn- require-root-value
+  [g id]
+  (require-value-node g id :root)
+  id)
+
+(defn set-roots
+  [g root-ids]
+  (let [root-ids (mapv #(require-root-value g %) root-ids)]
+    (assoc g :roots root-ids)))
+
+(defn add-root
+  [g id]
+  (require-root-value g id)
+  (update g :roots (fn [roots]
+                     (let [roots (vec roots)]
+                       (if (some #{id} roots)
+                         roots
+                         (conj roots id))))))
 
 (defn unique-id
   [g base]
@@ -155,13 +178,6 @@
                   (cond-> result
                     include? (conj id)))))
        result))))
-
-(defn roots
-  [g]
-  (->> (value-ids g)
-       (filter (fn [id]
-                 (empty? (:parents (node g id)))))
-       vec))
 
 (defn leaves
   ([g start-id]

@@ -42,15 +42,17 @@
   [task]
   (let [target-ids (mapv #(indexed-id :target %) (range (count (:targets task))))
         free-ids (mapv #(indexed-id :free %) (range (count (:free-values task))))
+        value-ids (vec (concat target-ids free-ids))
         g (reduce (fn [g [id value]]
                     (graph/add-value g id value))
                   (graph/empty-graph)
                   (concat (map vector target-ids (:targets task))
-                          (map vector free-ids (:free-values task))))]
+                          (map vector free-ids (:free-values task))))
+        g (graph/set-roots g value-ids)]
     {:graph g
      :target-ids target-ids
      :free-ids free-ids
-     :value-ids (vec (concat target-ids free-ids))}))
+     :value-ids value-ids}))
 
 (defn compression-rate
   [initial-dl compressed-dl]

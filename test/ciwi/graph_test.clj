@@ -9,7 +9,8 @@
       (sut/add-value :out nil)
       (sut/add-value :x nil)
       (sut/add-value :y nil)
-      (sut/add-operator :add-out op/add :out [:x :y])))
+      (sut/add-operator :add-out op/add :out [:x :y])
+      (sut/set-roots [:out])))
 
 (deftest graph-keeps-william-bipartite-shape
   (let [g (add-graph)]

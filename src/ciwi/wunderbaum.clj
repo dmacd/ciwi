@@ -148,10 +148,11 @@
 (defn initial-state
   [targets]
   (let [target-ids (mapv #(indexed-id :target %) (range (count targets)))
-        g (reduce (fn [g [id target]]
-                    (graph/add-value g id target))
-                  (graph/empty-graph)
-                  (map vector target-ids targets))
+        g (-> (reduce (fn [g [id target]]
+                        (graph/add-value g id target))
+                      (graph/empty-graph)
+                      (map vector target-ids targets))
+              (graph/set-roots target-ids))
         memory (into {}
                      (map (fn [[id target]]
                             [id (propagation/entry target)]))

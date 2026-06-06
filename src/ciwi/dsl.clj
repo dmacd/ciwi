@@ -66,7 +66,8 @@
                  (let [id (next-id :v)]
                    [(graph/add-value g id (value/value form)) id])))]
        (let [[g root-id] (build (graph/empty-graph) expr)]
-         {:graph g :root root-id})))))
+         {:graph (graph/set-roots g [root-id])
+          :root root-id})))))
 
 (defn graph
   [expr]
@@ -106,7 +107,8 @@
 (defn to-data
   "Serialize graph structure to EDN-friendly data. Operators are stored by id."
   [g]
-  {:nodes
+  {:roots (graph/roots g)
+   :nodes
    (into {}
          (map (fn [[id n]]
                 [id (case (:kind n)
@@ -127,10 +129,12 @@
           :or {registry op/registry}}]
    (let [value-nodes (filter (fn [[_ n]] (= :value (:kind n))) (:nodes data))
          op-nodes (filter (fn [[_ n]] (= :operator (:kind n))) (:nodes data))]
-     (reduce (fn [g [id n]]
-               (graph/add-operator g id (get registry (:operator n)) (:parent n) (:children n)))
-             (reduce (fn [g [id n]]
-                       (graph/add-value g id (:value n)))
-                     (graph/empty-graph)
-                     value-nodes)
-             op-nodes))))
+     (graph/set-roots
+      (reduce (fn [g [id n]]
+                (graph/add-operator g id (get registry (:operator n)) (:parent n) (:children n)))
+              (reduce (fn [g [id n]]
+                        (graph/add-value g id (:value n)))
+                      (graph/empty-graph)
+                      value-nodes)
+              op-nodes)
+      (:roots data)))))

@@ -10,7 +10,8 @@
 (defn one-target-graph
   [x]
   (-> (graph/empty-graph)
-      (graph/add-value :out x)))
+      (graph/add-value :out x)
+      (graph/set-roots [:out])))
 
 (defn recognizer-opts
   ([] (recognizer-opts {}))
@@ -118,7 +119,8 @@
 (deftest bounded-rewrites-over-target-set-converge-to-exhaustive-result
   (let [g (-> (graph/empty-graph)
               (graph/add-value :range [0 1 2 3 4 5])
-              (graph/add-value :flat [9 9 9 9 9 9]))
+              (graph/add-value :flat [9 9 9 9 9 9])
+              (graph/set-roots [:range :flat]))
         exhaustive (sut/exhaustive-converge
                     g
                     (recognizer-opts {:parallel? false}))

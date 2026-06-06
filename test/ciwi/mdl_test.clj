@@ -73,7 +73,8 @@
   (let [[g _] (-> (graph/empty-graph)
                   (graph/add-value :range [0 1 2 3])
                   (graph/add-value :raw-large [100 200 300])
-                  (graph/add-derived-option :range op/brange [0 4]))]
+                  (graph/add-derived-option :range op/brange [0 4]))
+        g (graph/set-roots g [:range :raw-large])]
     (is (= (+ (:dl (sut/node-dl g :range))
               (:dl (sut/node-dl g :raw-large)))
            (sut/graph-dl g)))
@@ -90,7 +91,8 @@
         [g1 _] (graph/add-derived-option g0 :shared op/brange [0 8])
         g2 (-> g1
                (graph/add-operator :a-concat op/concat :a [:shared :left])
-               (graph/add-operator :b-concat op/concat :b [:shared :right]))
+               (graph/add-operator :b-concat op/concat :b [:shared :right])
+               (graph/set-roots [:a :b]))
         shared-dl (:dl (sut/node-dl g2 :shared))
         root-summed-dl (+ (:dl (sut/node-dl g2 :a))
                           (:dl (sut/node-dl g2 :b)))
@@ -107,3 +109,86 @@
     (testing "graph-level MDL charges the selected shared node once"
       (is (approx= shared-graph-dl (sut/graph-dl g2)))
       (is (approx= (+ shared-graph-dl shared-dl) root-summed-dl)))))
+
+(defn- section1-graph
+  []
+  (-> (graph/empty-graph)
+      (graph/add-value :out64 64)
+      (graph/add-value :v3 3)
+      (graph/add-value :v4 4)
+      (graph/add-value :out15 15)
+      (graph/add-value :v1 1)
+      (graph/add-operator :out64-add op/add :out64 [:v3 :v4])
+      (graph/add-operator :out15-sub op/sub :out15 [:v4 :v1])
+      (graph/set-roots [:out64 :out15])))
+
+(defn- section2-graph
+  []
+  (-> (graph/empty-graph)
+      (graph/add-value :out64 64)
+      (graph/add-value :v3 3)
+      (graph/add-value :v4 4)
+      (graph/add-value :out15 15)
+      (graph/add-operator :out64-add op/add :out64 [:v3 :v4])
+      (graph/add-operator :out15-sub op/sub :out15 [:v4 :out64])
+      (graph/set-roots [:out64 :out15])))
+
+(defn- section3-graph
+  []
+  (-> (graph/empty-graph)
+      (graph/add-value :out15 15)
+      (graph/add-value :v4 4)
+      (graph/add-value :out64 64)
+      (graph/add-value :v3 3)
+      (graph/add-operator :out15-sub op/sub :out15 [:v4 :out64])
+      (graph/add-operator :out64-add op/add :out64 [:v3 :v4])
+      (graph/add-operator :out15-negate op/negate :out15 [:v3])
+      (graph/set-roots [:out15])))
+
+(defn- section4-graph
+  []
+  (-> (graph/empty-graph)
+      (graph/add-value :out64 64)
+      (graph/add-value :v3 3)
+      (graph/add-value :v15 15)
+      (graph/add-value :v4 4)
+      (graph/add-value :out1234 1234)
+      (graph/add-operator :out64-add op/add :out64 [:v3 :v15])
+      (graph/add-operator :v15-sub op/sub :v15 [:v4 :out64])
+      (graph/add-operator :out1234-negate op/negate :out1234 [:v15])
+      (graph/set-roots [:out64 :out1234])))
+
+(deftest python-bottleneck-section-golden-cases
+  (doseq [{:keys [name graph expected-dl expected-selected expected-expressions]}
+          [{:name "section1"
+            :graph (section1-graph)
+            :expected-dl 26.280150129207975
+            :expected-selected [:out64-add :out15-sub]
+            :expected-expressions {:out64 [:add 3 4]
+                                   :out15 [:sub 4 1]}}
+           {:name "section2"
+            :graph (section2-graph)
+            :expected-dl 19.954900924594817
+            :expected-selected [:out64-add :out15-sub]
+            :expected-expressions {:out64 [:add 3 4]
+                                   :out15 [:sub 4 [:add 3 4]]}}
+           {:name "section3"
+            :graph (section3-graph)
+            :expected-dl 9.664933050786377
+            :expected-selected [:out15-negate]
+            :expected-expressions {:out15 [:negate 3]}}
+           {:name "section4"
+            :graph (section4-graph)
+            :expected-dl 22.766942937463458
+            :expected-selected [:out64-add :out1234-negate]
+            :expected-expressions {:out64 [:add 3 15]
+                                   :out1234 [:negate 15]}}]]
+    (testing name
+      (let [description (sut/graph-description graph)]
+        (is (approx= expected-dl (:dl description)))
+        (is (= expected-selected (:selected description)))
+        (is (= expected-expressions
+               (into {}
+                     (map (fn [root-id]
+                            [root-id (sut/selected-expression graph root-id)])
+                          (graph/roots graph)))))))))

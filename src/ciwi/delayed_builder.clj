@@ -256,7 +256,9 @@
                 op-id (graph/unique-id g (keyword (str (name root-id) "-" (name (:id operator)))))
                 g (graph/add-value g root-id output)
                 memory (assoc-memory memory root-id output)
-                g (graph/add-operator g op-id graph-op root-id child-ids)]
+                g (-> g
+                      (graph/add-operator op-id graph-op root-id child-ids)
+                      (graph/add-root root-id))]
             {:graph g
              :memory memory
              :root root-id

@@ -58,66 +58,224 @@
                      best))))]
        (best-value id #{})))))
 
-(defn- choice-dl
-  [g context choice seen-value-ids]
-  (let [value-id (:node-id choice)]
-    (if (contains? seen-value-ids value-id)
-      [seen-value-ids 0.0]
-      (let [seen-value-ids (conj seen-value-ids value-id)]
-        (case (:kind choice)
-          :raw
-          [seen-value-ids
-           (or (:dl choice)
-               (value-dl context (get-in g [:nodes value-id :value])))]
+(defn- raw-choice
+  [context g value-id]
+  (let [raw-dl (value-dl context (get-in g [:nodes value-id :value]))]
+    {:kind :raw
+     :node-id value-id
+     :dl raw-dl}))
 
-          :operator
-          (let [op-node (graph/node g (:op-id choice))
-                op-dl (:dl (:operator op-node))
-                [seen-value-ids child-dl]
-                (reduce (fn [[seen total] child-choice]
-                          (let [[seen child-dl] (choice-dl g context child-choice seen)]
-                            [seen (+ total child-dl)]))
-                        [seen-value-ids 0.0]
-                        (:child-choices choice))]
-            [seen-value-ids (+ op-dl child-dl)]))))))
+(defn- operator-choice
+  [g value-id op-id]
+  (let [op-node (graph/node g op-id)]
+    {:kind :operator
+     :node-id value-id
+     :op-id op-id
+     :children (:children op-node)}))
+
+(defn- option-combinations
+  [g value-ids]
+  (letfn [(step [ids]
+            (if-let [id (first ids)]
+              (let [n (graph/node g id)]
+                (for [op-id (cons nil (:options n))
+                      tail (step (rest ids))]
+                  (cons op-id tail)))
+              '(())))]
+    (step value-ids)))
+
+(declare section-description)
+
+(defn- merge-trace
+  [child-traces child-id parent-trace]
+  (if (contains? child-traces child-id)
+    (update child-traces child-id into parent-trace)
+    child-traces))
+
+(defn- append-child
+  [g context parent-trace children seen child-traces child-id]
+  (cond
+    (contains? parent-trace child-id)
+    {:children children
+     :seen seen
+     :child-traces child-traces
+     :cycle-dl (value-dl context (get-in g [:nodes child-id :value]))
+     :cycle-choice (raw-choice context g child-id)}
+
+    (contains? seen child-id)
+    {:children children
+     :seen seen
+     :child-traces (merge-trace child-traces child-id parent-trace)
+     :cycle-dl 0.0}
+
+    :else
+    {:children (conj children child-id)
+     :seen (conj seen child-id)
+     :child-traces (assoc child-traces child-id (set parent-trace))
+     :cycle-dl 0.0}))
+
+(defn- score-operator
+  [g context value-id op-id section-traces state]
+  (let [op-node (graph/node g op-id)
+        children (:children op-node)
+        stop? (empty? children)]
+    (if stop?
+      (let [choice (raw-choice context g value-id)]
+        (-> state
+            (update :dl + (:dl choice))
+            (assoc-in [:choices value-id] choice)))
+      (let [op-dl (:dl (:operator op-node))
+            choice (operator-choice g value-id op-id)
+            parent-trace (get section-traces value-id #{value-id})]
+        (reduce (fn [state child-id]
+                  (let [result (append-child g
+                                             context
+                                             parent-trace
+                                             (:children state)
+                                             (:seen state)
+                                             (:child-traces state)
+                                             child-id)]
+                    (cond-> (assoc state
+                                    :children (:children result)
+                                    :seen (:seen result)
+                                    :child-traces (:child-traces result))
+                      (pos? (:cycle-dl result))
+                      (update :dl + (:cycle-dl result))
+
+                      (:cycle-choice result)
+                      (assoc-in [:choices child-id] (:cycle-choice result)))))
+                (-> state
+                    (update :dl + op-dl)
+                    (assoc-in [:choices value-id] choice)
+                    (update :selected conj op-id))
+                children)))))
+
+(defn- score-combination
+  [g context value-ids op-ids seen traces]
+  (let [section-seen (into seen value-ids)
+        section-traces (reduce (fn [acc value-id]
+                                 (update acc value-id
+                                         (fn [trace]
+                                           (conj (set trace) value-id))))
+                               traces
+                               value-ids)
+        base-state {:dl 0.0
+                    :choices {}
+                    :selected []
+                    :children []
+                    :seen section-seen
+                    :child-traces {}}
+        state (reduce (fn [state [value-id op-id]]
+                        (if op-id
+                          (score-operator g context value-id op-id section-traces state)
+                          (let [choice (raw-choice context g value-id)]
+                            (-> state
+                                (update :dl + (:dl choice))
+                                (assoc-in [:choices value-id] choice)))))
+                      base-state
+                      (map vector value-ids op-ids))]
+    (if (empty? (:children state))
+      (select-keys state [:dl :choices :selected])
+      (let [child-result (section-description g
+                                              context
+                                              (:children state)
+                                              (:seen state)
+                                              (:child-traces state))]
+        {:dl (+ (:dl state) (:dl child-result))
+         :choices (merge (:choices state) (:choices child-result))
+         :selected (into (:selected state) (:selected child-result))}))))
+
+(defn- section-description
+  [g context value-ids seen traces]
+  (if (empty? value-ids)
+    {:dl 0.0
+     :choices {}
+     :selected []}
+    (reduce (fn [best op-ids]
+              (let [candidate (score-combination g context value-ids op-ids seen traces)]
+                (if (< (:dl candidate) (:dl best))
+                  candidate
+                  best)))
+            {:dl Double/POSITIVE_INFINITY
+             :choices {}
+             :selected []}
+            (option-combinations g value-ids))))
+
+(defn graph-description
+  "Return the best graph-level description across explicit roots.
+
+  Unlike `node-dl`, this minimizes over whole cross-sections so sibling roots
+  can choose options that share downstream value descriptions, matching Python
+  WILLIAM's `ValueMDL` behavior.
+  "
+  ([g]
+   (graph-description g {}))
+  ([g context]
+   (let [context (scoring-context context)]
+     (section-description g context (graph/roots g) #{} {}))))
 
 (defn graph-dl
-  "Return the selected graph DL across all roots, charging shared selected value
-  nodes once."
+  "Return the selected graph DL across explicit roots."
   ([g]
    (graph-dl g {}))
   ([g context]
-   (let [context (scoring-context context)]
-     (second
-      (reduce (fn [[seen total] root-id]
-                (let [[seen root-dl] (choice-dl g
-                                                context
-                                                (:choice (node-dl g root-id context))
-                                                seen)]
-                  [seen (+ total root-dl)]))
-              [#{} 0.0]
-              (graph/roots g))))))
+   (:dl (graph-description g context))))
+
+(defn- root-choice-map
+  [g context]
+  (when (seq (graph/roots g))
+    (:choices (graph-description g context))))
+
+(defn- selected-root?
+  [g id]
+  (some #{id} (graph/roots g)))
+
+(defn- choice-for
+  ([g id context]
+   (choice-for g id context (root-choice-map g context)))
+  ([g id context choices]
+   (if (selected-root? g id)
+     (or (get choices id)
+         (:choice (node-dl g id context)))
+     (:choice (node-dl g id context)))))
 
 (defn selected-operators
   ([g id]
    (selected-operators g id {}))
   ([g id context]
-   (letfn [(collect [choice]
+   (let [context (scoring-context context)
+         choices (when (selected-root? g id)
+                   (root-choice-map g context))]
+     (letfn [(collect [choice trace]
              (if (= :operator (:kind choice))
                (cons (:op-id choice)
-                     (mapcat collect (:child-choices choice)))
+                     (mapcat (fn [child-id]
+                               (if (contains? trace child-id)
+                                 ()
+                                 (collect (or (get choices child-id)
+                                              (:choice (node-dl g child-id context)))
+                                          (conj trace child-id))))
+                             (:children choice)))
                ()))]
-     (vec (collect (:choice (node-dl g id (scoring-context context))))))))
+       (vec (collect (choice-for g id context choices) #{id}))))))
 
 (defn selected-expression
   ([g id]
    (selected-expression g id {}))
   ([g id context]
    (let [context (scoring-context context)]
-     (letfn [(expr [choice]
+     (let [choices (when (selected-root? g id)
+                     (root-choice-map g context))]
+       (letfn [(expr [choice trace]
                (if (= :operator (:kind choice))
                  (let [op-node (graph/node g (:op-id choice))]
                    (into [(:id (:operator op-node))]
-                         (map expr (:child-choices choice))))
+                         (map (fn [child-id]
+                                (if (contains? trace child-id)
+                                  [:ref child-id]
+                                  (expr (or (get choices child-id)
+                                            (:choice (node-dl g child-id context)))
+                                        (conj trace child-id))))
+                              (:children choice))))
                  (get-in g [:nodes (:node-id choice) :value :data])))]
-       (expr (:choice (node-dl g id context)))))))
+         (expr (choice-for g id context choices) #{id}))))))

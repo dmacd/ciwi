@@ -41,7 +41,8 @@
   (let [g (-> (graph/empty-graph)
               (graph/add-value :a 1)
               (graph/add-value :b 2)
-              (graph/add-value :c 3))
+              (graph/add-value :c 3)
+              (graph/set-roots [:a :b :c]))
         tuples (sut/node-tuples g {:max-tuple-len 2
                                    :max-results 7})]
     (is (= [[0] [0 0] [1] [2] [0 1] [0 2] [1 0]]

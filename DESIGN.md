@@ -63,10 +63,12 @@ raw value or as `(brange 0 4)`:
     (graph/add-value :target [0 1 2 3])
     (graph/add-value :start 0)
     (graph/add-value :stop 4)
-    (graph/add-operator :target-brange op/brange :target [:start :stop]))
+    (graph/add-operator :target-brange op/brange :target [:start :stop])
+    (graph/set-roots [:target]))
 
 ;; Shape of (:nodes graph):
-{:nodes
+{:roots [:target]
+ :nodes
  {:target {:id :target
            :kind :value
            :value (value/value [0 1 2 3])
@@ -180,9 +182,12 @@ The graph keeps WILLIAM's bipartite shape:
 - operator nodes contain `ciwi.operator/Operator`
 - a value node has zero or more operator `:options`
 - an operator has one parent value and zero or more child values
+- `:roots` are the explicit target value nodes whose descriptions are scored
 
 Nodes are maps inside an immutable `Graph` record. Edges are ids rather than
-object references. A graph edit returns a new graph.
+object references. A graph edit returns a new graph. Roots are not inferred
+from parent links: a target value may also be reused as a child of another
+target's selected expression.
 
 `:options` are alternative descriptions for a value, not simultaneously chosen
 subgraphs. The selected graph is derived by MDL selection. A global shared-DAG
@@ -216,7 +221,9 @@ first-difference construction switch to strict transient-backed loops for
 large vectors, while small vectors stay on Clojure's simpler `mapv`/sequence
 paths. `concat` avoids lazy concatenation by building directly into a vector.
 These are primitive execution optimizations, not recognizers or symbolic
-scoring shortcuts.
+scoring shortcuts. They should be re-examined after CIWI has a proper dense
+primitive array backend, because that backend should own this kind of
+large-vector execution performance.
 
 CIWI also contains broader sequence-edit and boolean infrastructure where it is
 useful for graph rewrite tests. Those operators are available to callers that
@@ -232,11 +239,14 @@ min(raw-value-dl,
     op-dl + sum(best child value dls) for each operator option)
 ```
 
-This is the Clojure analogue of WILLIAM's bottleneck/minimum-description
-selection, expressed as a memoized pure dynamic program. `ciwi.mdl/graph-dl`
-projects selected descriptions from all graph roots and charges each selected
-value node once, so shared selected sub-DAGs reduce global DL across a set of
-roots.
+This local score is used by rewrite proposal heuristics. `ciwi.mdl/graph-dl`
+uses `ciwi.mdl/graph-description`, a graph-level cross-section minimizer that
+matches Python WILLIAM's `ValueMDL`: for each section of target value nodes it
+enumerates raw-vs-option choices together, recursively scores the next value
+section, shares already-seen value descriptions for free, and trace-stops
+cycles by charging the bottleneck value raw. This matters when a root's local
+best choice is raw but selecting an operator participates in a cheaper shared
+section across several roots.
 
 Description-length caching is caller-owned rather than record-mutable. Python
 WILLIAM caches `Value.desc_len()` on the `Value` object; CIWI keeps values
