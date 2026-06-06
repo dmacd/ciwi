@@ -131,18 +131,6 @@
           {}
           (map vector gen-cond conditioned-nodes)))
 
-(defn- result-key
-  [{:keys [graph memory]}]
-  [(->> (graph/roots graph)
-        (sort-by pr-str)
-        (map #(graph/structural-key graph %))
-        vec)
-   (->> memory
-        (map (fn [[node-id entry]]
-               [node-id (value/datum (entry-value entry))]))
-        (sort-by (comp pr-str first))
-        vec)])
-
 (defn- raw-value-key
   [x]
   (let [v (value/value x)]
@@ -160,6 +148,51 @@
            (swap! cache assoc k value-key)
            value-key)))
      (raw-value-key x))))
+
+(defn- compare-structural-keys
+  [left right]
+  (let [c (compare (hash left) (hash right))]
+    (cond
+      (not (zero? c)) c
+      (= left right) 0
+      :else (compare (pr-str left) (pr-str right)))))
+
+(defn- result-structural-key
+  [graph root-id]
+  (letfn [(key* [id trace]
+            (if (contains? trace id)
+              [:cycle]
+              (let [n (graph/node graph id)
+                    trace (conj trace id)]
+                (cond
+                  (graph/value-node? n)
+                  [:value
+                   (:data (:value n))
+                   (mapv #(key* % trace) (:options n))]
+
+                  (graph/operator-node? n)
+                  (let [op (:operator n)
+                        child-keys (mapv #(key* % trace) (:children n))
+                        child-keys (if (:commutative? op)
+                                     (vec (sort compare-structural-keys
+                                                child-keys))
+                                     child-keys)]
+                    [:operator (:id op) child-keys])
+
+                  :else [:missing id]))))]
+    (key* root-id #{})))
+
+(defn- result-key
+  [{:keys [graph memory]}]
+  [(->> (graph/roots graph)
+        (sort-by pr-str)
+        (map #(result-structural-key graph %))
+        vec)
+   (->> memory
+        (map (fn [[node-id entry]]
+               [node-id (value/datum (entry-value entry))]))
+        (sort-by (comp pr-str first))
+        vec)])
 
 (defn- memory-value-keys
   [cache memory]

@@ -538,6 +538,16 @@ only the newly generated root. Stable value keys are cached by `Value` identity
 inside a Wunderbaum candidate stream, matching Python's cached `Value.hash`
 behavior without mutating the records.
 
+Whole-result de-duplication uses a delayed-builder structural key rather than
+the public graph structural key. The key remains exact: value leaves include
+their raw data, memory entries include exact raw values, and hash values are
+not used as equality substitutes. The performance-specific difference is only
+ordering of commutative operator children. CIWI compares child structural keys
+by Clojure hash first, falls back to equality when hashes match, and only then
+falls back to `pr-str` for a deterministic tie-break. This avoids repeatedly
+stringifying Python-scale vector-bearing keys in the common case while keeping
+collision behavior exact.
+
 Delayed materialization also validates declaration specs after inversion or
 forward execution. A generated inverse child must conform to the selected
 declaration's corresponding input spec, and a forward-produced value must

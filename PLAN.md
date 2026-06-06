@@ -80,7 +80,9 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   prevents dummy/free roots from deciding whether a local candidate is accepted.
 - Delayed materialization now skips inverse-generated values already present in
   memory and de-duplicates by whole materialized root sets, matching Python's
-  delayed DAG builder more closely.
+  delayed DAG builder more closely. Whole-result de-duplication keeps exact raw
+  value keys while using hash-first commutative child ordering to avoid
+  unconditional stringification of large vector-containing structural keys.
 - Delayed materialization carries inferred specs on generated `Value` records,
   avoiding repeated Python-scale vector scans during node-condition indexing.
   Wunderbaum graph expansion computes attachment reachability context once per
@@ -129,11 +131,10 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   `sprinkled`, `simply_linear`, and `map_negate`. `insert_repeat3` now reaches
   the Python rate in seven accepted steps and is faster than the recorded Python
   warm timing.
-- For performance profiling, start with pure Clojure large-array value-DL
-  paths, structural-key/de-dupe work, and any remaining repeated MDL scoring.
-  The current 1D vector DL path has been tightened; the next isolated runtime
-  target is structural-key/de-dupe, preferably with cached exact fingerprints
-  and collision-safe fallback rather than ad hoc hash-only keys. Do not solve
-  these gaps with recognizer templates or task-specific shortcuts.
+- For performance profiling, continue with residual pure Clojure large-array
+  value-DL paths, materialization overhead, and any remaining repeated MDL
+  scoring. The current 1D vector DL path has been tightened, and delayed-builder
+  de-duplication now avoids unconditional `pr-str` over large structural keys.
+  Do not solve these gaps with recognizer templates or task-specific shortcuts.
 - Keep updating `alice-test-parity.md` with measured core CIWI rate, exact
   selected solution, timing, and Python comparison for each row.
