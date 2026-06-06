@@ -1,5 +1,6 @@
 (ns ciwi.spec
-  (:require [ciwi.operator :as op]
+  (:require [ciwi.dense :as dense]
+            [ciwi.operator :as op]
             [ciwi.value :as value]))
 
 (defn infer-spec
@@ -13,6 +14,10 @@
       (number? x) :number
       (string? x) :string
       (keyword? x) :keyword
+      (dense/ndarray? x) (case (dense/dtype x)
+                           :bool :array-bool
+                           :int64 :array-int
+                           :float64 :array-float)
       (and (vector? x) (every? #(or (true? %) (false? %)) x)) :array-bool
       (and (vector? x) (every? integer? x)) :array-int
       (and (vector? x) (every? float? x)) :array-float

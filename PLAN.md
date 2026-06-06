@@ -27,13 +27,14 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   Python-compatible value DL model, Alice operator DL alignment, per-run DL and
   value-key caching, deferred selected-expression realization, threshold-aware
   candidate yielding, and several translation/performance fixes; tests pass
-  locally with 141 tests and 758 assertions.
+  locally with 148 tests and 786 assertions.
 
 ## Current State
 
 - CIWI has immutable graph/value/operator data structures, propagation, MDL
   selection, graph-backed composites, Fix, local rewrite operators, bounded
-  compression loops, and a Clojure-native graph literal DSL.
+  compression loops, a Clojure-native graph literal DSL, and the first
+  vector-backed `ciwi.dense` slice for numeric graph array values.
 - Recognizer templates are disabled by default and must be explicitly injected.
   They are not Alice parity evidence.
 - `ciwi.wunderbaum` contains the first straight-port slice of Python
@@ -203,13 +204,15 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   `optimizer-graph-search-parity.md` as the evidence matrix for
   `test_discrete_optimizer.py`, `TestMatrixRegressionDebugPipeline`, and later
   clustering/classification rows.
-- Before porting matrix regression, add a small backend-neutral dense numeric
-  boundary in CIWI. Start with a pure Clojure/vector implementation for behavior
-  parity, and defer Neanderthal, DJL, or JAX coupling until the graph-search path
-  is correct and measured.
-- First implementation targets are residual-DL adaptive optimizer examples,
-  dense `dot` plus broadcast `add`, graph-level `try_to_optimize` over
-  permeable numeric leaves, and the matrix regression optimizer/pipeline rows.
+- Before porting matrix regression, migrate numeric graph array operators to
+  the backend-neutral dense API. Keep symbolic/search infrastructure native,
+  but make `:array-*` numeric graph values dense. The initial vector-backed
+  dense slice now covers NumPy-ish metadata/accessors, NaN missing-value
+  normalization, elementwise arithmetic/comparison, `dot`, `sum`, and
+  spec/value-DL/hash recognition.
+- Next implementation targets are dense operator migration, residual-DL
+  adaptive optimizer examples, graph-level `try_to_optimize` over permeable
+  numeric leaves, and the matrix regression optimizer/pipeline rows.
 - Keep updating `alice-test-parity.md` only for plain Alice/Wunderbaum sequence
   compression, and update `optimizer-graph-search-parity.md` for numeric
   optimizer-backed rows.

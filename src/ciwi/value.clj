@@ -1,5 +1,6 @@
 (ns ciwi.value
-  (:require [ciwi.hashing :as hashing]))
+  (:require [ciwi.dense :as dense]
+            [ciwi.hashing :as hashing]))
 
 (defrecord Value [data name spec permeable? dummy?])
 
@@ -235,9 +236,11 @@
 
 (defn- flatten-array
   [x]
-  (if (vector? x)
+  (cond
+    (dense/ndarray? x) (dense/ravel x)
+    (vector? x)
     (mapcat flatten-array x)
-    [x]))
+    :else [x]))
 
 (defn- product
   [xs]
@@ -255,7 +258,11 @@
 
 (defn- python-array-info
   [x]
-  (when (vector? x)
+  (cond
+    (dense/ndarray? x)
+    (dense/array-info x)
+
+    (vector? x)
     (if-let [kind (scalar-vector-kind x)]
       {:shape [(count x)]
        :flat x
@@ -270,7 +277,9 @@
              :flat flat
              :kind kind
              :size (product shape)
-             :data x}))))))
+             :data x}))))
+
+    :else nil))
 
 (defn- array-elias
   [xs decimals]
@@ -673,10 +682,11 @@
 (defn desc-len-data
   "Python WILLIAM-compatible description length for native CIWI data.
 
-  Vectors that are rectangular and homogeneous in numeric, boolean, or string
-  scalars are treated as Python `np.ndarray` values. Other sequential values are
-  structural lists. The default mode matches `Value.desc_len()` in Python
-  WILLIAM, which uses Gaussian numeric-array coding.
+  Dense arrays, plus raw vectors that are rectangular and homogeneous in
+  numeric, boolean, or string scalars, are treated as Python `np.ndarray`
+  values. Other sequential values are structural lists. The default mode
+  matches `Value.desc_len()` in Python WILLIAM, which uses Gaussian
+  numeric-array coding.
   "
   ([x]
    (desc-len-data x {:mode :use-gaussian}))

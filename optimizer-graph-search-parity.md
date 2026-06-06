@@ -46,48 +46,54 @@ Out of scope unless they block compression behavior:
 
 ## Dense Numerics Decision
 
-Near-term recommendation: introduce a small CIWI dense numeric protocol before
-porting the matrix-regression pipeline, but implement only the operations needed
-for the next tests. Start with a pure Clojure/vector backend for correctness and
-optionally add one native backend behind the protocol once the behavior is
-green.
+Near-term recommendation: make numeric graph array values dense from the start.
+Keep search infrastructure, optimizer coordinate vectors, graph ids, specs, and
+symbolic data native, but route `:array-*` numeric graph values through a CIWI
+dense boundary before porting the matrix-regression pipeline.
+
+Start with a pure Clojure/vector backend for correctness and optionally add one
+native backend behind the protocol once behavior is green.
 
 The protocol should cover at least:
 
 - construction from native vectors/matrices
-- shape, dtype/category, scalar extraction
-- conversion back to plain CIWI data for value DL and expected-value tests
-- elementwise `add`, `sub`, `mult`, `div`, comparison, boolean masking
+- NumPy-style `shape`, `dtype`, `ndim`, `size`, `ravel`, and `tolist`
+- explicit NaN missing-value support for dense numeric propagation
+- backend-neutral value DL and hashing paths that do not repeatedly call
+  `tolist` in hot loops
+- elementwise `add`, `subtract`, `multiply`, `divide`, comparison, boolean
+  masking, and `isnan`
 - matrix/vector `dot`
-- `sum1` over rows
+- `sum` with axis support, including row-wise `axis=1`
 - selection and union-like operations needed by clustering
 
 Do not let graph nodes, values, operators, or Wunderbaum declarations depend
-directly on Neanderthal, DJL, JAX, or any other concrete dense class. Use a
-small data/backend boundary such as:
+directly on Neanderthal, DJL, JAX, or any other concrete dense class. The first
+backend can be a simple vector-backed `NDArray`:
 
 ```clojure
-{:kind :dense
- :backend :ciwi.vector
- :dtype :float64
- :shape [1000 10]
- :data ...}
+(dense/array [[1.0 2.0] [3.0 nil]])
+;; => backend :ciwi.vector, dtype :float64, shape [2 2],
+;;    flat [1.0 2.0 3.0 ##NaN]
 ```
 
-or a record implementing a protocol:
+The public API should stay close to NumPy where that is not painful:
 
 ```clojure
-(defprotocol DenseBackend
-  (dense-shape [x])
-  (dense-dtype [x])
-  (dense-dot [a b])
-  (dense-add [a b])
-  (dense-sub [a b])
-  (dense-mul [a b])
-  (dense-sum1 [x])
-  (dense-mask [x mask])
-  (dense->plain [x]))
+(dense/shape x)
+(dense/dtype x)
+(dense/ndim x)
+(dense/size x)
+(dense/ravel x)
+(dense/tolist x)
+(dense/dot a b)
+(dense/sum x 1)
 ```
+
+Current simplification: assume only one active dense backend at a time. Equality
+and hashing must be deterministic within that backend and consistent for equal
+contents under that backend. Cross-backend equality can wait until there is more
+than one real backend.
 
 ## Backend Tradeoffs
 
@@ -99,20 +105,26 @@ or a record implementing a protocol:
 | JAX bridge/custom backend now | Aligns with future differentiable/compiled backend ambitions; strong long-term story for gradient search and JIT-able kernels. | Highest integration complexity from Clojure/JVM; Python boundary or custom backend work could dominate the parity effort. | Do not start here. Design interfaces so this can be added later. |
 
 Current decision: define the CIWI dense boundary now, keep the first
-implementation simple, and defer committing to a native backend until the
-matrix regression graph-search path is behaviorally correct.
+implementation simple, use NaN for dense numeric missing values, and defer
+committing to a native backend until the matrix regression graph-search path is
+behaviorally correct.
 
 ## Implementation Order
 
-1. Add `ciwi.dense` protocol and pure Clojure/vector implementation.
-2. Port only the dense ops required for matrix regression: `dot` and broadcast
+1. Add `ciwi.dense` protocol and pure Clojure/vector implementation. Initial
+   slice is in place with NumPy-ish metadata/accessors, NaN missing-value
+   normalization, elementwise arithmetic/comparison, `dot`, `sum`, and
+   spec/value-DL/hash recognition.
+2. Port existing numeric graph array operators to dense outputs/inputs, keeping
+   symbolic vectors/lists native.
+3. Port only the dense ops required for matrix regression: `dot` and broadcast
    `add` over vector outputs.
-3. Add residual-DL adaptive optimizer tests from `test_discrete_optimizer.py`.
-4. Implement graph-level `try_to_optimize` as a composable recursive graph
+4. Add residual-DL adaptive optimizer tests from `test_discrete_optimizer.py`.
+5. Implement graph-level `try_to_optimize` as a composable recursive graph
    search operator over permeable leaves.
-5. Add matrix regression `test_optimizer` and `test_try_to_optimize` parity.
-6. Wire optimizer-backed candidates into Alice/Wunderbaum compression step.
-7. Only then decide whether to add a Neanderthal or DJL backend for performance
+6. Add matrix regression `test_optimizer` and `test_try_to_optimize` parity.
+7. Wire optimizer-backed candidates into Alice/Wunderbaum compression step.
+8. Only then decide whether to add a Neanderthal or DJL backend for performance
    and broader ML domains.
 
 ## Sources

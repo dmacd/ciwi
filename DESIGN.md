@@ -257,39 +257,53 @@ large-vector execution performance.
 
 CIWI will need first-class dense numeric values for optimizer-backed graph
 search and later ML domains, but graph semantics should not depend directly on
-any one concrete library. Dense values should enter the graph as CIWI values
-with stable shape, dtype/category, and backend metadata. Operators, value DL,
-propagation, Wunderbaum declarations, and optimizer objectives should call a
-small CIWI-owned protocol rather than importing Neanderthal, DJL, JAX, or a
-future custom backend directly.
+any one concrete library. Numeric graph array values should enter the graph as
+CIWI values whose data implements the CIWI dense API with stable shape,
+dtype/category, rank, size, and backend metadata. Search infrastructure,
+optimizer coordinate vectors, graph ids, specs, and symbolic data stay native.
+Operators, value DL, propagation, Wunderbaum declarations, and optimizer
+objectives should call a small CIWI-owned protocol rather than importing
+Neanderthal, DJL, JAX, or a future custom backend directly.
 
-The first implementation should be deliberately small: a pure Clojure/vector
-backend for correctness, with only the matrix-regression operations needed by
-the next parity tests. That avoids locking CIWI into vector-specific code while
-also avoiding a native dependency before the optimizer-backed graph-search
-behavior is green.
+The first implementation is deliberately small: a pure Clojure/vector backend
+for correctness, with NumPy-ish names and only the operations needed to start
+the optimizer-backed parity tranche. That avoids locking CIWI into
+vector-specific graph code while also avoiding a native dependency before the
+optimizer-backed graph-search behavior is green.
 
-The expected boundary is roughly:
+The dense API should stay close to NumPy where that is not painful:
 
 ```clojure
-(defprotocol DenseBackend
-  (dense-shape [x])
-  (dense-dtype [x])
-  (dense-dot [a b])
-  (dense-add [a b])
-  (dense-sub [a b])
-  (dense-mul [a b])
-  (dense-sum1 [x])
-  (dense-mask [x mask])
-  (dense->plain [x]))
+(dense/array [[1.0 nil] [2.0 3.0]])
+(dense/asarray x)
+(dense/shape x)
+(dense/dtype x)
+(dense/ndim x)
+(dense/size x)
+(dense/ravel x)
+(dense/tolist x)
+(dense/isnan x)
+(dense/add x y)
+(dense/subtract x y)
+(dense/multiply x y)
+(dense/divide x y)
+(dense/dot x y)
+(dense/sum x 1)
 ```
 
-`dense->plain` is intentionally explicit. Value description length, expected
-test values, and stable graph keys can use plain CIWI data while backend-owned
-storage can stay opaque during execution. Once matrix regression works, a
-Neanderthal or DJL backend can implement the same protocol. A later JAX/custom
-backend should fit at this boundary as well, but should not shape the v1 graph
-or operator APIs.
+Dense numeric missing values use `NaN`, including when a native fixture contains
+`nil` in a numeric array slot. This mirrors the Python/NumPy style we want to
+interoperate with and avoids a separate nullable-array representation in the
+first backend. Integer arrays with missing values promote to `:float64`.
+
+`tolist` is intentionally explicit and should not be used repeatedly in scoring
+or search hot loops. Value description length and stable graph keys should use
+dense shape/dtype/ravel or backend-provided summaries. For now, CIWI assumes
+only one active dense backend at a time, so equality and hashing only need to be
+deterministic within that backend. Once matrix regression works, a Neanderthal
+or DJL backend can implement the same protocol. A later JAX/custom backend
+should fit at this boundary as well, but should not shape the v1 graph or
+operator APIs.
 
 `map` first tries the Python-style shortcut where the callable can operate on
 the whole collection. If that cannot invert the output directly, `map` falls

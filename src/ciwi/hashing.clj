@@ -1,4 +1,5 @@
 (ns ciwi.hashing
+  (:require [ciwi.dense :as dense])
   (:import [java.math BigInteger]
            [java.security MessageDigest]
            [java.util IdentityHashMap]))
@@ -79,42 +80,50 @@
   ([x seen]
    (if-let [k (scalar-key x)]
      k
-     (if (container? x)
-       (if (seen? seen x)
-         [-1 (System/identityHashCode x) nil nil]
-         (do
-           (mark-seen! seen x)
-           (try
-             (cond
-               (record? x)
-               [1 [(stable-key (.getName (class x)) seen)
-                   (stable-key (into {} x) seen)]
-                98 nil]
+     (if (dense/ndarray? x)
+       [1 [(stable-key ::dense seen)
+           (stable-key (dense/backend x) seen)
+           (stable-key (dense/dtype x) seen)
+           (stable-key (dense/shape x) seen)
+           (mapv #(stable-key % seen) (dense/ravel x))]
+        20 nil]
+       (if (container? x)
+         (if (seen? seen x)
+           [-1 (System/identityHashCode x) nil nil]
+           (do
+             (mark-seen! seen x)
+             (try
+               (cond
+                 (record? x)
+                 [1 [(stable-key (.getName (class x)) seen)
+                     (stable-key (into {} x) seen)]
+                  98 nil]
 
-               (map? x)
-               (let [entries (->> x
-                                  (sort (fn [[left _] [right _]]
-                                          (compare-keys (stable-key left seen)
-                                                        (stable-key right seen))))
-                                  (mapcat (fn [[k v]]
-                                            [(stable-key k seen)
-                                             (stable-key v seen)]))
-                                  vec)]
-                 [1 entries 10 nil])
+                 (map? x)
+                 (let [entries (->> x
+                                    (sort (fn [[left _] [right _]]
+                                            (compare-keys
+                                             (stable-key left seen)
+                                             (stable-key right seen))))
+                                    (mapcat (fn [[k v]]
+                                              [(stable-key k seen)
+                                               (stable-key v seen)]))
+                                    vec)]
+                   [1 entries 10 nil])
 
-               (set? x)
-               [1 (vec (sort compare-keys (map #(stable-key % seen) x))) 8 nil]
+                 (set? x)
+                 [1 (vec (sort compare-keys (map #(stable-key % seen) x))) 8 nil]
 
-               (vector? x)
-               [1 (mapv #(stable-key % seen) x) 7 nil]
+                 (vector? x)
+                 [1 (mapv #(stable-key % seen) x) 7 nil]
 
-               (sequential? x)
-               [1 (mapv #(stable-key % seen) x) 6 nil])
-             (finally
-               (unmark-seen! seen x)))))
-       [0 99 [(stable-key (.getName (class x)) seen)
-              (pr-str x)]
-       nil]))))
+                 (sequential? x)
+                 [1 (mapv #(stable-key % seen) x) 6 nil])
+               (finally
+                 (unmark-seen! seen x)))))
+         [0 99 [(stable-key (.getName (class x)) seen)
+                (pr-str x)]
+          nil])))))
 
 (defn stable-compare
   "Compare native values by their stable keys."

@@ -6,6 +6,7 @@
             [ciwi.composite-test]
             [ciwi.conditions-test]
             [ciwi.core-test]
+            [ciwi.dense-test]
             [ciwi.delayed-builder-test]
             [ciwi.dsl-test]
             [ciwi.enumerator-test]
@@ -32,6 +33,7 @@
                                              'ciwi.composite-test
                                              'ciwi.conditions-test
                                              'ciwi.core-test
+                                             'ciwi.dense-test
                                              'ciwi.delayed-builder-test
                                              'ciwi.dsl-test
                                              'ciwi.enumerator-test
