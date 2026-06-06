@@ -1,7 +1,9 @@
 (ns ciwi.wunderbaum-test
-  (:require [ciwi.graph :as graph]
+  (:require [ciwi.dense :as dense]
+            [ciwi.graph :as graph]
             [ciwi.mdl :as mdl]
             [ciwi.operator :as op]
+            [ciwi.test-helpers :as h]
             [ciwi.value :as value]
             [ciwi.wunderbaum :as sut]
             [clojure.test :refer [deftest is testing]]))
@@ -58,7 +60,7 @@
         (into #{}
               (mapcat #(option-expressions g %))
               (:options n))
-        #{(graph/value-data g id)})
+        #{(value/plain-datum (graph/value-data g id))})
 
       (graph/operator-node? n)
       (let [child-expressions (map #(option-expressions g %) (:children n))]
@@ -148,7 +150,7 @@
     (when result
       (is (contains? (:expressions result) python-wunderbaum-solution))
       (is (= [45 87 87]
-             (graph/value-data (:graph result) :target0)))
+             (h/plain-missing (graph/value-data (:graph result) :target0))))
       (is (< (:candidate-index result) 9500)))))
 
 (deftest wunderbaum-uses-multiple-conditioned-nodes-for-inversion
@@ -185,11 +187,14 @@
                :call (fn [[x]]
                        [x x x x])
                :inverse (fn [output _cond-inputs cond]
-                          (when (and (empty? cond)
-                                     (vector? output)
-                                     (seq output)
-                                     (apply = output))
-                            [[(first output)]]))})
+                          (let [values (clojure.core/cond
+                                         (dense/ndarray? output) (dense/ravel output)
+                                         (vector? output) output
+                                         :else nil)]
+                            (when (and (empty? cond)
+                                       (seq values)
+                                       (apply = values))
+                              [[(first values)]])))})
         wb (sut/wunderbaum
             {:registry {:quad quad}
              :ops-with-counts [{:op :quad

@@ -1,5 +1,6 @@
 (ns ciwi.rewrite
-  (:require [ciwi.graph :as graph]
+  (:require [ciwi.dense :as dense]
+            [ciwi.graph :as graph]
             [ciwi.mdl :as mdl]
             [ciwi.operator :as op]
             [ciwi.value :as value])
@@ -54,6 +55,13 @@
 (defn- node-data
   [g node-id]
   (some-> (graph/node g node-id) :value :data))
+
+(defn- array-values
+  [x]
+  (cond
+    (dense/ndarray? x) (dense/ravel x)
+    (vector? x) x
+    :else nil))
 
 (defn neg-delta?
   [candidate]
@@ -161,38 +169,41 @@
 
 (defn- arithmetic-range?
   [xs]
-  (and (vector? xs)
-       (seq xs)
-       (every? integer? xs)
-       (= xs (vec (range (first xs) (+ (first xs) (count xs)))))))
+  (let [values (array-values xs)]
+    (and values
+         (seq values)
+         (every? integer? values)
+         (= values (vec (range (first values) (+ (first values) (count values))))))))
 
 (defn- brange-candidate
   [g node-id xs _opts]
   (when (and (arithmetic-range? xs)
-             (>= (count xs) 2))
-    (candidate g node-id op/brange [(first xs) (inc (last xs))] :brange)))
+             (>= (count (array-values xs)) 2))
+    (let [values (array-values xs)]
+      (candidate g node-id op/brange [(first values) (inc (last values))] :brange))))
 
 (defn- repeat-candidate
   [g node-id xs _opts]
-  (when (and (or (vector? xs) (string? xs))
-             (>= (count xs) 2))
+  (when (and (or (array-values xs) (string? xs))
+             (>= (if (string? xs) (count xs) (count (array-values xs))) 2))
     (when-let [[reps motif] (op/repeated-motif xs)]
       (when (> reps 1)
         (candidate g node-id op/repeat [reps motif] :repeat)))))
 
 (defn- affine-sequence
   [xs]
-  (when (and (vector? xs)
-             (>= (count xs) 3)
-             (every? number? xs))
-    (let [start (first xs)
-          step (- (second xs) start)]
-      (when (= xs (mapv #(+ start (* step %)) (range (count xs))))
-        {:start start
-         :step step
-         :n (count xs)
-         :base (vec (range (count xs)))
-         :scaled (mapv #(* step %) (range (count xs)))}))))
+  (let [values (array-values xs)]
+    (when (and values
+               (>= (count values) 3)
+               (every? number? values))
+      (let [start (first values)
+            step (- (second values) start)]
+        (when (= values (mapv #(+ start (* step %)) (range (count values))))
+          {:start start
+           :step step
+           :n (count values)
+           :base (dense/array (vec (range (count values))))
+           :scaled (dense/array (mapv #(* step %) (range (count values))))})))))
 
 (defn- scale-mult-candidate
   [g node-id xs _opts]
@@ -212,7 +223,7 @@
 (defn- ref-form
   [ref]
   (case (:kind ref)
-    :value (:value ref)
+    :value (value/plain-datum (:value ref))
     :edit (into [(:id (:op ref))] (map ref-form (:child-refs ref)))
     :node [:node (:node-id ref)]))
 
@@ -240,16 +251,17 @@
 
 (defn- brange-ref
   [x]
-  (when (and (arithmetic-range? x) (>= (count x) 2))
-    (edit-ref-from op/brange
-                   [(value-ref (first x))
-                    (value-ref (inc (last x)))]
-                   x)))
+  (when (and (arithmetic-range? x) (>= (count (array-values x)) 2))
+    (let [values (array-values x)]
+      (edit-ref-from op/brange
+                     [(value-ref (first values))
+                      (value-ref (inc (last values)))]
+                     x))))
 
 (defn- repeat-ref
   [x]
-  (when (and (or (vector? x) (string? x))
-             (>= (count x) 2))
+  (when (and (or (array-values x) (string? x))
+             (>= (if (string? x) (count x) (count (array-values x))) 2))
     (when-let [[reps motif] (op/repeated-motif x)]
       (when (> reps 1)
         (edit-ref-from op/repeat
@@ -297,8 +309,9 @@
 
 (defn- vector-diff
   [xs]
-  (when (and (vector? xs) (every? number? xs))
-    (vec (map - xs (cons 0 xs)))))
+  (let [values (array-values xs)]
+    (when (and values (every? number? values))
+      (dense/array (vec (map - values (cons 0 values)))))))
 
 (defn- cumsum-candidate
   [g node-id xs _opts]

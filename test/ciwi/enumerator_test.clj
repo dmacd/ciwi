@@ -2,6 +2,7 @@
   (:require [ciwi.dsl :as dsl]
             [ciwi.enumerator :as sut]
             [ciwi.graph :as graph]
+            [ciwi.test-helpers :as h]
             [ciwi.value :as value]
             [clojure.test :refer [deftest is]]))
 
@@ -42,7 +43,8 @@
         tuples (sut/node-tuples graph root {:max-tuple-len 2
                                            :max-results 6})
         values (mapv (fn [item]
-                       (mapv #(graph/value-data graph %) (:nodes item)))
+                       (mapv #(h/plain-missing (graph/value-data graph %))
+                             (:nodes item)))
                      tuples)]
     (is (= [[ [0 1 2 :x :x] ]
             [ [0 1 2 :x :x] [0 1 2 :x :x] ]

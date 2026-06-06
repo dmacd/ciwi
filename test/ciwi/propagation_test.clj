@@ -2,6 +2,7 @@
   (:require [ciwi.graph :as graph]
             [ciwi.operator :as op]
             [ciwi.propagation :as sut]
+            [ciwi.test-helpers :as h]
             [clojure.test :refer [deftest is testing]]))
 
 (def william-co4-fire-down-golden
@@ -21,7 +22,7 @@
 
 (defn- data-at
   [mem id]
-  (:data (sut/value-at mem id)))
+  (h/plain-missing (sut/value-at mem id)))
 
 (defn- memory-data
   [mem ids]
@@ -35,7 +36,7 @@
   (let [g (add-graph)
         mem (sut/memory {:left 3 :right 4})
         result (first (sut/propagate g mem))]
-    (is (= 7 (:data (sut/value-at result :out))))))
+    (is (= 7 (data-at result :out)))))
 
 (deftest propagates-add-down-from-william-golden
   (testing (:doc (meta #'william-co4-fire-down-golden))
@@ -44,7 +45,7 @@
           mem (sut/memory {:out output :right known-child})
           result (first (sut/propagate g mem))]
       (is (= expected-missing-child
-             (:data (sut/value-at result :left)))))))
+             (data-at result :left))))))
 
 (deftest propagates-unary-inversion
   (let [g (-> (graph/empty-graph)
@@ -53,7 +54,7 @@
               (graph/add-operator :negate-out op/negate :out [:x]))
         mem (sut/memory {:out -3})
         result (first (sut/propagate g mem))]
-    (is (= 3 (:data (sut/value-at result :x))))))
+    (is (= 3 (data-at result :x)))))
 
 
 (defn affine-graph
@@ -82,7 +83,7 @@
                                          {:partial? true}))]
     (is (nil? (sut/value-at missing-left :out)))
     (is (nil? (sut/value-at nil-output :left)))
-    (is (nil? (:data (sut/value-at nil-output :out))))))
+    (is (nil? (data-at nil-output :out)))))
 
 (defn co2-graph
   []
@@ -207,7 +208,7 @@
             :observed-ids [:out :base :mask :item :mean :offset]
             :expected-results
             [{:out [33 17 18 35 37 39 19]
-              :base [nil 17 18 nil nil nil 19]
+              :base [nil 17.0 18.0 nil nil nil 19.0]
               :mask [true false false true true true false]
               :item [33 35 37 39]
               :mean 36.0
@@ -243,11 +244,11 @@
                          :start 2})
         result (first (sut/propagate g mem))]
     (is (= [0 1 2 3]
-           (:data (sut/value-at result :range))))
+           (data-at result :range)))
     (is (= [0 3 6 9]
-           (:data (sut/value-at result :scaled))))
+           (data-at result :scaled)))
     (is (= [2 5 8 11]
-           (:data (sut/value-at result :out))))))
+           (data-at result :out)))))
 
 (deftest propagates-nested-affine-graph-downward
   (let [g (affine-graph)
@@ -256,13 +257,13 @@
                          :step 3})
         result (first (sut/propagate g mem))]
     (is (= [0 3 6 9]
-           (:data (sut/value-at result :scaled))))
+           (data-at result :scaled)))
     (is (= [0 1 2 3]
-           (:data (sut/value-at result :range))))
+           (data-at result :range)))
     (is (= 0
-           (:data (sut/value-at result :range-start))))
+           (data-at result :range-start)))
     (is (= 4
-           (:data (sut/value-at result :n))))))
+           (data-at result :n)))))
 
 
 (defn getitem-graph
@@ -282,9 +283,9 @@
                                    (sut/memory {:out [2.0 3.0]
                                                 :idx [true false false true]})))]
     (is (= [3 2]
-           (:data (sut/value-at up :out))))
+           (data-at up :out)))
     (is (= [2.0 nil nil 3.0]
-           (:data (sut/value-at down :xs))))))
+           (data-at down :xs)))))
 
 (defn setitem-graph
   []
@@ -308,15 +309,15 @@
                                           (sut/memory {:out ["-" "-" "-" "-" "x"]
                                                        :xs ["-" "-" "-" "-" "-"]})))]
     (is (= [342 78 34 252]
-           (:data (sut/value-at up :out))))
-    (is (= [342 nil nil 252]
-           (:data (sut/value-at mask-down :xs))))
+           (data-at up :out)))
+    (is (= [342.0 nil nil 252.0]
+           (data-at mask-down :xs)))
     (is (= [78 34]
-           (:data (sut/value-at mask-down :item))))
+           (data-at mask-down :item)))
     (is (= 4
-           (:data (sut/value-at source-down :idx))))
+           (data-at source-down :idx)))
     (is (= "x"
-           (:data (sut/value-at source-down :item))))))
+           (data-at source-down :item)))))
 
 
 (defn threshold-patch-graph
@@ -343,15 +344,15 @@
                                                 :scores [0 1 2 3]
                                                 :threshold 2})))]
     (is (= [true true false false]
-           (:data (sut/value-at up :mask))))
+           (data-at up :mask)))
     (is (= ["x" "x" "-" "-"]
-           (:data (sut/value-at up :out))))
+           (data-at up :out)))
     (is (= [true true false false]
-           (:data (sut/value-at down :mask))))
+           (data-at down :mask)))
     (is (= ["" "" "-" "-"]
-           (:data (sut/value-at down :base))))
+           (data-at down :base)))
     (is (= ["x" "x"]
-           (:data (sut/value-at down :items))))))
+           (data-at down :items)))))
 
 
 (defn length-derived-threshold-patch-graph
@@ -378,10 +379,10 @@
                                                   :threshold 2
                                                   :items ["x" "x"]})))]
     (is (= 4
-           (:data (sut/value-at result :n))))
+           (data-at result :n)))
     (is (= ["-" "-" "-" "-"]
-           (:data (sut/value-at result :base))))
+           (data-at result :base)))
     (is (= [true true false false]
-           (:data (sut/value-at result :mask))))
+           (data-at result :mask)))
     (is (= ["x" "x" "-" "-"]
-           (:data (sut/value-at result :out))))))
+           (data-at result :out)))))

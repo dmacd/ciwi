@@ -1,5 +1,6 @@
 (ns ciwi.graph-rewrite
-  (:require [ciwi.graph :as graph]
+  (:require [ciwi.dense :as dense]
+            [ciwi.graph :as graph]
             [ciwi.mdl :as mdl]
             [ciwi.operator :as op]
             [ciwi.rewrite :as rewrite]
@@ -11,13 +12,15 @@
 
 (defn default-literals
   [data]
-  (distinct-stable
-   (cond-> [0 1]
-     (number? data) (conj data)
-     (vector? data) (conj (count data))
-     (and (vector? data) (seq data) (number? (first data))) (conj (first data))
-     (and (vector? data) (> (count data) 1) (number? (first data)) (number? (second data)))
-     (conj (- (second data) (first data))))))
+  (let [values (when (or (dense/ndarray? data) (vector? data))
+                 (if (dense/ndarray? data) (dense/ravel data) data))]
+    (distinct-stable
+     (cond-> [0 1]
+       (number? data) (conj data)
+       values (conj (count values))
+       (and values (seq values) (number? (first values))) (conj (first values))
+       (and values (> (count values) 1) (number? (first values)) (number? (second values)))
+       (conj (- (second values) (first values)))))))
 
 (defn- seed-literals
   [data literal-values]
@@ -34,7 +37,7 @@
    :dl (value/desc-len (value/value x))
    :depth 0
    :ref (rewrite/value-ref x)
-   :form x})
+   :form (value/plain-datum x)})
 
 (defn- node-operand
   [g node-id]

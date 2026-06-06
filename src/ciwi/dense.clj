@@ -59,6 +59,21 @@
     (mapcat flatten-data x)
     [x]))
 
+(defn array-literal?
+  "Return true when native data should be treated as a dense numeric graph array.
+
+  CIWI only auto-promotes rectangular Clojure vectors with numeric, boolean, or
+  missing leaves. Lists remain structural data, and empty vectors stay native
+  unless a caller explicitly constructs `(array [])`.
+  "
+  [x]
+  (when (vector? x)
+    (when-let [shape (rectangular-shape x)]
+      (let [flat (vec (flatten-data x))]
+        (and (seq flat)
+             (or (every? #(or (true? %) (false? %)) flat)
+                 (every? #(or (missing? %) (number? %)) flat)))))))
+
 (defn- canonical-dtype
   [dtype]
   (case dtype

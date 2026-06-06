@@ -104,27 +104,25 @@ than one real backend.
 | DJL first | Engine-agnostic Java NDArray/model abstraction; can switch among engines by dependencies/config; closer to JVM ML deployment. | Heavier dependency surface; engine/version management; may be more framework than needed for initial dot/residual tests. | Good candidate when we want ML model interop or GPU tensors, not necessary for the first parity slice. |
 | JAX bridge/custom backend now | Aligns with future differentiable/compiled backend ambitions; strong long-term story for gradient search and JIT-able kernels. | Highest integration complexity from Clojure/JVM; Python boundary or custom backend work could dominate the parity effort. | Do not start here. Design interfaces so this can be added later. |
 
-Current decision: define the CIWI dense boundary now, keep the first
-implementation simple, use NaN for dense numeric missing values, and defer
-committing to a native backend until the matrix regression graph-search path is
-behaviorally correct.
+Current decision: the CIWI dense boundary is in place, the first implementation
+is vector-backed, numeric graph arrays use dense values with NaN missing slots,
+and CIWI defers committing to a native backend until the matrix regression
+graph-search path is behaviorally correct.
 
 ## Implementation Order
 
-1. Add `ciwi.dense` protocol and pure Clojure/vector implementation. Initial
-   slice is in place with NumPy-ish metadata/accessors, NaN missing-value
-   normalization, elementwise arithmetic/comparison, `dot`, `sum`, and
-   spec/value-DL/hash recognition.
-2. Port existing numeric graph array operators to dense outputs/inputs, keeping
-   symbolic vectors/lists native.
-3. Port only the dense ops required for matrix regression: `dot` and broadcast
-   `add` over vector outputs.
-4. Add residual-DL adaptive optimizer tests from `test_discrete_optimizer.py`.
-5. Implement graph-level `try_to_optimize` as a composable recursive graph
+1. Done: add `ciwi.dense` protocol and pure Clojure/vector implementation with
+   NumPy-ish metadata/accessors, NaN missing-value normalization, elementwise
+   arithmetic/comparison, `dot`, `sum`, and spec/value-DL/hash recognition.
+2. Done: port the current numeric graph array operator basis to dense
+   outputs/inputs while keeping symbolic vectors/lists native.
+3. Next: add residual-DL adaptive optimizer tests from
+   `test_discrete_optimizer.py`.
+4. Implement graph-level `try_to_optimize` as a composable recursive graph
    search operator over permeable leaves.
-6. Add matrix regression `test_optimizer` and `test_try_to_optimize` parity.
-7. Wire optimizer-backed candidates into Alice/Wunderbaum compression step.
-8. Only then decide whether to add a Neanderthal or DJL backend for performance
+5. Add matrix regression `test_optimizer` and `test_try_to_optimize` parity.
+6. Wire optimizer-backed candidates into Alice/Wunderbaum compression step.
+7. Only then decide whether to add a Neanderthal or DJL backend for performance
    and broader ML domains.
 
 ## Sources

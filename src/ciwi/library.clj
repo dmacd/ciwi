@@ -1,6 +1,7 @@
 (ns ciwi.library
   (:refer-clojure :exclude [load-file])
   (:require [ciwi.composite :as composite]
+            [ciwi.dense :as dense]
             [ciwi.operator :as op]
             [ciwi.rewrite :as rewrite]
             [clojure.edn :as edn]
@@ -63,34 +64,43 @@
 
 (defn- arithmetic-range?
   [xs]
-  (and (vector? xs)
-       (seq xs)
-       (every? integer? xs)
-       (= xs (vec (range (first xs) (+ (first xs) (count xs)))))))
+  (let [values (cond
+                 (dense/ndarray? xs) (dense/ravel xs)
+                 (vector? xs) xs)]
+    (and values
+         (seq values)
+         (every? integer? values)
+         (= values (vec (range (first values) (+ (first values) (count values))))))))
 
 (defn- affine-sequence
   [xs]
-  (when (and (vector? xs)
-             (>= (count xs) 3)
-             (every? number? xs))
-    (let [start (first xs)
-          step (- (second xs) start)
-          n (count xs)]
-      (when (= xs (mapv #(+ start (* step %)) (range n)))
+  (let [values (cond
+                 (dense/ndarray? xs) (dense/ravel xs)
+                 (vector? xs) xs)]
+    (when (and values
+               (>= (count values) 3)
+               (every? number? values))
+      (let [start (first values)
+          step (- (second values) start)
+          n (count values)]
+      (when (= values (mapv #(+ start (* step %)) (range n)))
         {:range-start 0
          :start start
          :step step
          :n n
-         :base (vec (range n))
-         :scaled (mapv #(* step %) (range n))}))))
+         :base (dense/array (vec (range n)))
+         :scaled (dense/array (mapv #(* step %) (range n)))})))))
 
 (defn- square-range
   [xs]
-  (when (and (vector? xs)
-             (>= (count xs) 3)
-             (every? number? xs)
-             (= xs (mapv #(* % %) (range (count xs)))))
-    {:n (count xs)}))
+  (let [values (cond
+                 (dense/ndarray? xs) (dense/ravel xs)
+                 (vector? xs) xs)]
+    (when (and values
+               (>= (count values) 3)
+               (every? number? values)
+               (= values (mapv #(* % %) (range (count values)))))
+      {:n (count values)})))
 
 (defmulti match
   "Return matcher bindings for data, or nil when the matcher does not apply."

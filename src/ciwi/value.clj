@@ -54,6 +54,12 @@
   [x]
   (instance? Value x))
 
+(defn- coerce-data
+  [data]
+  (if (dense/array-literal? data)
+    (dense/array data)
+    data))
+
 (defn value
   ([data]
    (value data {}))
@@ -62,13 +68,20 @@
                dummy? false}}]
    (if (value? data)
      data
-     (->Value data name spec permeable? dummy?))))
+     (->Value (coerce-data data) name spec permeable? dummy?))))
 
 (defn datum
   [x]
   (if (value? x)
     (:data x)
     x))
+
+(defn plain-datum
+  [x]
+  (let [x (datum x)]
+    (if (dense/ndarray? x)
+      (dense/tolist x)
+      x)))
 
 (declare desc-len-data)
 

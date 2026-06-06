@@ -1,5 +1,6 @@
 (ns ciwi.search-test
   (:require [ciwi.composite :as composite]
+            [ciwi.dense :as dense]
             [ciwi.graph :as graph]
             [ciwi.library :as library]
             [ciwi.mdl :as mdl]
@@ -189,10 +190,11 @@
   (rewrite/value-template
    :square-range
    (fn [g node-id xs _opts]
-     (when (vector? xs)
-       (let [n (count xs)]
+     (when (or (dense/ndarray? xs) (vector? xs))
+       (let [values (if (dense/ndarray? xs) (dense/ravel xs) xs)
+             n (count values)]
          (when (and (>= n 3)
-                    (= xs (mapv #(* % %) (range n))))
+                    (= values (mapv #(* % %) (range n))))
            (rewrite/candidate g node-id square-range-op [n] :square-range)))))))
 
 (deftest injected-composite-template-compresses-square-range

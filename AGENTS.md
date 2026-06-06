@@ -19,6 +19,10 @@ WILLIAM/Alice compression behavior before adding new mechanisms.
 - `alice-test-parity.md` is the evidence matrix for Python
   `william/tests/test_alice.py`: Python and CIWI rates, solutions, timings,
   status, and debugging notes. It should not become the roadmap.
+- `optimizer-graph-search-parity.md` is the evidence matrix and working notes
+  for optimizer-backed numeric graph search, including discrete optimizer,
+  `try_to_optimize`, matrix regression, and later clustering rows. Keep it
+  separate from plain Alice/Wunderbaum compression parity.
 - User-facing introductory material belongs in `README.md`, `tutorial.md`, or
   notebooks, not in the internal planning/design docs.
 

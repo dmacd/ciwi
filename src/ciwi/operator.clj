@@ -1,6 +1,7 @@
 (ns ciwi.operator
   (:refer-clojure :exclude [concat name repeat])
-  (:require [ciwi.value :as value]))
+  (:require [ciwi.dense :as dense]
+            [ciwi.value :as value]))
 
 (defrecord Operator [id conditions commutative? call inverse dl])
 
@@ -31,13 +32,88 @@
 
 (defn- seqish?
   [x]
-  (and (sequential? x) (not (string? x))))
+  (or (dense/ndarray? x)
+      (and (sequential? x) (not (string? x)))))
+
+(defn- seq-values
+  [x]
+  (if (dense/ndarray? x)
+    (dense/ravel x)
+    (vec x)))
+
+(defn- seq-count
+  [x]
+  (if (dense/ndarray? x)
+    (dense/size x)
+    (count x)))
+
+(defn- seq-nth
+  [x idx]
+  (if (dense/ndarray? x)
+    (nth (dense/ravel x) idx)
+    (nth x idx)))
+
+(defn- maybe-array
+  [xs & _templates]
+  (if (dense/array-literal? xs)
+    (dense/array xs)
+    (vec xs)))
+
+(defn- maybe-call
+  [f & args]
+  (try
+    (apply f args)
+    (catch clojure.lang.ExceptionInfo _
+      nil)))
+
+(defn- integral-data?
+  [x]
+  (cond
+    (integer? x) true
+    (number? x) false
+    (dense/ndarray? x) (= :int64 (dense/dtype x))
+    (seqish? x) (every? integer? (seq-values x))
+    :else false))
+
+(defn- integral-result?
+  [x]
+  (cond
+    (integer? x) true
+    (number? x) (== (double x) (double (long x)))
+    (dense/ndarray? x) (every? integral-result? (dense/ravel x))
+    (seqish? x) (every? integral-result? (seq-values x))
+    :else false))
+
+(defn- map-nested
+  [f x]
+  (if (and (sequential? x) (not (string? x)))
+    (mapv #(map-nested f %) x)
+    (f x)))
+
+(defn- coerce-integral-result
+  [x]
+  (cond
+    (integer? x) (long x)
+    (number? x) (long x)
+    (dense/ndarray? x) (dense/array (map-nested long (dense/tolist x)))
+    (seqish? x) (dense/array (mapv long (seq-values x)))
+    :else x))
+
+(defn- maybe-integral-quotient
+  [output known result]
+  (if (and (integral-data? output)
+           (integral-data? known))
+    (when (integral-result? result)
+      (coerce-integral-result result))
+    result))
 
 (defn- strict-vec
   [x]
-  (if (vector? x)
-    x
-    (vec x)))
+  (if (dense/ndarray? x)
+    (dense/ravel x)
+    (if (vector? x)
+      x
+      (vec x))))
 
 (defn- mapv1-strict
   [f xs]
@@ -68,29 +144,42 @@
 (defn- elementwise1
   [f x]
   (if (seqish? x)
-    (if (>= (count x) strict-map-threshold)
-      (mapv1-strict f x)
-      (mapv f x))
+    (let [xs (seq-values x)]
+      (maybe-array
+       (if (>= (count xs) strict-map-threshold)
+         (mapv1-strict f xs)
+         (mapv f xs))
+       x))
     (f x)))
 
 (defn- elementwise2
   [f x y]
   (cond
     (and (seqish? x) (seqish? y))
-    (when (= (count x) (count y))
-      (if (>= (count x) strict-map-threshold)
-        (mapv2-strict f x y)
-        (mapv f x y)))
+    (let [xs (seq-values x)
+          ys (seq-values y)]
+      (when (= (count xs) (count ys))
+        (maybe-array
+         (if (>= (count xs) strict-map-threshold)
+           (mapv2-strict f xs ys)
+           (mapv f xs ys))
+         x y)))
 
     (seqish? x)
-    (if (>= (count x) strict-map-threshold)
-      (mapv1-strict #(f % y) x)
-      (mapv #(f % y) x))
+    (let [xs (seq-values x)]
+      (maybe-array
+       (if (>= (count xs) strict-map-threshold)
+         (mapv1-strict #(f % y) xs)
+         (mapv #(f % y) xs))
+       x))
 
     (seqish? y)
-    (if (>= (count y) strict-map-threshold)
-      (mapv1-strict #(f x %) y)
-      (mapv #(f x %) y))
+    (let [ys (seq-values y)]
+      (maybe-array
+       (if (>= (count ys) strict-map-threshold)
+         (mapv1-strict #(f x %) ys)
+         (mapv #(f x %) ys))
+       y))
 
     :else
     (f x y)))
@@ -98,7 +187,7 @@
 (defn- all-true?
   [x]
   (if (seqish? x)
-    (every? true? x)
+    (every? true? (seq-values x))
     (true? x)))
 
 (defn- boolean-scalar?
@@ -123,11 +212,17 @@
 
 (defn- index-vector?
   [x]
-  (and (vector? x) (every? integer? x)))
+  (or (and (dense/ndarray? x)
+           (= :int64 (dense/dtype x))
+           (= 1 (dense/ndim x)))
+      (and (vector? x) (every? integer? x))))
 
 (defn- bool-mask?
   [x]
-  (and (vector? x) (every? #(or (true? %) (false? %)) x)))
+  (or (and (dense/ndarray? x)
+           (= :bool (dense/dtype x))
+           (= 1 (dense/ndim x)))
+      (and (vector? x) (every? #(or (true? %) (false? %)) x))))
 
 (defn- seq-literal?
   [x]
@@ -135,7 +230,7 @@
 
 (defn- valid-index?
   [xs idx]
-  (and (integer? idx) (<= 0 idx) (< idx (count xs))))
+  (and (integer? idx) (<= 0 idx) (< idx (seq-count xs))))
 
 (defn- valid-indices?
   [xs idxs]
@@ -145,23 +240,23 @@
   [mask]
   (keep-indexed (fn [idx selected?]
                   (when selected? idx))
-                mask))
+                (seq-values mask)))
 
 (defn- selected-count
   [mask]
-  (count (filter true? mask)))
+  (count (filter true? (seq-values mask))))
 
 (defn- prefix-motif
   [xs motif-len]
   (if (string? xs)
     (subs xs 0 motif-len)
-    (subvec (vec xs) 0 motif-len)))
+    (maybe-array (subvec (seq-values xs) 0 motif-len) xs)))
 
 (defn- same-seqish?
   [left right]
   (if (and (string? left) (string? right))
     (= left right)
-    (= (vec left) (vec right))))
+    (= (seq-values left) (seq-values right))))
 
 (defn- repeat-call
   [n motif]
@@ -170,13 +265,16 @@
              (seq-literal? motif))
     (if (string? motif)
       (apply str (clojure.core/repeat n motif))
-      (vec (apply clojure.core/concat (clojure.core/repeat n (vec motif)))))))
+      (maybe-array
+       (vec (apply clojure.core/concat
+                   (clojure.core/repeat n (seq-values motif))))
+       motif))))
 
 (defn repeated-motif
   "Return `[repetitions motif]` for the shortest motif that exactly tiles output."
   [output]
   (when (seq-literal? output)
-    (let [n (count output)]
+    (let [n (seq-count output)]
       (cond
         (zero? n) [1 output]
         (= 1 n) [1 output]
@@ -192,7 +290,7 @@
 (defn- repeat-inversions
   [output cond-inputs cond]
   (when (seq-literal? output)
-    (let [lgh (count output)]
+    (let [lgh (seq-count output)]
       (case (vec cond)
         [] (when-let [[reps motif] (repeated-motif output)]
              [[reps motif]])
@@ -205,76 +303,79 @@
                     [[motif]]))))
         [1] (let [motif (first cond-inputs)]
               (when (and (seq-literal? motif)
-                         (pos? (count motif))
-                         (zero? (mod lgh (count motif))))
-                (let [reps (/ lgh (count motif))]
+                         (pos? (seq-count motif))
+                         (zero? (mod lgh (seq-count motif))))
+                (let [reps (/ lgh (seq-count motif))]
                   (when (same-seqish? output (repeat-call reps motif))
                     [[reps]]))))
         ()))))
 
 (defn- cumsum-call
   [xs]
-  (when (vector? xs)
-    (if (< (count xs) strict-map-threshold)
-      (when (every? number? xs)
-        (vec (rest (reductions + 0 xs))))
-      (let [n (count xs)]
-        (loop [idx 0
-               total 0
-               result (transient [])]
-          (if (= idx n)
-            (persistent! result)
-            (let [x (nth xs idx)]
-              (when (number? x)
-                (let [total (+ total x)]
-                  (recur (inc idx)
-                         total
-                         (conj! result total)))))))))))
+  (when (seqish? xs)
+    (let [values (seq-values xs)]
+      (if (< (count values) strict-map-threshold)
+        (when (every? number? values)
+          (dense/array (vec (rest (reductions + 0 values)))))
+        (let [n (count values)]
+          (loop [idx 0
+                 total 0
+                 result (transient [])]
+            (if (= idx n)
+              (dense/array (persistent! result))
+              (let [x (nth values idx)]
+                (when (number? x)
+                  (let [total (+ total x)]
+                    (recur (inc idx)
+                           total
+                           (conj! result total))))))))))))
 
 (defn- diff-call
   [xs]
-  (when (vector? xs)
-    (if (< (count xs) strict-map-threshold)
-      (when (every? number? xs)
-        (vec (map - xs (cons 0 xs))))
-      (let [n (count xs)]
-        (loop [idx 0
+  (when (seqish? xs)
+    (let [values (seq-values xs)]
+      (if (< (count values) strict-map-threshold)
+        (when (every? number? values)
+          (dense/array (vec (map - values (cons 0 values)))))
+        (let [n (count values)]
+          (loop [idx 0
                previous 0
                result (transient [])]
-          (if (= idx n)
-            (persistent! result)
-            (let [x (nth xs idx)]
-              (when (number? x)
-                (recur (inc idx)
-                       x
-                       (conj! result (- x previous)))))))))))
+            (if (= idx n)
+              (dense/array (persistent! result))
+              (let [x (nth values idx)]
+                (when (number? x)
+                  (recur (inc idx)
+                         x
+                         (conj! result (- x previous))))))))))))
 
 (defn- trange-call
   [start stop step]
   (when-not (zero? step)
-    (vec (range start stop step))))
+    (dense/array (vec (range start stop step)))))
 
 (defn- trange-inversions
   [output cond]
   (when (and (empty? cond)
-             (vector? output)
-             (seq output)
-             (every? integer? output))
-    (let [step (if (> (count output) 1)
-                 (- (second output) (first output))
+             (seqish? output)
+             (seq (seq-values output))
+             (every? integer? (seq-values output)))
+    (let [values (seq-values output)
+          step (if (> (count values) 1)
+                 (- (second values) (first values))
                  1)
-          stop (+ (peek output) step)]
+          stop (+ (peek values) step)]
       (when (and (not (zero? step))
-                 (= output (trange-call (first output) stop step)))
-        [[(first output) stop step]]))))
+                 (same-seqish? output (trange-call (first values) stop step)))
+        [[(first values) stop step]]))))
 
 (defn- mean-call
   [xs]
   (when (and (seqish? xs)
-             (seq xs)
-             (every? number? xs))
-    (/ (double (reduce + xs))
-       (count xs))))
+             (seq (seq-values xs))
+             (every? number? (seq-values xs)))
+    (/ (double (reduce + (seq-values xs)))
+       (seq-count xs))))
 
 (defn- unique-indices
   [indices]
@@ -295,22 +396,23 @@
 (defn- content-values
   [content n]
   (cond
-    (and (vector? content) (= (count content) n)) content
+    (and (seqish? content) (= (seq-count content) n)) (seq-values content)
     (and (string? content) (= (count content) n)) (vec content)
-    (vector? content) nil
+    (seqish? content) nil
     (string? content) (vec (clojure.core/repeat n content))
     :else (vec (clojure.core/repeat n content))))
 
 (defn- insert-call
   [indices content rest]
-  (when (and (vector? indices) (seq-literal? rest))
-    (let [indices (unique-indices indices)
+  (when (and (index-vector? indices) (seq-literal? rest))
+    (let [indices (unique-indices (seq-values indices))
           content (content-values content (count indices))
-          n (+ (count content) (count rest))]
+          rest-values (if (string? rest) (vec rest) (seq-values rest))
+          n (+ (count content) (count rest-values))]
       (when (and content
                  (every? #(< % n) indices))
         (let [by-index (zipmap indices content)
-              rest-values (seq (if (string? rest) (vec rest) (vec rest)))
+              rest-values (seq rest-values)
               result (loop [idx 0
                             rest-values rest-values
                             result []]
@@ -321,28 +423,33 @@
                            (recur (inc idx) (next rest-values) (conj result (first rest-values))))))]
           (if (string? rest)
             (apply str result)
-            result))))))
+            (maybe-array result content rest)))))))
 
 (defn- partition-given-indices
   [output indices]
-  (when (and (seq-literal? output) (vector? indices))
-    (let [indices (unique-indices indices)
-          n (count output)]
+  (when (and (seq-literal? output) (index-vector? indices))
+    (let [indices (unique-indices (seq-values indices))
+          n (seq-count output)]
       (when (every? #(< % n) indices)
         (let [index-set (set indices)
-              output-values (if (string? output) (vec output) (vec output))
+              output-values (if (string? output) (vec output) (seq-values output))
               content (mapv output-values indices)
               rest (keep-indexed (fn [idx x]
                                    (when-not (index-set idx)
                                      x))
                                  output-values)
               content (if (string? output) (apply str content) content)
-              rest (if (string? output) (apply str rest) (vec rest))
+              rest (if (string? output)
+                     (apply str rest)
+                     (maybe-array (vec rest) output))
+              content-result (if (string? output)
+                               content
+                               (maybe-array content output))
               scalar-content (when (and (seq content)
                                         (not (string? content))
                                         (apply = content))
                                (first content))]
-          (cond-> [[content rest]]
+          (cond-> [[content-result rest]]
             scalar-content (conj [scalar-content rest])))))))
 
 (defn- common-prefix-len
@@ -387,19 +494,20 @@
 (defn- partition-given-content
   [output content]
   (when (seq-literal? output)
-    (let [output-values (if (string? output) (vec output) (vec output))]
+    (let [output-values (if (string? output) (vec output) (seq-values output))]
       (cond
-        (vector? content)
-        (loop [remaining content
+        (seqish? content)
+        (loop [remaining (seq-values content)
                used #{}
                indices []]
           (if (empty? remaining)
             (let [index-set (set indices)
                   rest (keep-indexed (fn [idx x]
                                        (when-not (index-set idx)
-                                         x))
+                                          x))
                                      output-values)]
-              [[indices (if (string? output) (apply str rest) (vec rest))]])
+              [[(dense/array indices)
+                (if (string? output) (apply str rest) (maybe-array (vec rest) output))]])
             (let [{:keys [idx len]} (best-content-block output-values used remaining)]
               (when (pos? len)
                 (recur (subvec remaining len)
@@ -414,31 +522,33 @@
             (let [index-set (set indices)
                   rest (keep-indexed (fn [idx x]
                                        (when-not (index-set idx)
-                                         x))
+                                          x))
                                      output-values)]
-              [[(vec indices) (if (string? output) (apply str rest) (vec rest))]])))))))
+              [[(dense/array (vec indices))
+                (if (string? output) (apply str rest) (maybe-array (vec rest) output))]])))))))
 
 (defn- getitem-call
   [xs idx]
-  (let [xs (vec xs)]
+  (let [xs-values (seq-values xs)]
     (cond
       (integer? idx)
-      (when (valid-index? xs idx)
-        (nth xs idx))
+      (when (valid-index? xs-values idx)
+        (nth xs-values idx))
 
       (bool-mask? idx)
-      (when (= (count xs) (count idx))
-        (mapv #(nth xs %) (mask-indices idx)))
+      (when (= (count xs-values) (seq-count idx))
+        (maybe-array (mapv #(nth xs-values %) (mask-indices idx)) xs))
 
       (index-vector? idx)
-      (when (valid-indices? xs idx)
-        (mapv #(nth xs %) idx))
+      (let [idxs (seq-values idx)]
+        (when (valid-indices? xs-values idxs)
+          (maybe-array (mapv #(nth xs-values %) idxs) xs)))
 
       :else nil)))
 
 (defn- getitem-unconditioned-inverse
   [output]
-  (loop [remaining (seq output)
+  (loop [remaining (seq (seq-values output))
          value->index {}
          values []
          indices []]
@@ -454,7 +564,7 @@
                    (assoc value->index x idx)
                    (conj values x)
                    (conj indices idx)))))
-      [[values indices]])))
+      [[(maybe-array values output) (dense/array indices)]])))
 
 (defn- set-many
   [xs indices values]
@@ -462,36 +572,42 @@
              (= (count indices) (count values)))
     (reduce (fn [acc [idx value]]
               (assoc acc idx value))
-            (vec xs)
+            (seq-values xs)
             (map vector indices values))))
 
 (defn- setitem-call
   [xs idx item]
-  (let [xs (vec xs)]
+  (let [xs-values (seq-values xs)]
     (cond
       (integer? idx)
-      (when (valid-index? xs idx)
-        (assoc xs idx item))
+      (when (valid-index? xs-values idx)
+        (maybe-array (assoc xs-values idx item) xs item))
 
       (bool-mask? idx)
-      (when (= (count xs) (count idx))
-        (set-many xs (vec (mask-indices idx)) (vec item)))
+      (when (= (count xs-values) (seq-count idx))
+        (maybe-array (set-many xs-values
+                               (vec (mask-indices idx))
+                               (seq-values item))
+                     xs item))
 
       (index-vector? idx)
-      (set-many xs idx (vec item))
+      (maybe-array (set-many xs-values (seq-values idx) (seq-values item))
+                   xs item)
 
       :else nil)))
 
 (defn- array-like-vector?
   [x]
-  (and (vector? x)
-       (every? #(or (number? %) (boolean? %)) x)))
+  (or (dense/ndarray? x)
+      (and (vector? x)
+           (every? #(or (number? %) (boolean? %)) x))))
 
 (defn- missing-sentinel
   [x]
   (cond
     (string? x) ""
     (boolean? x) false
+    (number? x) Double/NaN
     :else nil))
 
 (defn- source-template-after-set
@@ -502,25 +618,26 @@
               (if (written? idx)
                 (missing-sentinel value)
                 value))
-            (range (count output))
-            output))))
+            (range (seq-count output))
+            (seq-values output)))))
 
 (defn- setitem-source-inversions
   [output xs]
-  (when (= (count xs) (count output))
+  (when (= (seq-count xs) (seq-count output))
     (let [diffs (vec (keep-indexed (fn [idx old]
-                                     (when (not= old (nth output idx))
+                                     (when (not= old (seq-nth output idx))
                                        idx))
-                                   xs))]
+                                   (seq-values xs)))]
       (cond
         (and (seq diffs)
              (array-like-vector? xs)
              (array-like-vector? output))
-        [[diffs (mapv #(nth output %) diffs)]]
+        [[(dense/array diffs)
+          (maybe-array (mapv #(seq-nth output %) diffs) output)]]
 
         (= 1 (count diffs))
         (let [idx (first diffs)]
-          [[idx (nth output idx)]])
+          [[idx (seq-nth output idx)]])
 
         :else nil))))
 
@@ -542,11 +659,13 @@
                        (catch Throwable _ ::failed))]
         (if (and (not= ::failed shortcut)
                  (seqish? shortcut)
-                 (= (count shortcut) (count xs)))
-          (vec shortcut)
-          (mapv (fn [x]
-                  (value/datum (apply-op f [(value/value x)])))
-                xs))))))
+                 (= (seq-count shortcut) (seq-count xs)))
+          shortcut
+          (maybe-array
+           (mapv (fn [x]
+                   (value/datum (apply-op f [(value/value x)])))
+                 (seq-values xs))
+           xs))))))
 
 (defn- cartesian-product
   [colls]
@@ -560,7 +679,8 @@
 (defn- elementwise-inversions
   [f output]
   (when (seqish? output)
-    (let [output (vec output)
+    (let [output-template output
+          output (seq-values output)
           output-count (count output)
           empty-positions (vec (clojure.core/repeat output-count []))
           inversions-by-type
@@ -593,7 +713,7 @@
                                     100))
                        position-inversions)))
              (mapcat cartesian-product)
-             (mapv (fn [xs] [(vec xs)])))))))
+             (mapv (fn [xs] [(maybe-array (vec xs) output-template)])))))))
 
 (defn- map-inversions
   [output cond-inputs cond]
@@ -607,8 +727,9 @@
 (defn partition-by-frequency
   "Partition output as `[indices content rest]` using the most common value as rest."
   [output]
-  (when (vector? output)
-    (let [values output
+  (when (or (dense/ndarray? output)
+            (vector? output))
+    (let [values (seq-values output)
           value-counts (frequencies values)]
       (when (seq value-counts)
         (let [rest-value (->> value-counts
@@ -625,10 +746,13 @@
               content (if (and (seq content) (apply = content))
                         (first content)
                         content)
-              rest rest]
+              content (if (vector? content)
+                        (maybe-array content output)
+                        content)
+              rest (maybe-array rest output)]
           (when (and (> rest-count 1)
                      (seq indices))
-            [[(vec indices) content rest]]))))))
+            [[(dense/array (vec indices)) content rest]]))))))
 
 (def add
   (operator
@@ -636,11 +760,11 @@
     :conditions [[0] [1]]
     :commutative? true
     :call (fn [[x y]]
-            (elementwise2 + x y))
+            (dense/add x y))
     :inverse (fn [output cond-inputs cond]
                (when (= 1 (count cond))
                  (let [known (first cond-inputs)]
-                   (when-let [result (elementwise2 - output known)]
+                   (when-let [result (maybe-call dense/subtract output known)]
                      [[result]]))))}))
 
 (def sub
@@ -648,13 +772,13 @@
    {:id :sub
     :conditions [[0] [1]]
     :call (fn [[x y]]
-            (elementwise2 - x y))
+            (dense/subtract x y))
     :inverse (fn [output cond-inputs cond]
                (when (= 1 (count cond))
                  (let [known (first cond-inputs)]
                    (when-let [result (case (first cond)
-                                       0 (elementwise2 - known output)
-                                       1 (elementwise2 + output known)
+                                       0 (maybe-call dense/subtract known output)
+                                       1 (maybe-call dense/add output known)
                                        nil)]
                      [[result]]))))}))
 
@@ -664,14 +788,15 @@
     :conditions [[0] [1]]
     :commutative? true
     :call (fn [[x y]]
-            (elementwise2 * x y))
+            (dense/multiply x y))
     :inverse (fn [output cond-inputs cond]
                (when (= 1 (count cond))
                  (let [known (first cond-inputs)]
                    (when-not (or (and (number? known) (zero? known))
-                                 (and (seqish? known) (some zero? known)))
-                     (when-let [result (elementwise2 / output known)]
-                       [[result]])))))}))
+                                 (and (seqish? known) (some zero? (seq-values known))))
+                     (when-let [result (maybe-call dense/divide output known)]
+                       (when-let [result (maybe-integral-quotient output known result)]
+                         [[result]]))))))}))
 
 (def negate
   (operator
@@ -679,25 +804,21 @@
     :conditions [[]]
     :commutative? true
     :call (fn [[x]]
-            (if (seqish? x)
-              (mapv - x)
-              (- x)))
+            (dense/negative x))
     :inverse (fn [output _cond-inputs cond]
                (when (empty? cond)
-                 [[(if (seqish? output)
-                     (mapv - output)
-                     (- output))]]))}))
+                 [[(dense/negative output)]]))}))
 
 (def lessthan
   (operator
    {:id :lessthan
     :conditions [[0 1]]
     :call (fn [[x y]]
-            (elementwise2 < x y))
+            (dense/less x y))
     :inverse (fn [output cond-inputs condition]
                (when (= [0 1] (vec condition))
                  (let [[x y] cond-inputs]
-                   (when (= output (elementwise2 < x y))
+                   (when (= output (maybe-call dense/less x y))
                      [[]]))))}))
 
 (def equal
@@ -706,7 +827,7 @@
     :conditions [[0] [1]]
     :commutative? true
     :call (fn [[x y]]
-            (elementwise2 = x y))
+            (dense/equal x y))
     :inverse (fn [output cond-inputs condition]
                (when (and (= 1 (count condition))
                           (all-true? output))
@@ -749,22 +870,23 @@
    {:id :len
     :conditions [[0]]
     :call (fn [[x]]
-            (count x))}))
+            (seq-count x))}))
 
 (def brange
   (operator
    {:id :brange
     :conditions [[]]
     :call (fn [[start n]]
-            (vec (range start n)))
+            (dense/array (vec (range start n))))
     :inverse (fn [output _cond-inputs cond]
                (when (and (empty? cond)
-                          (vector? output)
-                          (seq output)
-                          (every? integer? output)
-                          (= output (vec (range (first output)
-                                                (+ (first output) (count output))))))
-                 [[(first output) (inc (last output))]]))}))
+                          (seqish? output)
+                          (seq (seq-values output))
+                          (every? integer? (seq-values output)))
+                 (let [values (seq-values output)]
+                   (when (= values (vec (range (first values)
+                                               (+ (first values) (count values)))))
+                     [[(first values) (inc (last values))]]))))}))
 
 (def trange
   (operator
@@ -843,27 +965,32 @@
     :call (fn [[left right]]
             (if (and (string? left) (string? right))
               (str left right)
-              (into (strict-vec left) right)))
+              (maybe-array (into (strict-vec left)
+                                 (if (string? right) (vec right) (seq-values right)))
+                           left
+                           right)))
     :inverse (fn [output cond-inputs cond]
                (when (= 1 (count cond))
                  (let [known (first cond-inputs)]
                    (case (first cond)
                      0 (when (and (seq-literal? known)
                                   (seq-literal? output)
-                                  (same-seqish? known (prefix-motif output (count known))))
+                                  (same-seqish? known (prefix-motif output (seq-count known))))
                          [[(if (string? output)
                              (subs output (count known))
-                             (subvec (vec output) (count known)))]])
-                     1 (let [split (- (count output) (count known))]
+                             (maybe-array (subvec (seq-values output) (seq-count known))
+                                          output))]])
+                     1 (let [split (- (seq-count output) (seq-count known))]
                          (when (and (seq-literal? known)
                                     (seq-literal? output)
                                     (<= 0 split)
                                     (same-seqish? known (if (string? output)
                                                           (subs output split)
-                                                          (subvec (vec output) split))))
+                                                          (subvec (seq-values output) split))))
                            [[(if (string? output)
                                (subs output 0 split)
-                               (subvec (vec output) 0 split))]]))
+                               (maybe-array (subvec (seq-values output) 0 split)
+                                            output))]]))
                      ()))))}))
 
 (def getitem
@@ -881,19 +1008,24 @@
                  [1] (let [idx (first cond-inputs)]
                        (cond
                          (and (bool-mask? idx)
-                              (= (selected-count idx) (count output)))
-                         [[(reduce (fn [acc [selected-idx value]]
+                              (= (selected-count idx) (seq-count output)))
+                         [[(maybe-array
+                            (reduce (fn [acc [selected-idx value]]
                                       (assoc acc selected-idx value))
-                                    (vec (clojure.core/repeat (count idx) nil))
-                                    (map vector (mask-indices idx) output))]]
+                                    (vec (clojure.core/repeat (seq-count idx) nil))
+                                    (map vector (mask-indices idx) (seq-values output)))
+                            output)]]
 
                          (and (index-vector? idx)
-                              (= (count idx) (count output)))
-                         (let [n (inc (reduce max -1 idx))]
-                           [[(reduce (fn [acc [selected-idx value]]
+                              (= (seq-count idx) (seq-count output)))
+                         (let [idxs (seq-values idx)
+                               n (inc (reduce max -1 idxs))]
+                           [[(maybe-array
+                              (reduce (fn [acc [selected-idx value]]
                                         (assoc acc selected-idx value))
                                       (vec (clojure.core/repeat n nil))
-                                      (map vector idx output))]])
+                                      (map vector idxs (seq-values output)))
+                              output)]])
 
                          :else nil))
                  nil))}))
@@ -908,25 +1040,31 @@
                                 {:xs xs :idx idx :item item}))))
     :inverse (fn [output cond-inputs condition]
                (case (vec condition)
-                 [0] (setitem-source-inversions output (vec (first cond-inputs)))
+                 [0] (setitem-source-inversions output (seq-values (first cond-inputs)))
                  [1] (let [idx (first cond-inputs)]
                        (cond
                          (integer? idx)
                          (when (valid-index? output idx)
-                           [[(assoc (vec output) idx (missing-sentinel (nth output idx)))
-                             (nth output idx)]])
+                           [[(maybe-array
+                              (assoc (seq-values output)
+                                     idx
+                                     (missing-sentinel (seq-nth output idx)))
+                              output)
+                             (seq-nth output idx)]])
 
                          (bool-mask? idx)
                          (let [indices (vec (mask-indices idx))]
-                           (when (and (= (count idx) (count output))
+                           (when (and (= (seq-count idx) (seq-count output))
                                       (seq indices))
                              [[(source-template-after-set output indices)
-                               (mapv #(nth output %) indices)]]))
+                               (maybe-array (mapv #(seq-nth output %) indices)
+                                            output)]]))
 
                          (index-vector? idx)
-                         (when (seq idx)
-                           [[(source-template-after-set output idx)
-                             (mapv #(nth output %) idx)]])
+                         (when (seq (seq-values idx))
+                           [[(source-template-after-set output (seq-values idx))
+                             (maybe-array (mapv #(seq-nth output %) (seq-values idx))
+                                          output)]])
 
                          :else nil))
                  nil))}))

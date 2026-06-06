@@ -1,14 +1,39 @@
 (ns ciwi.composite-test
   (:require [ciwi.composite :as sut]
+            [ciwi.dense :as dense]
             [ciwi.graph :as graph]
             [ciwi.operator :as op]
+            [ciwi.test-helpers :as h]
             [ciwi.value :as value]
             [clojure.set :as set]
             [clojure.test :refer [deftest is]]))
 
 (defn- data-results
   [results]
-  (mapv #(mapv value/datum %) results))
+  (h/nested-plain-missing (mapv #(mapv value/datum %) results)))
+
+(defn- op-data
+  [v]
+  (h/nested-plain-missing (value/datum v)))
+
+(defn- dense-seq?
+  [x]
+  (or (dense/ndarray? x)
+      (and (sequential? x) (not (string? x)))))
+
+(defn- seqv
+  [x]
+  (if (dense/ndarray? x)
+    (dense/ravel x)
+    (vec x)))
+
+(defn- maybe-seqv
+  [x]
+  (when (dense-seq? x)
+    (try
+      (seqv x)
+      (catch RuntimeException _
+        nil))))
 
 (defn- fixture-op
   ([id conditions call inverse]
@@ -68,8 +93,8 @@
 
 (defn- whole-or-elementwise
   [f x]
-  (if (and (sequential? x) (not (string? x)))
-    (mapv f x)
+  (if (dense-seq? x)
+    (mapv f (seqv x))
     (f x)))
 
 (defn- int-like?
@@ -83,30 +108,30 @@
 (defn- conversion-inverse
   [output target]
   (let [convert-branch (fn [f]
-                         (if (and (sequential? output) (not (string? output)))
-                           (mapv f output)
+                         (if (dense-seq? output)
+                           (mapv f (seqv output))
                            (f output)))
         bool-branch (fn []
-                      (when (if (and (sequential? output) (not (string? output)))
-                              (every? bool-code? output)
+                      (when (if (dense-seq? output)
+                              (every? bool-code? (seqv output))
                               (bool-code? output))
                         [(convert-branch #(= % 1))]))]
     (case target
       :int
-      (when (if (and (sequential? output) (not (string? output)))
-              (every? integer? output)
+      (when (if (dense-seq? output)
+              (every? integer? (seqv output))
               (integer? output))
         (cond-> [[(convert-branch double)]
                  [(convert-branch str)]]
           (bool-branch) (conj (bool-branch))))
 
       :float
-      (when (if (and (sequential? output) (not (string? output)))
-              (every? number? output)
+      (when (if (dense-seq? output)
+              (every? number? (seqv output))
               (number? output))
         (cond-> []
-          (if (and (sequential? output) (not (string? output)))
-            (every? int-like? output)
+          (if (dense-seq? output)
+            (every? int-like? (seqv output))
             (int-like? output))
           (conj [(convert-branch long)])
 
@@ -141,9 +166,9 @@
                 [x])
               (fn [output _cond-inputs cond]
                 (when (and (empty? cond)
-                           (sequential? output)
-                           (= 1 (count output)))
-                  [[(first output)]]))
+                           (dense-seq? output)
+                           (= 1 (count (seqv output))))
+                  [[(first (seqv output))]]))
               true))
 
 (def ^:private urange-op
@@ -153,17 +178,19 @@
                 (vec (range stop)))
               (fn [output _cond-inputs cond]
                 (when (and (empty? cond)
-                           (vector? output)
-                           (seq output)
-                           (every? integer? output)
-                           (= output (vec (range (inc (peek output))))))
-                  [[(inc (peek output))]]))
+                           (dense-seq? output)
+                           (seq (seqv output))
+                           (every? integer? (seqv output))
+                           (= (seqv output) (vec (range (inc (peek (seqv output)))))))
+                  [[(inc (peek (seqv output)))]]))
               true))
 
 (defn- boolish-vector?
   [x]
-  (and (vector? x)
-       (every? #(or (true? %) (false? %)) x)))
+  (or (and (dense/ndarray? x)
+           (= :bool (dense/dtype x)))
+      (and (vector? x)
+           (every? #(or (true? %) (false? %)) x))))
 
 (def ^:private bool-not-op
   (fixture-op :not
@@ -171,13 +198,13 @@
               (fn [[x]]
                 (cond
                   (or (true? x) (false? x)) (not x)
-                  (boolish-vector? x) (mapv not x)
+                  (boolish-vector? x) (mapv not (seqv x))
                   :else (throw (ex-info "not expects bool or bool vector" {:x x}))))
               (fn [output _cond-inputs cond]
                 (when (empty? cond)
                   (clojure.core/cond
                     (or (true? output) (false? output)) [[(not output)]]
-                    (boolish-vector? output) [[(mapv not output)]])))
+                    (boolish-vector? output) [[(mapv not (seqv output))]])))
               true))
 
 (def ^:private div-op
@@ -185,26 +212,48 @@
               [[0] [1]]
               (fn [[x y]]
                 (cond
-                  (and (vector? x) (vector? y) (= (count x) (count y)))
-                  (mapv / x y)
+                  (and (dense-seq? x) (dense-seq? y) (= (count (seqv x)) (count (seqv y))))
+                  (mapv / (seqv x) (seqv y))
 
-                  (vector? x)
-                  (mapv #(/ % y) x)
+                  (dense-seq? x)
+                  (mapv #(/ % y) (seqv x))
 
-                  (vector? y)
-                  (mapv #(/ x %) y)
+                  (dense-seq? y)
+                  (mapv #(/ x %) (seqv y))
 
                   :else
                   (/ x y)))
               (fn [output cond-inputs cond]
-                (when (and (number? output)
-                           (not (zero? output))
-                           (= 1 (count cond)))
-                  (let [known (first cond-inputs)]
+                (let [out-values (maybe-seqv output)]
+                  (when (and (= 1 (count cond))
+                             (or (and (number? output)
+                                      (not (zero? output)))
+                                 (and out-values
+                                      (every? #(not (zero? %)) out-values))))
+                  (let [known (first cond-inputs)
+                        known-values (maybe-seqv known)]
                     (case (first cond)
-                      0 [[(/ known output)]]
-                      1 [[(* output known)]]
-                      nil))))))
+                      0 (clojure.core/cond
+                          (and known-values out-values
+                               (= (count known-values) (count out-values)))
+                          [[(mapv / known-values out-values)]]
+
+                          out-values
+                          [[(mapv #(/ known %) out-values)]]
+
+                          :else
+                          [[(/ known output)]])
+                      1 (clojure.core/cond
+                          (and out-values known-values
+                               (= (count out-values) (count known-values)))
+                          [[(mapv * out-values known-values)]]
+
+                          out-values
+                          [[(mapv #(* % known) out-values)]]
+
+                          :else
+                          [[(* output known)]])
+                      nil)))))))
 
 (defn- callable-fixture-op
   [f]
@@ -229,20 +278,20 @@
             func-cond (mapv dec known-children)]
         (when (and f
                    (contains? (set (:conditions f)) func-cond)
-                   (vector? output)
-                   (every? vector? known-values)
-                   (every? #(= (count output) (count %)) known-values))
+                   (dense-seq? output)
+                   (every? dense-seq? known-values)
+                   (every? #(= (count (seqv output)) (count (seqv %))) known-values))
           (let [inversions
                 (loop [idx 0
                        total-branches 1
                        result []]
-                  (if (= idx (count output))
+                  (if (= idx (count (seqv output)))
                     result
-                    (let [func-cond-inputs (mapv #(nth % idx) known-values)
+                    (let [func-cond-inputs (mapv #(nth (seqv %) idx) known-values)
                           invs (mapv (fn [values]
                                        (mapv value/datum values))
                                      (op/invert-op f
-                                                   (value/value (nth output idx))
+                                                   (value/value (nth (seqv output) idx))
                                                    (mapv value/value func-cond-inputs)
                                                    func-cond))
                           total-branches (* total-branches (count invs))]
@@ -262,12 +311,12 @@
               [[0] [0 1] [0 2]]
               (fn [[f xs ys]]
                 (when-let [f (callable-fixture-op f)]
-                  (when (= (count xs) (count ys))
+                  (when (= (count (seqv xs)) (count (seqv ys)))
                     (mapv (fn [x y]
                             (value/datum (op/apply-op f [(value/value x)
                                                          (value/value y)])))
-                          xs
-                          ys))))
+                          (seqv xs)
+                          (seqv ys)))))
               bmap-inverse))
 
 (def ^:private cumop-op
@@ -275,7 +324,7 @@
               [[0]]
               (fn [[f start xs]]
                 (when-let [f (callable-fixture-op f)]
-                  (loop [remaining xs
+                  (loop [remaining (seq (seqv xs))
                          current start
                          result [start]]
                     (if-let [remaining (seq remaining)]
@@ -285,12 +334,12 @@
                       result))))
               (fn [output cond-inputs cond]
                 (when (and (= [0] (vec cond))
-                           (vector? output)
-                           (seq output))
+                           (dense-seq? output)
+                           (seq (seqv output)))
                   (when-let [f (callable-fixture-op (first cond-inputs))]
                     (when (contains? (set (:conditions f)) [0])
                       (let [inversions
-                            (loop [pairs (partition 2 1 output)
+                            (loop [pairs (partition 2 1 (seqv output))
                                    result []]
                               (if-let [[previous current] (first pairs)]
                                 (let [invs (mapv (fn [values]
@@ -305,7 +354,7 @@
                         (when (seq inversions)
                           (let [branch-count (apply min (map count inversions))]
                             (mapv (fn [branch-idx]
-                                    [(first output)
+                                    [(first (seqv output))
                                      (mapv first
                                            (mapv #(nth % branch-idx) inversions))])
                                   (range branch-count)))))))))))
@@ -314,14 +363,14 @@
   (fixture-op :table
               [[]]
               (fn [[values positions]]
-                (mapv values positions))
+                (mapv (seqv values) (seqv positions)))
               (fn [output _cond-inputs cond]
                 (when (and (empty? cond)
-                           (vector? output)
-                           (seq output))
-                  (let [values (vec (sort (set output)))
+                           (dense-seq? output)
+                           (seq (seqv output)))
+                  (let [values (vec (sort (set (seqv output))))
                         position (zipmap values (range))]
-                    [[values (mapv position output)]])))))
+                    [[values (mapv position (seqv output))]])))))
 
 (defn- missing-like
   [x]
@@ -330,10 +379,11 @@
 (defn- dec-composite-inverse
   [output cond-inputs cond]
   (when (and (= [1] (vec cond))
-             (vector? output)
+             (dense-seq? output)
              (boolish-vector? (first cond-inputs))
-             (= (count output) (count (first cond-inputs))))
-    (let [mask (first cond-inputs)]
+             (= (count (seqv output)) (count (seqv (first cond-inputs)))))
+    (let [mask (seqv (first cond-inputs))
+          output (seqv output)]
       [[(mapv (fn [selected? x]
                 (if selected? (missing-like x) x))
               mask
@@ -360,13 +410,15 @@
   [x]
   (if (set? x)
     x
-    (set x)))
+    (set (if (dense/ndarray? x)
+           (dense/tolist x)
+           (if (dense-seq? x) (seqv x) x)))))
 
 (def ^:private zip2d-op
   (fixture-op :zip2d
               [[]]
               (fn [[xs ys]]
-                (mapv vector xs ys))
+                (mapv vector (seqv xs) (seqv ys)))
               (constantly nil)))
 
 (def ^:private union-op
@@ -595,16 +647,16 @@
     (is (= [[1]]
            (:conditions dag5)))
     (is (= [[3 9] [4 9] [5 9] [6 9]]
-           (value/datum (op/apply-op dag4
-                                     [(value/value 3)
-                                      (value/value 4)
-                                      (value/value [9])]))))
+           (op-data (op/apply-op dag4
+                                 [(value/value 3)
+                                  (value/value 4)
+                                  (value/value [9])]))))
     (is (= #{[3 9] [4 9] [5 9] [6 9] [9 8]}
-           (value/datum (op/apply-op dag5
-                                     [(value/value 3)
-                                      (value/value 4)
-                                      (value/value [9])
-                                      (value/value #{[9 8]})]))))
+           (op-data (op/apply-op dag5
+                                 [(value/value 3)
+                                  (value/value 4)
+                                  (value/value [9])
+                                  (value/value #{[9 8]})]))))
     (is (= [[#{[9 8]}]]
            (data-results (op/invert-op dag5
                                        (value/value #{[3 9] [4 9] [5 9]
@@ -1258,8 +1310,8 @@
                              [:input :mask [false true true false]]
                              [:input :items [78 34]]])]
     (is (= [3 2]
-           (value/datum (op/apply-op pick [(value/value [3 5 2])
-                                           (value/value [true false true])]))))
+           (op-data (op/apply-op pick [(value/value [3 5 2])
+                                       (value/value [true false true])]))))
     (is (= [[] [1]]
            (:conditions pick)))
     (is (= [[[2.0 nil nil 3.0]]]
@@ -1273,12 +1325,12 @@
                                        []
                                        []))))
     (is (= [342 78 34 252]
-           (value/datum (op/apply-op patch [(value/value [342 6 8 252])
-                                            (value/value [false true true false])
-                                            (value/value [78 34])]))))
+           (op-data (op/apply-op patch [(value/value [342 6 8 252])
+                                        (value/value [false true true false])
+                                        (value/value [78 34])]))))
     (is (= [[0] [1]]
            (:conditions patch)))
-    (is (= [[[342 nil nil 252] [78 34]]]
+    (is (= [[[342.0 nil nil 252.0] [78 34]]]
            (data-results (op/invert-op patch
                                        (value/value [342 78 34 252])
                                        [(value/value [false true true false])]

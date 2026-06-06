@@ -33,8 +33,9 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
 
 - CIWI has immutable graph/value/operator data structures, propagation, MDL
   selection, graph-backed composites, Fix, local rewrite operators, bounded
-  compression loops, a Clojure-native graph literal DSL, and the first
-  vector-backed `ciwi.dense` slice for numeric graph array values.
+  compression loops, a Clojure-native graph literal DSL, and a vector-backed
+  `ciwi.dense` slice used as the native representation for numeric graph array
+  values.
 - Recognizer templates are disabled by default and must be explicitly injected.
   They are not Alice parity evidence.
 - `ciwi.wunderbaum` contains the first straight-port slice of Python
@@ -122,8 +123,8 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
 - Native propagation parity tests now cover Python `co2`, `co3`, `co4`,
   `matching/set_mean_add`, and `composite/trees2` behavior without DOT parsing.
   These cases exercise partial propagation, multiple inverse branches,
-  `trange`, `mean`, cyclic value dependencies, and the CIWI-native `nil` hole
-  representation for Python's internal integer-array unknown sentinel.
+  `trange`, `mean`, cyclic value dependencies, and dense numeric arrays with
+  NaN-backed missing slots for Python's internal unknown sentinels.
 - Delayed-builder parity now covers Python's `Array[int]` simple and
   `with_mult` fixtures as exact native `brange` output-conditioned
   materializations, plus the same-node binary input regression and
@@ -166,6 +167,13 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
 - Composite inverse requests now accept non-minimal condition sets only when
   they cover at least one advertised composite condition, matching Python cases
   such as `dag5` while rejecting unsupported condition sets.
+- Numeric graph array values now cross the value boundary as `ciwi.dense`
+  arrays. Alice-basis operators, propagation, MDL/raw expression rendering,
+  rewrite enumeration, graph rewrite, library matchers, delayed-builder
+  materialization, and Wunderbaum inspection are dense-aware while symbolic
+  vectors/lists, graph ids, search state, and optimizer coordinate machinery
+  remain native Clojure data. Dense numeric missing values use `NaN`, and
+  tests normalize dense outputs only at assertion boundaries.
 
 ## Roadmap
 
@@ -204,13 +212,8 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   `optimizer-graph-search-parity.md` as the evidence matrix for
   `test_discrete_optimizer.py`, `TestMatrixRegressionDebugPipeline`, and later
   clustering/classification rows.
-- Before porting matrix regression, migrate numeric graph array operators to
-  the backend-neutral dense API. Keep symbolic/search infrastructure native,
-  but make `:array-*` numeric graph values dense. The initial vector-backed
-  dense slice now covers NumPy-ish metadata/accessors, NaN missing-value
-  normalization, elementwise arithmetic/comparison, `dot`, `sum`, and
-  spec/value-DL/hash recognition.
-- Next implementation targets are dense operator migration, residual-DL
+- The dense numeric graph-value migration is complete for the current operator
+  basis and test suite. The next implementation targets are residual-DL
   adaptive optimizer examples, graph-level `try_to_optimize` over permeable
   numeric leaves, and the matrix regression optimizer/pipeline rows.
 - Keep updating `alice-test-parity.md` only for plain Alice/Wunderbaum sequence

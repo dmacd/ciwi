@@ -3,6 +3,7 @@
             [ciwi.graph :as graph]
             [ciwi.operator :as op]
             [ciwi.propagation :as propagation]
+            [ciwi.test-helpers :as h]
             [ciwi.value :as value]
             [clojure.test :refer [deftest is]]))
 
@@ -20,14 +21,19 @@
 
 (defn- value-at
   [mem node-id]
-  (value/datum (:value (get mem node-id))))
+  (h/plain-missing (value/datum (:value (get mem node-id)))))
+
+(defn- data-at
+  [graph node-id]
+  (h/plain-missing (graph/value-data graph node-id)))
 
 (defn- approx-vector=
   [left right]
-  (and (= (count left) (count right))
+  (let [right (h/plain-missing right)]
+    (and (= (count left) (count right))
        (every? (fn [[x y]]
                  (< (abs (- (double x) (double y))) 1.0e-9))
-               (map vector left right))))
+               (map vector left right)))))
 
 (defn- delayed-brange-build
   [data]
@@ -64,10 +70,10 @@
       (is (= :d (:root result)) name)
       (is (= :brange (get-in op-node [:operator :id])) name)
       (is (= [:d] (graph/roots g')) name)
-      (is (= data (graph/value-data g' :d)) name)
+      (is (= data (data-at g' :d)) name)
       (is (= expected-args
-             [(graph/value-data g' start-id)
-              (graph/value-data g' stop-id)])
+             [(data-at g' start-id)
+              (data-at g' stop-id)])
           name)
       (is (= expected-args
              [(value-at (:memory result) start-id)
@@ -85,7 +91,7 @@
         [result] (sut/delayed-dag-build info {[:array] [element]} #{})]
     (is (map? result))
     (is (= [-2 -3 -4]
-           (graph/value-data (:graph result) (:root result))))
+           (data-at (:graph result) (:root result))))
     (is (seq (graph/leaves (:graph result) (:root result))))
     (is (every? #(contains? (:memory result) %)
                 (graph/leaves (:graph result) (:root result))))))
@@ -103,7 +109,7 @@
         g' (:graph result)
         op-node (graph/node g' (:operator-id result))]
     (is (approx-vector= [1.0 4.84 9.0]
-                        (graph/value-data g' (:root result))))
+                        (data-at g' (:root result))))
     (is (= [:d :d]
            (:children op-node)))
     (is (= [(:operator-id result)]
@@ -127,7 +133,7 @@
     (is (= [:known generated-id]
            (:children op-node)))
     (is (= 3
-           (graph/value-data g' generated-id)))
+           (data-at g' generated-id)))
     (is (= 3
            (value-at (:memory result) generated-id)))))
 

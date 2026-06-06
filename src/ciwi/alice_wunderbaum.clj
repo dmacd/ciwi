@@ -281,7 +281,7 @@
   [value-dl-cache v]
   (let [v (value/value v)]
     {:kind :raw
-     :expr (:data v)
+     :expr (value/plain-datum v)
      :dl (value/desc-len-cached value-dl-cache v)}))
 
 (defn- choice-tree
@@ -290,7 +290,7 @@
     :raw
     (let [v (get-in g [:nodes (:node-id choice) :value])]
       {:kind :raw
-       :expr (:data v)
+       :expr (value/plain-datum v)
        :dl (or (:dl choice)
                (value/desc-len-cached value-dl-cache v))})
 

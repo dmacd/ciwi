@@ -1,5 +1,6 @@
 (ns ciwi.graph-rewrite-test
-  (:require [ciwi.graph :as graph]
+  (:require [ciwi.dense :as dense]
+            [ciwi.graph :as graph]
             [ciwi.graph-rewrite :as graph-rewrite]
             [ciwi.mdl :as mdl]
             [ciwi.operator :as op]
@@ -15,8 +16,8 @@
 
 (defn- square-literals
   [data]
-  (if (vector? data)
-    [0 (count data)]
+  (if (or (dense/ndarray? data) (vector? data))
+    [0 (if (dense/ndarray? data) (dense/size data) (count data))]
     [0 1 data]))
 
 (deftest graph-rewrite-finds-range-from-literal-operands

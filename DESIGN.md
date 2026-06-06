@@ -33,7 +33,12 @@ A value is data plus optional metadata used by search and propagation:
               :spec :array-int
               :permeable? false})
 
-;; #ciwi.value.Value{:data [0 1 2 3],
+;; Numeric vectors are promoted to ciwi.dense arrays at the value boundary:
+;; #ciwi.value.Value{:data #ciwi.dense.NDArray{:backend :ciwi.vector,
+;;                                             :dtype :int64,
+;;                                             :shape [4],
+;;                                             :data [0 1 2 3],
+;;                                             :flat [0 1 2 3]},
 ;;                   :name "target",
 ;;                   :spec :array-int,
 ;;                   :permeable? false,
@@ -210,9 +215,10 @@ equations produce no inverse result rather than fabricating symbolic values.
 
 Python sometimes represents unknown holes inside numeric arrays with internal
 sentinel values, for example the integer-array sentinel emitted by `setitem`
-inversion. CIWI keeps those partial native values as vectors containing `nil`
-holes. This preserves the propagation semantics while avoiding Python-specific
-sentinel data in native fixtures and graph values.
+inversion. CIWI represents missing dense numeric slots with `NaN`; assertion
+helpers may render those slots as `nil` for readability, but graph values stay
+dense. This mirrors Python/NumPy-style missing propagation while avoiding
+Python-specific sentinel constants in native graph code.
 
 ## Core Operators
 
@@ -266,10 +272,13 @@ objectives should call a small CIWI-owned protocol rather than importing
 Neanderthal, DJL, JAX, or a future custom backend directly.
 
 The first implementation is deliberately small: a pure Clojure/vector backend
-for correctness, with NumPy-ish names and only the operations needed to start
-the optimizer-backed parity tranche. That avoids locking CIWI into
-vector-specific graph code while also avoiding a native dependency before the
-optimizer-backed graph-search behavior is green.
+for correctness, with NumPy-ish names and the operations needed to start the
+optimizer-backed parity tranche. Numeric graph vectors now auto-promote to
+`ciwi.dense/NDArray` in `ciwi.value/value`; structural lists, strings, sets,
+operators, graph ids, search state, and optimizer coordinate machinery remain
+native Clojure data. This avoids locking CIWI into vector-specific graph code
+while also avoiding a native dependency before optimizer-backed graph-search
+behavior is green.
 
 The dense API should stay close to NumPy where that is not painful:
 
@@ -295,6 +304,12 @@ Dense numeric missing values use `NaN`, including when a native fixture contains
 `nil` in a numeric array slot. This mirrors the Python/NumPy style we want to
 interoperate with and avoids a separate nullable-array representation in the
 first backend. Integer arrays with missing values promote to `:float64`.
+
+Dense values should be converted back to plain Clojure data only at boundaries
+that need presentation or durable symbolic forms, such as selected-expression
+rendering, docs, and tests. Operators, value DL, hashing, propagation,
+Wunderbaum, local rewrite enumeration, and library matchers should work against
+the dense protocol directly.
 
 `tolist` is intentionally explicit and should not be used repeatedly in scoring
 or search hot loops. Value description length and stable graph keys should use

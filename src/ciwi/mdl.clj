@@ -277,5 +277,5 @@
                                             (:choice (node-dl g child-id context)))
                                         (conj trace child-id))))
                               (:children choice))))
-                 (get-in g [:nodes (:node-id choice) :value :data])))]
+                 (value/plain-datum (get-in g [:nodes (:node-id choice) :value]))))]
          (expr (choice-for g id context choices) #{id}))))))

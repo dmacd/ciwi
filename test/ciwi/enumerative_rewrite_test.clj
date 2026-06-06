@@ -1,5 +1,6 @@
 (ns ciwi.enumerative-rewrite-test
-  (:require [ciwi.enumerative-rewrite :as enum]
+  (:require [ciwi.dense :as dense]
+            [ciwi.enumerative-rewrite :as enum]
             [ciwi.graph :as graph]
             [ciwi.mdl :as mdl]
             [ciwi.operator :as op]
@@ -14,8 +15,8 @@
 
 (defn- square-literals
   [data]
-  (if (vector? data)
-    [0 (count data)]
+  (if (or (dense/ndarray? data) (vector? data))
+    [0 (if (dense/ndarray? data) (dense/size data) (count data))]
     [0 1 data]))
 
 (def square-range-enumerator
