@@ -238,12 +238,38 @@
     (catch Exception _
       nil)))
 
-(defn- try-invert-op
+(defn- inverse-cache-key
+  [value-content-cache operator output known-inputs known-positions]
+  [(:id operator)
+   (vec known-positions)
+   (value-fingerprint value-content-cache output)
+   (mapv #(value-fingerprint value-content-cache %) known-inputs)])
+
+(defn- raw-invert-op
   [operator output known-inputs known-positions]
   (try
-    (op/invert-op operator output known-inputs known-positions)
+    (vec (op/invert-op operator output known-inputs known-positions))
     (catch Exception _
-      ())))
+      [])))
+
+(defn- try-invert-op
+  [operator output known-inputs known-positions opts]
+  (if-let [inverse-cache (:inverse-cache opts)]
+    (let [value-content-cache (:value-content-cache opts)
+          k (inverse-cache-key value-content-cache
+                               operator
+                               output
+                               known-inputs
+                               known-positions)]
+      (if-let [entry (find @inverse-cache k)]
+        (val entry)
+        (let [result (raw-invert-op operator
+                                    output
+                                    known-inputs
+                                    known-positions)]
+          (swap! inverse-cache assoc k result)
+          result)))
+    (raw-invert-op operator output known-inputs known-positions)))
 
 (defn- costed-operator
   [{:keys [operator dl]}]
@@ -293,7 +319,11 @@
               existing-value-buckets (memory-value-fingerprint-buckets
                                       value-content-cache
                                       memory)]
-          (for [missing-values (try-invert-op operator output known-inputs known-positions)
+          (for [missing-values (try-invert-op operator
+                                              output
+                                              known-inputs
+                                              known-positions
+                                              opts)
                 :when (= (count missing-positions) (count missing-values))
                 :when (not (duplicate-generated-value? value-content-cache
                                                        existing-value-buckets

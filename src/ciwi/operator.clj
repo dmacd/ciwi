@@ -723,26 +723,82 @@
                      (invert-op f (value/value output) [] [])))
           (elementwise-inversions f output)))))
 
+(defn- count-values
+  [values]
+  (let [n (count values)]
+    (loop [idx 0
+           counts {}]
+      (if (= idx n)
+        counts
+        (let [x (nth values idx)]
+          (recur (inc idx)
+                 (update counts x (fnil inc 0))))))))
+
+(defn- more-common-partition-value?
+  [[left-value left-count] [right-value right-count]]
+  (or (> left-count right-count)
+      (and (= left-count right-count)
+           (neg? (compare (pr-str left-value)
+                          (pr-str right-value))))))
+
+(defn- most-common-value
+  [value-counts]
+  (first
+   (reduce (fn [best entry]
+             (if (more-common-partition-value? entry best)
+               entry
+               best))
+           (first value-counts)
+           (rest value-counts))))
+
+(defn- partition-values-around-rest
+  [values rest-value]
+  (let [n (count values)]
+    (loop [idx 0
+           indices (transient [])
+           content (transient [])
+           rest-values (transient [])
+           content-scalar? true
+           first-content ::none]
+      (if (= idx n)
+        {:indices (persistent! indices)
+         :content (persistent! content)
+         :rest (persistent! rest-values)
+         :content-scalar? content-scalar?}
+        (let [x (nth values idx)]
+          (if (= x rest-value)
+            (recur (inc idx)
+                   indices
+                   content
+                   (conj! rest-values x)
+                   content-scalar?
+                   first-content)
+            (let [content-scalar? (and content-scalar?
+                                       (or (= first-content ::none)
+                                           (= first-content x)))
+                  first-content (if (= first-content ::none)
+                                  x
+                                  first-content)]
+              (recur (inc idx)
+                     (conj! indices idx)
+                     (conj! content x)
+                     rest-values
+                     content-scalar?
+                     first-content))))))))
+
 (defn partition-by-frequency
   "Partition output as `[indices content rest]` using the most common value as rest."
   [output]
   (when (or (dense/ndarray? output)
             (vector? output))
     (let [values (seq-values output)
-          value-counts (frequencies values)]
+          value-counts (count-values values)]
       (when (seq value-counts)
-        (let [rest-value (->> value-counts
-                              (sort-by (fn [[x n]]
-                                         [(- n) (pr-str x)]))
-                              ffirst)
-              selected? #(not= % rest-value)
-              indices (keep-indexed (fn [idx x]
-                                      (when (selected? x) idx))
-                                    values)
+        (let [rest-value (most-common-value value-counts)
               rest-count (get value-counts rest-value)
-              content (filterv selected? values)
-              rest (filterv (complement selected?) values)
-              content (if (and (seq content) (apply = content))
+              {:keys [indices content rest content-scalar?]}
+              (partition-values-around-rest values rest-value)
+              content (if (and (seq content) content-scalar?)
                         (first content)
                         content)
               content (if (vector? content)

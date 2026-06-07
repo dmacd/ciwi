@@ -296,8 +296,10 @@ per constructor with `{:backend :ciwi.djl}` or installed process-wide with
 `(dense/set-default-backend! :ciwi.djl)`. It currently uses DJL/PyTorch for
 array construction, metadata, arithmetic, comparisons, `isnan`, `arange`,
 `tile`, `concat`, `cumsum`, vector `dot`, matrix `matMul`-backed `dot`, and
-axis `sum`. Index gather/scatter and first-difference preserve CIWI semantics
-through native flat-data fallbacks for now; those can move down into backend
+axis `sum`. DJL concat promotes dtype from dense operand metadata when
+possible, rather than flattening existing tensors just to inspect values.
+Index gather/scatter and first-difference preserve CIWI semantics through
+native flat-data fallbacks for now; those can move down into backend
 operations after optimizer/matrix regression parity gives us the right pressure
 to optimize them.
 
@@ -354,6 +356,14 @@ time, so equality and hashing only need to be deterministic within that backend.
 The DJL backend validates this boundary against a native engine. A later
 Neanderthal or JAX/custom backend should fit at the same boundary, but should
 not shape the v1 graph or operator APIs.
+
+Value DL keeps the Python WILLIAM formulas but can specialize execution by
+dtype. Integer arrays use an integer precision path: scalar precision is the
+negative count of decimal trailing zeros, with zero and Python's integer NaN
+sentinel handled the same way as the generic formula. Elias significands for
+integer arrays are then computed directly from integer values instead of going
+through the floating `round` loop. This is an execution specialization, not a
+new DL model.
 
 `map` first tries the Python-style shortcut where the callable can operate on
 the whole collection. If that cannot invert the output directly, `map` falls
@@ -672,6 +682,14 @@ building and sorting the full cartesian product for every graph expansion.
 expressions. Most candidates are only compared and discarded, so selected
 expressions are computed explicitly with `wunderbaum/realize-selected` when a
 caller needs to inspect or accept a candidate.
+
+The delayed builder uses explicit caller-owned caches for expensive immutable
+facts. Value DL and value-content caches avoid repeated scoring and exact
+duplicate checks. An inverse cache keys runtime inversions by operator id,
+condition, output content fingerprint, and known input content fingerprints.
+This avoids recomputing the same inverse when multiple declarations/spec rows
+share one runtime operator and condition; declaration-specific spec filtering
+still happens after the cached inverse values are returned.
 
 When `:threshold-dl` is supplied, `wunderbaum/iterate` mirrors Python's
 `threshold_dl` behavior: it still expands materialized graphs that do not meet

@@ -3,7 +3,8 @@
             [ciwi.fix :as fix]
             [ciwi.graph :as graph]
             [ciwi.mdl :as mdl]
-            [ciwi.operator :as op]))
+            [ciwi.operator :as op]
+            [ciwi.value :as value]))
 
 (defrecord CompressionTask [name targets threshold-rate free-values solutions metadata])
 (defrecord TaskDomain [name tasks opts metadata])
@@ -26,7 +27,14 @@
                  free-values []
                  solutions {}
                  metadata {}}}]
-  (->CompressionTask name (vec targets) threshold-rate (vec free-values) solutions metadata))
+  (let [coerce-task-data (fn [x]
+                           (value/datum (value/value x)))]
+    (->CompressionTask name
+                       (mapv coerce-task-data targets)
+                       threshold-rate
+                       (mapv coerce-task-data free-values)
+                       solutions
+                       metadata)))
 
 (defn task-domain
   [name tasks & [{:keys [opts metadata]

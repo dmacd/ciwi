@@ -479,16 +479,18 @@
      :seen #{}
      :value-dl-cache (or (:value-dl-cache opts) (atom {}))
      :value-content-cache (or (:value-content-cache opts) (atom {}))
+     :inverse-cache (or (:inverse-cache opts) (atom {}))
      :target-ids target-ids
      :opts opts}))
 
 (defn- materialize-build
-  [wb seen build-info value-content-cache]
+  [wb seen build-info value-content-cache inverse-cache]
   (delayed/delayed-dag-build-with-seen build-info
                                        (:elements-by-condition-key wb)
                                        seen
                                        {:registry (:registry wb)
-                                        :value-content-cache value-content-cache}))
+                                        :value-content-cache value-content-cache
+                                        :inverse-cache inverse-cache}))
 
 (defn- add-materialized-result
   [wb opts target-ids value-dl-cache build-dl [queue order yielded emitted stop?] {:keys [graph memory]}]
@@ -515,12 +517,13 @@
             [queue order yielded emitted false]))))))
 
 (defn- process-frontier-item
-  [wb opts seen target-ids value-dl-cache value-content-cache item queue order yielded]
+  [wb opts seen target-ids value-dl-cache value-content-cache inverse-cache item queue order yielded]
   (let [build-info (:build-info item)
         {:keys [seen results]} (materialize-build wb
                                                   seen
                                                   build-info
-                                                  value-content-cache)
+                                                  value-content-cache
+                                                  inverse-cache)
         [queue order yielded emitted stop?]
         (reduce (partial add-materialized-result wb opts target-ids value-dl-cache (:dl item))
                 [queue order yielded [] false]
@@ -528,7 +531,7 @@
     [seen queue order yielded emitted stop?]))
 
 (defn- walk-frontier
-  [wb opts seen target-ids value-dl-cache value-content-cache queue order popped yielded]
+  [wb opts seen target-ids value-dl-cache value-content-cache inverse-cache queue order popped yielded]
   (lazy-seq
    (when (frontier-active? queue popped yielded opts)
      (let [[item queue] (pop-queue queue)
@@ -539,6 +542,7 @@
                                   target-ids
                                   value-dl-cache
                                   value-content-cache
+                                  inverse-cache
                                   item
                                   queue
                                   order
@@ -552,6 +556,7 @@
                                 target-ids
                                 value-dl-cache
                                 value-content-cache
+                                inverse-cache
                                 queue
                                 order
                                 (inc popped)
@@ -567,7 +572,7 @@
   ([wb targets]
    (iterate wb targets {}))
   ([wb targets opts]
-   (let [{:keys [queue order seen target-ids value-dl-cache value-content-cache opts]}
+   (let [{:keys [queue order seen target-ids value-dl-cache value-content-cache inverse-cache opts]}
          (initial-frontier wb targets opts)]
      (walk-frontier wb
                     opts
@@ -575,6 +580,7 @@
                     target-ids
                     value-dl-cache
                     value-content-cache
+                    inverse-cache
                     queue
                     order
                     0

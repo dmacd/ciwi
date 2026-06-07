@@ -151,15 +151,43 @@
 
 (defn precision-array
   [xs]
-  (if-let [remaining (seq xs)]
-    (loop [remaining remaining
-           best (- max-precision)]
-      (if-let [remaining (seq remaining)]
-        (let [precision (precision-scalar (first remaining))]
-          (recur (next remaining)
-                 (max best precision)))
-        best))
-    (- max-precision)))
+  (let [n (count xs)]
+    (if (pos? n)
+      (loop [idx 0
+             best (- max-precision)]
+        (if (= idx n)
+          best
+          (recur (inc idx)
+                 (max best (precision-scalar (nth xs idx))))))
+      (- max-precision))))
+
+(defn- precision-int-scalar
+  [x]
+  (cond
+    (intnan? x) (- max-precision)
+    (zero? (long x)) 0
+    :else
+    (loop [n (Math/abs (long x))
+           precision 0]
+      (if (and (< precision 50)
+               (zero? (rem n 10)))
+        (recur (quot n 10) (inc precision))
+        (- precision)))))
+
+(defn- precision-int-array
+  [xs]
+  (let [n (count xs)]
+    (if (pos? n)
+      (loop [idx 0
+             best (- max-precision)]
+        (if (= idx n)
+          best
+          (let [precision (precision-int-scalar (nth xs idx))
+                best (max best precision)]
+            (if (zero? best)
+              0
+              (recur (inc idx) best)))))
+      (- max-precision))))
 
 (defn desc-len-int
   ([x]
@@ -297,18 +325,40 @@
 (defn- array-elias
   [xs decimals]
   (let [scale (pow10 decimals)]
-    (loop [remaining (seq xs)
+    (loop [idx 0
+           n (count xs)
            sig-dl 0.0
            all-nan? true]
-      (if-let [remaining (seq remaining)]
-        (let [s (first remaining)]
+      (if (= idx n)
+        [sig-dl all-nan?]
+        (let [s (nth xs idx)]
           (if (missing-number? s)
-            (recur (next remaining) sig-dl all-nan?)
-            (recur (next remaining)
+            (recur (inc idx) n sig-dl all-nan?)
+            (recur (inc idx)
+                   n
                    (+ sig-dl
                       (jelias-posneg (python-rint (* (double s) scale))))
-                   false)))
-        [sig-dl all-nan?]))))
+                   false)))))))
+
+(defn- array-elias-int
+  [xs decimals]
+  (let [divisor (when (neg? decimals)
+                  (long (pow10 (- decimals))))
+        n (count xs)]
+    (loop [idx 0
+           sig-dl 0.0
+           all-nan? true]
+      (if (= idx n)
+        [sig-dl all-nan?]
+        (let [x (nth xs idx)]
+          (if (intnan? x)
+            (recur (inc idx) sig-dl all-nan?)
+            (let [significand (if divisor
+                                (quot (long x) divisor)
+                                (long x))]
+              (recur (inc idx)
+                     (+ sig-dl (jelias-posneg significand))
+                     false))))))))
 
 (defn- valid-number?
   [x]
@@ -325,45 +375,93 @@
 
 (defn- valid-number-stats
   [xs]
-  (loop [remaining (seq xs)
-         n 0
+  (loop [idx 0
+         total-count (count xs)
+         valid-count 0
          sum 0.0]
-    (if-let [remaining (seq remaining)]
-      (let [x (first remaining)]
+    (if (= idx total-count)
+      {:n valid-count
+       :sum sum}
+      (let [x (nth xs idx)]
         (if (valid-number? x)
-          (recur (next remaining)
-                 (inc n)
+          (recur (inc idx)
+                 total-count
+                 (inc valid-count)
                  (+ sum (double x)))
-          (recur (next remaining) n sum)))
-      {:n n
-       :sum sum})))
+          (recur (inc idx) total-count valid-count sum))))))
 
 (defn- variance-sum
   [xs mu]
-  (loop [remaining (seq xs)
+  (loop [idx 0
+         n (count xs)
          total 0.0]
-    (if-let [remaining (seq remaining)]
-      (let [x (first remaining)]
+    (if (= idx n)
+      total
+      (let [x (nth xs idx)]
         (if (valid-number? x)
           (let [d (- (double x) mu)]
-            (recur (next remaining)
+            (recur (inc idx)
+                   n
                    (+ total (* d d))))
-          (recur (next remaining) total)))
-      total)))
+          (recur (inc idx) n total))))))
 
 (defn- gaussian-signal-dl
   [xs scale mu sigma]
-  (loop [remaining (seq xs)
+  (loop [idx 0
+         n (count xs)
          total 0.0
          all-nan? true]
-    (if-let [remaining (seq remaining)]
-      (let [x (first remaining)]
+    (if (= idx n)
+      [total all-nan?]
+      (let [x (nth xs idx)]
         (if (missing-number? x)
-          (recur (next remaining) total all-nan?)
-          (recur (next remaining)
+          (recur (inc idx) n total all-nan?)
+          (recur (inc idx)
+                 n
                  (+ total (jgaussian (* (double x) scale) mu sigma))
-                 false)))
-      [total all-nan?])))
+                 false))))))
+
+(defn- constant-valid-summary
+  [xs]
+  (let [n (count xs)]
+    (loop [idx 0
+           seen-valid? false
+           first-valid nil]
+      (if (= idx n)
+        {:constant? true
+         :all-nan? (not seen-valid?)
+         :value first-valid}
+        (let [x (nth xs idx)]
+          (if (missing-number? x)
+            (recur (inc idx) seen-valid? first-valid)
+            (cond
+              (not seen-valid?)
+              (recur (inc idx) true x)
+
+              (= (double first-valid) (double x))
+              (recur (inc idx) seen-valid? first-valid)
+
+              :else
+              {:constant? false
+               :all-nan? false
+               :value first-valid})))))))
+
+(defn- one-dimensional-gaussian-array?
+  [shape]
+  (and (< (count shape) 3)
+       (not (and (= 2 (count shape))
+                 (> (second shape) 1)))))
+
+(defn- constant-gaussian-result
+  [shape flat decimals]
+  (when (one-dimensional-gaussian-array? shape)
+    (let [{:keys [constant? all-nan? value]} (constant-valid-summary flat)]
+      (when constant?
+        {:dl (if all-nan?
+               0.0
+               (let [scale (pow10 decimals)]
+                 (jelias-posneg (python-rint (* (double value) scale)))))
+         :all-nan? all-nan?}))))
 
 (defn- mean
   [xs]
@@ -615,10 +713,26 @@
                  (map #(desc-len-data % {:mode :default}) flat)))
 
       (#{:int :float} kind)
-      (let [decimals (precision-array flat)
-            [elias-dl elias-all-nan?] (array-elias flat decimals)
-            gauss-dl (if (= mode :use-gaussian)
+      (let [decimals (if (= :int kind)
+                       (precision-int-array flat)
+                       (precision-array flat))
+            constant-gauss (when (and (= mode :use-gaussian)
+                                       (<= decimals max-precision))
+                              (constant-gaussian-result shape flat decimals))
+            [elias-dl elias-all-nan?] (if constant-gauss
+                                        [Double/POSITIVE_INFINITY
+                                         (:all-nan? constant-gauss)]
+                                        (if (= :int kind)
+                                          (array-elias-int flat decimals)
+                                          (array-elias flat decimals)))
+            gauss-dl (cond
+                       constant-gauss
+                       (:dl constant-gauss)
+
+                       (= mode :use-gaussian)
                        (first (desc-len-array-gaussian info decimals))
+
+                       :else
                        Double/POSITIVE_INFINITY)
             sig-dl (min elias-dl gauss-dl)
             dl (+ (reduce + 0.0 (map jelias shape))

@@ -81,7 +81,10 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   comparison inside matching buckets. These caches are explicit and
   caller-owned, so parallel local searches can choose private caches for low
   contention or shared value caches for reuse over the same immutable graph
-  values.
+  values. The delayed builder also has an explicit caller-owned inverse cache
+  keyed by runtime operator, condition, output content, and known input
+  content, so duplicate declaration/spec variants do not recompute identical
+  inverse calls.
 - Delayed graph materialization now skips non-executable operator
   calls/inverses, matching Python's invalid-probe behavior, and numeric inverse
   shape mismatches no longer generate `nil` children.
@@ -182,6 +185,16 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   search state, and optimizer coordinate machinery remain native Clojure data.
   Dense numeric missing values use `NaN`, and tests normalize dense outputs
   only at assertion boundaries.
+- The current performance pass fixed several Python-vs-CIWI execution-layer
+  mismatches without adding recognizers: task targets/free values are
+  pre-coerced once per `CompressionTask`, DJL concat promotes dtype from dense
+  metadata instead of flattening operands, repeated delayed-builder inverses
+  are cached per candidate stream, unconditioned insert frequency partitioning
+  uses strict two-pass loops, and integer array DL uses the integer
+  precision/Elias specialization instead of the generic floating round loop.
+  Fresh warm medians are recorded in `alice-test-parity.md`. `increasing_runs`
+  is still materially slower than Python and remains the active performance
+  investigation before moving on.
 
 ## Roadmap
 
@@ -205,7 +218,9 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
 5. Debug the worst compression or performance gaps one at a time. Root causes
    should land in Wunderbaum, Alice orchestration, operator semantics,
    propagation, delayed building, bottleneck/MDL, or data-structure
-   performance.
+   performance. The current open gap is `increasing_runs`: CIWI matches the
+   Python solution and rate, but the best current warm median is still
+   429.1 ms with DJL versus Python's 88 ms.
 6. After parity is credible, adapt the working Wunderbaum core into a
    resource-bounded local `RewriteOperator` over focused neighborhoods and
    explicit budgets.
@@ -216,8 +231,13 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
 
 ## Near-Term Next Tasks
 
-- The next macro step is optimizer-backed numeric graph-search parity. Use
-  `optimizer-graph-search-parity.md` as the evidence matrix for
+- Finish the `increasing_runs` performance audit before returning to the next
+  macro parity tranche. The next likely fixes are reducing Clojure-side
+  insert-frequency partition/materialization cost and reducing repeated
+  graph-scoring/DL overhead over large dense arrays without changing search
+  semantics.
+- After that, the next macro step is optimizer-backed numeric graph-search
+  parity. Use `optimizer-graph-search-parity.md` as the evidence matrix for
   `test_discrete_optimizer.py`, `TestMatrixRegressionDebugPipeline`, and later
   clustering/classification rows.
 - The dense numeric graph-value migration is complete for the current operator

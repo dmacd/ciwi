@@ -7,7 +7,7 @@
            [java.math BigInteger]
            [java.security MessageDigest]))
 
-(defrecord DJLArray [dtype shape array])
+(defrecord DJLArray [dtype shape array flat data fingerprint])
 
 (defonce ^:private manager*
   (atom nil))
@@ -112,12 +112,6 @@
       :float64
       (.create m ^doubles (double-array flat) shape))))
 
-(defn- wrap
-  [^NDArray array]
-  (->DJLArray (ciwi-dtype (.getDataType array))
-              (shape-vector (.getShape array))
-              array))
-
 (defn- scalar?
   [^NDArray array]
   (zero? (.dimension (.getShape array))))
@@ -138,40 +132,14 @@
   (or (dense-array? x)
       (and (sequential? x) (not (string? x)))))
 
-(defn from-flat
-  [backend flat shape {:keys [dtype]}]
-  (let [shape (vec shape)
-        flat (vec flat)]
-    (when-not (= (count flat) (expected-flat-size shape))
-      (throw (ex-info "flat dense data does not match shape"
-                      {:shape shape
-                       :flat-count (count flat)})))
-    (let [{:keys [dtype flat]} (normalize-flat flat dtype)]
-      (->DJLArray dtype
-                  shape
-                  (create-ndarray dtype shape flat)))))
-
-(defn array
-  [backend data {:keys [dtype] :as opts}]
-  (if (dense-array? data)
-    (if dtype
-      (from-flat backend (p/-ravel data) (p/-shape data) opts)
-      (if (instance? DJLArray data)
-        data
-        (from-flat backend (p/-ravel data) (p/-shape data) opts)))
-    (let [shape (or (vector-backend/rectangular-shape data)
-                    (throw (ex-info "dense arrays must be rectangular"
-                                    {:data data})))
-          flat (vec (vector-backend/flatten-data data))]
-      (from-flat backend flat shape opts))))
-
 (defn- ravel
   [^DJLArray x]
-  (let [^NDArray array (:array x)]
-    (case (:dtype x)
-      :bool (vec (.toBooleanArray array))
-      :int64 (vec (.toLongArray array))
-      :float64 (vec (.toDoubleArray array)))))
+  (or (:flat x)
+      (let [^NDArray array (:array x)]
+        (case (:dtype x)
+          :bool (vec (.toBooleanArray array))
+          :int64 (vec (.toLongArray array))
+          :float64 (vec (.toDoubleArray array))))))
 
 (defn- flat->digest
   [dtype shape flat]
@@ -205,10 +173,67 @@
 
 (defn content-fingerprint
   [x]
-  [:dense
-   (p/-dtype x)
-   (p/-shape x)
-   (flat->digest (p/-dtype x) (p/-shape x) (p/-ravel x))])
+  (or (:fingerprint x)
+      [:dense
+       (p/-dtype x)
+       (p/-shape x)
+       (flat->digest (p/-dtype x) (p/-shape x) (p/-ravel x))]))
+
+(defn- array-data
+  [x]
+  (or (:data x)
+      (vector-backend/build-tree (:shape x) (ravel x))))
+
+(defn- djl-array
+  [dtype shape array flat]
+  (let [flat (vec flat)
+        data (vector-backend/build-tree shape flat)
+        fingerprint [:dense dtype shape (flat->digest dtype shape flat)]]
+    (->DJLArray dtype shape array flat data fingerprint)))
+
+(defn- wrap
+  [^NDArray array]
+  (->DJLArray (ciwi-dtype (.getDataType array))
+              (shape-vector (.getShape array))
+              array
+              nil
+              nil
+              nil))
+
+(defn from-flat
+  [backend flat shape {:keys [dtype]}]
+  (let [shape (vec shape)
+        flat (vec flat)]
+    (when-not (= (count flat) (expected-flat-size shape))
+      (throw (ex-info "flat dense data does not match shape"
+                      {:shape shape
+                       :flat-count (count flat)})))
+    (let [{:keys [dtype flat]} (normalize-flat flat dtype)]
+      (djl-array dtype
+                 shape
+                 (create-ndarray dtype shape flat)
+                 flat))))
+
+(defn array
+  [backend data {:keys [dtype] :as opts}]
+  (if (dense-array? data)
+    (let [dtype (vector-backend/canonical-dtype dtype)]
+      (cond
+        (and (instance? DJLArray data)
+             (or (nil? dtype)
+                 (= dtype (p/-dtype data))))
+        data
+
+        dtype
+        (from-flat backend (p/-ravel data) (p/-shape data) opts)
+
+        :else
+        (from-flat backend (p/-ravel data) (p/-shape data) opts)))
+    (let [shape (or (vector-backend/rectangular-shape data)
+                    (throw (ex-info "dense arrays must be rectangular"
+                                    {:data data})))
+          flat (vec (vector-backend/flatten-data data))]
+      (from-flat backend flat shape opts))))
 
 (defn- same-flat-content?
   [left right]
@@ -236,7 +261,7 @@
   (-size [x] (expected-flat-size (:shape x)))
   (-ravel [x] (ravel x))
   (-tolist [x]
-    (vector-backend/build-tree (:shape x) (ravel x)))
+    (array-data x))
   (-array-info [x]
     {:shape (:shape x)
      :flat (ravel x)
@@ -245,7 +270,7 @@
              :int64 :int
              :float64 :float)
      :size (expected-flat-size (:shape x))
-     :data (vector-backend/build-tree (:shape x) (ravel x))})
+     :data (array-data x)})
   (-content-fingerprint [x]
     (content-fingerprint x))
   (-same-content? [x y]
@@ -458,13 +483,25 @@
         flat (.reshape ^NDArray motif (long-array [(long (.size (.getShape ^NDArray motif)))]))]
     (wrap (.tile ^NDArray flat (long n)))))
 
+(defn- operand-dtype
+  [x]
+  (if (dense-array? x)
+    (p/-dtype x)
+    (vector-backend/infer-dtype (vec x))))
+
+(defn- promote-dtypes
+  [dtypes]
+  (cond
+    (some #{:float64} dtypes) :float64
+    (some #{:int64} dtypes) :int64
+    (some #{:bool} dtypes) :bool
+    :else :float64))
+
 (defn concatenate
   [backend xs opts]
-  (let [flat-values (mapcat #(if (dense-array? %)
-                               (p/-ravel %)
-                               (vec %))
-                            xs)
-        dtype (:dtype (normalize-flat flat-values (:dtype opts)))
+  (let [xs (vec xs)
+        dtype (or (vector-backend/canonical-dtype (:dtype opts))
+                  (promote-dtypes (map operand-dtype xs)))
         arrays (mapv #(as-djl-array-with-dtype backend dtype %) xs)]
     (if-let [first-array (first arrays)]
       (wrap (reduce (fn [acc x]
