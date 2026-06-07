@@ -60,7 +60,8 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   `insert_repeat3`, `repeat_with_noise`, `simply_linear`, `sprinkled`,
   `increasing_runs`, and `map_negate` pass through the injected Alice operator
   basis via `ciwi.alice-wunderbaum`, with no recognizer templates. The live
-  evidence matrix is `alice-test-parity.md`.
+  evidence matrix is `alice-test-parity.md`, which now records both default
+  vector-backend and opt-in DJL-backend warm timings for the core path.
 - `ciwi.alice-wunderbaum/run-greedy-task` now mirrors Python GreedyAlice's
   outer loop: compress the largest worthy raw leaf, accept the first candidate
   above the one-percent step threshold, splice it into the task tree, and
