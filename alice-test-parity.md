@@ -241,7 +241,12 @@ Current root-cause notes from the core path:
   That remains an implementation performance target rather than a reason to
   add recognizer shortcuts.
 - All Python `test_alice.py` sequence rows now have core CIWI compression
-  behavior evidence. Next work should either profile the remaining runtime gaps
-  or broaden parity beyond these sequence tasks.
+  behavior evidence. The remaining `insert_repeat3` runtime issue is not a DL
+  or dense numeric gap: cumulative step timing shows steps 1-3 are cheap, step
+  4 costs about 1.1 s, and step 6 is the main cliff. A six-step structural
+  profile processed 7,741 frontier items, expanded 2,651 materialized graphs,
+  and ran about 3.3 million attachment-validity checks. Next work should
+  either optimize this structural frontier/materialization path or broaden
+  parity beyond these sequence tasks.
 
 Project sequencing and next implementation steps live in `PLAN.md`.

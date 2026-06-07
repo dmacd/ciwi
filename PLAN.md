@@ -225,8 +225,13 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
    propagation, delayed building, bottleneck/MDL, or data-structure
    performance. The current open gaps are runtime gaps, not compression gaps:
    `increasing_runs` matches Python's solution/rate at 178.3 ms with DJL
-   versus Python's 88 ms, while `insert_repeat3` remains around 7.0 s because
-   its full threshold run exercises much more nested candidate search.
+   versus Python's 88 ms, and can be left alone for now. `insert_repeat3`
+   remains around 7.0 s because its full threshold run exercises much more
+   nested candidate search. Focused profiling shows steps 1-3 are cheap, step
+   4 costs about 1.1 s, and step 6 is the main cliff. A six-step structural
+   profile processed 7,741 frontier items, expanded 2,651 materialized graphs,
+   and ran about 3.3 million attachment-validity checks; direct DL/operator
+   dense costs are not the dominant driver.
 6. After parity is credible, adapt the working Wunderbaum core into a
    resource-bounded local `RewriteOperator` over focused neighborhoods and
    explicit budgets.
@@ -237,11 +242,11 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
 
 ## Near-Term Next Tasks
 
-- Continue the performance audit with `insert_repeat3` as the primary outlier
-  and `increasing_runs` as the large-array sanity check. The next likely fixes
-  are reducing repeated graph-scoring/cache overhead and understanding why the
-  nested `insert_repeat3` candidate chain remains much slower than Python even
-  after dense partitioning and internal dense tree data.
+- Continue the performance audit with `insert_repeat3` as the primary outlier.
+  The next likely fixes are structural: reduce repeated `expand-graph`
+  frontier work, avoid millions of repeated attachment-validity checks, and
+  make delayed graph construction cheaper without changing Python Alice search
+  semantics.
 - After that, the next macro step is optimizer-backed numeric graph-search
   parity. Use `optimizer-graph-search-parity.md` as the evidence matrix for
   `test_discrete_optimizer.py`, `TestMatrixRegressionDebugPipeline`, and later
