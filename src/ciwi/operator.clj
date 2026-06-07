@@ -789,8 +789,10 @@
 (defn partition-by-frequency
   "Partition output as `[indices content rest]` using the most common value as rest."
   [output]
-  (when (or (dense/ndarray? output)
-            (vector? output))
+  (or (when (dense/ndarray? output)
+        (dense/partition-by-frequency output))
+      (when (or (dense/ndarray? output)
+                (vector? output))
     (let [values (seq-values output)
           value-counts (count-values values)]
       (when (seq value-counts)
@@ -809,7 +811,7 @@
                      (seq indices))
             [[(dense/from-flat (vec indices) [(count indices)] {:dtype :int64})
               content
-              rest]]))))))
+              rest]])))))))
 
 (def add
   (operator

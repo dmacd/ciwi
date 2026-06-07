@@ -343,6 +343,14 @@ rendering, docs, and tests. Operators, value DL, hashing, propagation,
 Wunderbaum, local rewrite enumeration, and library matchers should work against
 the dense protocol directly.
 
+Dense backends may expose additional summary/edit hooks for hot array
+operations without changing graph semantics. `DenseArrayDescription` lets a
+backend compute Python-compatible DL for supported shapes without materializing
+`:flat` and `:data` through `array-info`. `DenseArrayEdit` currently lets the
+`insert` inverse ask the backend for the "most common value as rest" partition:
+`[indices content rest]`. Unsupported shapes or dtypes return nil and fall
+back to the generic operator implementation.
+
 `tolist` is intentionally explicit and should not be used repeatedly in scoring
 or search hot loops. Value description length and stable graph keys should use
 dense shape/dtype/ravel or backend-provided summaries. For delayed-builder
@@ -364,6 +372,14 @@ sentinel handled the same way as the generic formula. Elias significands for
 integer arrays are then computed directly from integer values instead of going
 through the floating `round` loop. This is an execution specialization, not a
 new DL model.
+
+The DJL backend keeps primitive buffers for arrays it creates during dense
+partitioning. Public `dense/ravel` still returns a Clojure vector, but DL and
+content hashing can consume the retained primitive buffer directly. DJL content
+fingerprints use dtype and shape plus a deterministic internal hash pair over
+normalized primitive values. The fingerprint remains a bucket/cache key, not a
+semantic equality proof; exact dense equality is still used inside matching
+dedupe buckets.
 
 `map` first tries the Python-style shortcut where the callable can operate on
 the whole collection. If that cannot invert the output directly, `map` falls
@@ -430,7 +446,10 @@ The 1D vector path avoids flattening/copying already-flat vectors and computes
 numeric Gaussian statistics with direct passes over the vector rather than
 lazy filtered sequence chains. This is an implementation optimization, not a
 symbolic summary: values are still fully realized and scored with the same DL
-formula.
+formula. Dense backends can provide equivalent execution summaries for the same
+formula; the DJL backend uses this for 1D numeric arrays and falls back to the
+generic path for shapes that still need native Clojure data, such as the current
+multivariate Gaussian path.
 
 The exact Elias delta helper remains available as `ciwi.value/elias-discrete`
 for enumerator index ordering. Alice/Wunderbaum operator declarations use

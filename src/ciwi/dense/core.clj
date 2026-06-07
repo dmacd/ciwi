@@ -52,6 +52,22 @@
   [x]
   (p/-content-fingerprint (asarray x)))
 
+(defn desc-len-data
+  "Return a backend-provided description length for dense content, when available.
+
+  Backends should return nil for shapes or dtypes where they would need to
+  materialize ordinary Clojure data; callers can then use the generic fallback.
+  "
+  [x opts]
+  (when (satisfies? p/DenseArrayDescription x)
+    (p/-desc-len-data x opts)))
+
+(defn partition-by-frequency
+  "Return a backend-provided `[indices content rest]` partition, when available."
+  [x]
+  (when (satisfies? p/DenseArrayEdit x)
+    (p/-partition-by-frequency x)))
+
 (defn same-content?
   "Exact dense-content equality with backend-normalized missing-value semantics."
   [left right]

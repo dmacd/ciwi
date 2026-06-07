@@ -12,6 +12,12 @@
   (-content-fingerprint [x])
   (-same-content? [x y]))
 
+(defprotocol DenseArrayDescription
+  (-desc-len-data [x opts]))
+
+(defprotocol DenseArrayEdit
+  (-partition-by-frequency [x]))
+
 (defprotocol DenseBackend
   (-backend-id [backend])
   (-array [backend data opts])

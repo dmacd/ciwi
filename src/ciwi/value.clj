@@ -22,6 +22,17 @@
 (def max-unique 10)
 (def precision-epsilon 1.0e-10)
 
+(def ^:private long-array-class (class (long-array 0)))
+(def ^:private double-array-class (class (double-array 0)))
+
+(defn- primitive-long-array?
+  [x]
+  (instance? long-array-class x))
+
+(defn- primitive-double-array?
+  [x]
+  (instance? double-array-class x))
+
 (defn log2
   [x]
   (/ (Math/log (double x)) (Math/log 2.0)))
@@ -151,15 +162,29 @@
 
 (defn precision-array
   [xs]
-  (let [n (count xs)]
-    (if (pos? n)
-      (loop [idx 0
-             best (- max-precision)]
-        (if (= idx n)
-          best
-          (recur (inc idx)
-                 (max best (precision-scalar (nth xs idx))))))
-      (- max-precision))))
+  (cond
+    (primitive-double-array? xs)
+    (let [^doubles xs xs
+          n (alength xs)]
+      (if (pos? n)
+        (loop [idx 0
+               best (- max-precision)]
+          (if (= idx n)
+            best
+            (recur (inc idx)
+                   (max best (precision-scalar (aget xs idx))))))
+        (- max-precision)))
+
+    :else
+    (let [n (count xs)]
+      (if (pos? n)
+        (loop [idx 0
+               best (- max-precision)]
+          (if (= idx n)
+            best
+            (recur (inc idx)
+                   (max best (precision-scalar (nth xs idx))))))
+        (- max-precision)))))
 
 (defn- precision-int-scalar
   [x]
@@ -176,18 +201,35 @@
 
 (defn- precision-int-array
   [xs]
-  (let [n (count xs)]
-    (if (pos? n)
-      (loop [idx 0
-             best (- max-precision)]
-        (if (= idx n)
-          best
-          (let [precision (precision-int-scalar (nth xs idx))
-                best (max best precision)]
-            (if (zero? best)
-              0
-              (recur (inc idx) best)))))
-      (- max-precision))))
+  (cond
+    (primitive-long-array? xs)
+    (let [^longs xs xs
+          n (alength xs)]
+      (if (pos? n)
+        (loop [idx 0
+               best (- max-precision)]
+          (if (= idx n)
+            best
+            (let [precision (precision-int-scalar (aget xs idx))
+                  best (max best precision)]
+              (if (zero? best)
+                0
+                (recur (inc idx) best)))))
+        (- max-precision)))
+
+    :else
+    (let [n (count xs)]
+      (if (pos? n)
+        (loop [idx 0
+               best (- max-precision)]
+          (if (= idx n)
+            best
+            (let [precision (precision-int-scalar (nth xs idx))
+                  best (max best precision)]
+              (if (zero? best)
+                0
+                (recur (inc idx) best)))))
+        (- max-precision)))))
 
 (defn desc-len-int
   ([x]
@@ -325,40 +367,74 @@
 (defn- array-elias
   [xs decimals]
   (let [scale (pow10 decimals)]
-    (loop [idx 0
-           n (count xs)
-           sig-dl 0.0
-           all-nan? true]
-      (if (= idx n)
-        [sig-dl all-nan?]
-        (let [s (nth xs idx)]
-          (if (missing-number? s)
-            (recur (inc idx) n sig-dl all-nan?)
-            (recur (inc idx)
-                   n
-                   (+ sig-dl
-                      (jelias-posneg (python-rint (* (double s) scale))))
-                   false)))))))
+    (if (primitive-double-array? xs)
+      (let [^doubles xs xs
+            n (alength xs)]
+        (loop [idx 0
+               sig-dl 0.0
+               all-nan? true]
+          (if (= idx n)
+            [sig-dl all-nan?]
+            (let [s (aget xs idx)]
+              (if (Double/isNaN s)
+                (recur (inc idx) sig-dl all-nan?)
+                (recur (inc idx)
+                       (+ sig-dl
+                          (jelias-posneg (python-rint (* s scale))))
+                       false))))))
+      (loop [idx 0
+             n (count xs)
+             sig-dl 0.0
+             all-nan? true]
+        (if (= idx n)
+          [sig-dl all-nan?]
+          (let [s (nth xs idx)]
+            (if (missing-number? s)
+              (recur (inc idx) n sig-dl all-nan?)
+              (recur (inc idx)
+                     n
+                     (+ sig-dl
+                        (jelias-posneg (python-rint (* (double s) scale))))
+                     false))))))))
 
 (defn- array-elias-int
   [xs decimals]
   (let [divisor (when (neg? decimals)
                   (long (pow10 (- decimals))))
-        n (count xs)]
-    (loop [idx 0
-           sig-dl 0.0
-           all-nan? true]
-      (if (= idx n)
-        [sig-dl all-nan?]
-        (let [x (nth xs idx)]
-          (if (intnan? x)
-            (recur (inc idx) sig-dl all-nan?)
-            (let [significand (if divisor
-                                (quot (long x) divisor)
-                                (long x))]
-              (recur (inc idx)
-                     (+ sig-dl (jelias-posneg significand))
-                     false))))))))
+        long-loop
+        (fn [^longs xs]
+          (let [n (alength xs)]
+            (loop [idx 0
+                   sig-dl 0.0
+                   all-nan? true]
+              (if (= idx n)
+                [sig-dl all-nan?]
+                (let [x (aget xs idx)]
+                  (if (= intnan64 x)
+                    (recur (inc idx) sig-dl all-nan?)
+                    (let [significand (if divisor
+                                        (quot x divisor)
+                                        x)]
+                      (recur (inc idx)
+                             (+ sig-dl (jelias-posneg significand))
+                             false))))))))]
+    (if (primitive-long-array? xs)
+      (long-loop xs)
+      (let [n (count xs)]
+        (loop [idx 0
+               sig-dl 0.0
+               all-nan? true]
+          (if (= idx n)
+            [sig-dl all-nan?]
+            (let [x (nth xs idx)]
+              (if (intnan? x)
+                (recur (inc idx) sig-dl all-nan?)
+                (let [significand (if divisor
+                                    (quot (long x) divisor)
+                                    (long x))]
+                  (recur (inc idx)
+                         (+ sig-dl (jelias-posneg significand))
+                         false))))))))))
 
 (defn- valid-number?
   [x]
@@ -375,76 +451,224 @@
 
 (defn- valid-number-stats
   [xs]
-  (loop [idx 0
-         total-count (count xs)
-         valid-count 0
-         sum 0.0]
-    (if (= idx total-count)
-      {:n valid-count
-       :sum sum}
-      (let [x (nth xs idx)]
-        (if (valid-number? x)
-          (recur (inc idx)
-                 total-count
-                 (inc valid-count)
-                 (+ sum (double x)))
-          (recur (inc idx) total-count valid-count sum))))))
+  (cond
+    (primitive-double-array? xs)
+    (let [^doubles xs xs
+          total-count (alength xs)]
+      (loop [idx 0
+             valid-count 0
+             sum 0.0]
+        (if (= idx total-count)
+          {:n valid-count
+           :sum sum}
+          (let [x (aget xs idx)]
+            (if (Double/isNaN x)
+              (recur (inc idx) valid-count sum)
+              (recur (inc idx)
+                     (inc valid-count)
+                     (+ sum x)))))))
+
+    (primitive-long-array? xs)
+    (let [^longs xs xs
+          total-count (alength xs)]
+      (loop [idx 0
+             valid-count 0
+             sum 0.0]
+        (if (= idx total-count)
+          {:n valid-count
+           :sum sum}
+          (let [x (aget xs idx)]
+            (if (= intnan64 x)
+              (recur (inc idx) valid-count sum)
+              (recur (inc idx)
+                     (inc valid-count)
+                     (+ sum (double x))))))))
+
+    :else
+    (loop [idx 0
+           total-count (count xs)
+           valid-count 0
+           sum 0.0]
+      (if (= idx total-count)
+        {:n valid-count
+         :sum sum}
+        (let [x (nth xs idx)]
+          (if (valid-number? x)
+            (recur (inc idx)
+                   total-count
+                   (inc valid-count)
+                   (+ sum (double x)))
+            (recur (inc idx) total-count valid-count sum)))))))
 
 (defn- variance-sum
   [xs mu]
-  (loop [idx 0
-         n (count xs)
-         total 0.0]
-    (if (= idx n)
-      total
-      (let [x (nth xs idx)]
-        (if (valid-number? x)
-          (let [d (- (double x) mu)]
-            (recur (inc idx)
-                   n
-                   (+ total (* d d))))
-          (recur (inc idx) n total))))))
+  (cond
+    (primitive-double-array? xs)
+    (let [^doubles xs xs
+          n (alength xs)]
+      (loop [idx 0
+             total 0.0]
+        (if (= idx n)
+          total
+          (let [x (aget xs idx)]
+            (if (Double/isNaN x)
+              (recur (inc idx) total)
+              (let [d (- x mu)]
+                (recur (inc idx)
+                       (+ total (* d d)))))))))
+
+    (primitive-long-array? xs)
+    (let [^longs xs xs
+          n (alength xs)]
+      (loop [idx 0
+             total 0.0]
+        (if (= idx n)
+          total
+          (let [x (aget xs idx)]
+            (if (= intnan64 x)
+              (recur (inc idx) total)
+              (let [d (- (double x) mu)]
+                (recur (inc idx)
+                       (+ total (* d d)))))))))
+
+    :else
+    (loop [idx 0
+           n (count xs)
+           total 0.0]
+      (if (= idx n)
+        total
+        (let [x (nth xs idx)]
+          (if (valid-number? x)
+            (let [d (- (double x) mu)]
+              (recur (inc idx)
+                     n
+                     (+ total (* d d))))
+            (recur (inc idx) n total)))))))
 
 (defn- gaussian-signal-dl
   [xs scale mu sigma]
-  (loop [idx 0
-         n (count xs)
-         total 0.0
-         all-nan? true]
-    (if (= idx n)
-      [total all-nan?]
-      (let [x (nth xs idx)]
-        (if (missing-number? x)
-          (recur (inc idx) n total all-nan?)
-          (recur (inc idx)
-                 n
-                 (+ total (jgaussian (* (double x) scale) mu sigma))
-                 false))))))
+  (cond
+    (primitive-double-array? xs)
+    (let [^doubles xs xs
+          n (alength xs)]
+      (loop [idx 0
+             total 0.0
+             all-nan? true]
+        (if (= idx n)
+          [total all-nan?]
+          (let [x (aget xs idx)]
+            (if (Double/isNaN x)
+              (recur (inc idx) total all-nan?)
+              (recur (inc idx)
+                     (+ total (jgaussian (* x scale) mu sigma))
+                     false))))))
+
+    (primitive-long-array? xs)
+    (let [^longs xs xs
+          n (alength xs)]
+      (loop [idx 0
+             total 0.0
+             all-nan? true]
+        (if (= idx n)
+          [total all-nan?]
+          (let [x (aget xs idx)]
+            (if (= intnan64 x)
+              (recur (inc idx) total all-nan?)
+              (recur (inc idx)
+                     (+ total (jgaussian (* (double x) scale) mu sigma))
+                     false))))))
+
+    :else
+    (loop [idx 0
+           n (count xs)
+           total 0.0
+           all-nan? true]
+      (if (= idx n)
+        [total all-nan?]
+        (let [x (nth xs idx)]
+          (if (missing-number? x)
+            (recur (inc idx) n total all-nan?)
+            (recur (inc idx)
+                   n
+                   (+ total (jgaussian (* (double x) scale) mu sigma))
+                   false)))))))
 
 (defn- constant-valid-summary
   [xs]
-  (let [n (count xs)]
-    (loop [idx 0
-           seen-valid? false
-           first-valid nil]
-      (if (= idx n)
-        {:constant? true
-         :all-nan? (not seen-valid?)
-         :value first-valid}
-        (let [x (nth xs idx)]
-          (if (missing-number? x)
-            (recur (inc idx) seen-valid? first-valid)
-            (cond
-              (not seen-valid?)
-              (recur (inc idx) true x)
-
-              (= (double first-valid) (double x))
+  (cond
+    (primitive-double-array? xs)
+    (let [^doubles xs xs
+          n (alength xs)]
+      (loop [idx 0
+             seen-valid? false
+             first-valid 0.0]
+        (if (= idx n)
+          {:constant? true
+           :all-nan? (not seen-valid?)
+           :value first-valid}
+          (let [x (aget xs idx)]
+            (if (Double/isNaN x)
               (recur (inc idx) seen-valid? first-valid)
+              (cond
+                (not seen-valid?)
+                (recur (inc idx) true x)
 
-              :else
-              {:constant? false
-               :all-nan? false
-               :value first-valid})))))))
+                (= first-valid x)
+                (recur (inc idx) seen-valid? first-valid)
+
+                :else
+                {:constant? false
+                 :all-nan? false
+                 :value first-valid}))))))
+
+    (primitive-long-array? xs)
+    (let [^longs xs xs
+          n (alength xs)]
+      (loop [idx 0
+             seen-valid? false
+             first-valid 0]
+        (if (= idx n)
+          {:constant? true
+           :all-nan? (not seen-valid?)
+           :value first-valid}
+          (let [x (aget xs idx)]
+            (if (= intnan64 x)
+              (recur (inc idx) seen-valid? first-valid)
+              (cond
+                (not seen-valid?)
+                (recur (inc idx) true x)
+
+                (= first-valid x)
+                (recur (inc idx) seen-valid? first-valid)
+
+                :else
+                {:constant? false
+                 :all-nan? false
+                 :value first-valid}))))))
+
+    :else
+    (let [n (count xs)]
+      (loop [idx 0
+             seen-valid? false
+             first-valid nil]
+        (if (= idx n)
+          {:constant? true
+           :all-nan? (not seen-valid?)
+           :value first-valid}
+          (let [x (nth xs idx)]
+            (if (missing-number? x)
+              (recur (inc idx) seen-valid? first-valid)
+              (cond
+                (not seen-valid?)
+                (recur (inc idx) true x)
+
+                (= (double first-valid) (double x))
+                (recur (inc idx) seen-valid? first-valid)
+
+                :else
+                {:constant? false
+                 :all-nan? false
+                 :value first-valid}))))))))
 
 (defn- one-dimensional-gaussian-array?
   [shape]
@@ -693,7 +917,7 @@
                         (range (nth shape 2)))]
             [dl all-nan?]))))))
 
-(defn- array-desc-len
+(defn array-desc-len
   [{:keys [shape flat kind size] :as info}
    {:keys [mode] :or {mode :use-gaussian}}]
   (cond
@@ -830,8 +1054,11 @@
        (double (:dl x))
 
        :else
-       (if-let [array-info (python-array-info x)]
-         (double (array-desc-len array-info opts))
+       (if-let [array-dl (when (dense/ndarray? x)
+                           (dense/desc-len-data x opts))]
+         (double array-dl)
+         (if-let [array-info (python-array-info x)]
+           (double (array-desc-len array-info opts))
          (cond
            (sequential? x)
            (double (sequential-dl (vec x) opts))
@@ -851,7 +1078,7 @@
 
            :else
            (double (+ (if (seq (pr-str x)) (jelias (count (pr-str x))) 0.0)
-                      (* 8.0 (count (pr-str x)))))))))))
+                      (* 8.0 (count (pr-str x))))))))))))
 
 (defn desc-len
   ([v]

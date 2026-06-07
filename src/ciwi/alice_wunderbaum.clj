@@ -281,7 +281,7 @@
   [value-dl-cache v]
   (let [v (value/value v)]
     {:kind :raw
-     :expr (value/plain-datum v)
+     :data (:data v)
      :dl (value/desc-len-cached value-dl-cache v)}))
 
 (defn- choice-tree
@@ -290,12 +290,13 @@
     :raw
     (let [v (get-in g [:nodes (:node-id choice) :value])]
       {:kind :raw
-       :expr (value/plain-datum v)
+       :data (:data v)
        :dl (or (:dl choice)
                (value/desc-len-cached value-dl-cache v))})
 
     :operator
     (let [op-node (graph/node g (:op-id choice))
+          v (get-in g [:nodes (:node-id choice) :value])
           operator (:operator op-node)
           children (mapv #(choice-tree g value-dl-cache %)
                          (:child-choices choice))
@@ -304,7 +305,7 @@
        :op-id (:id operator)
        :op-dl op-dl
        :children children
-       :expr (into [(:id operator)] (map :expr children))
+       :data (:data v)
        :dl (+ op-dl (reduce + 0.0 (map :dl children)))})))
 
 (defn- candidate-tree
@@ -318,8 +319,16 @@
   [tree children]
   (assoc tree
          :children children
-         :expr (into [(:op-id tree)] (map :expr children))
          :dl (+ (:op-dl tree) (reduce + 0.0 (map :dl children)))))
+
+(defn- render-tree-expr
+  [tree]
+  (case (:kind tree)
+    :raw
+    (value/plain-datum (:data tree))
+
+    :operator
+    (into [(:op-id tree)] (map render-tree-expr (:children tree)))))
 
 (defn- replace-tree
   [tree path replacement]
@@ -341,7 +350,7 @@
               [{:target-index target-index
                 :target-id target-id
                 :path path
-                :expr (:expr node)
+                :data (:data node)
                 :dl (:dl node)}]
               (mapcat (fn [[idx child]]
                         (walk child (conj path idx)))
@@ -350,7 +359,7 @@
 
 (defn- leaf-free-values
   [context target-trees leaf]
-  (let [current-leaf-exprs (->> (map-indexed vector target-trees)
+  (let [current-leaf-data (->> (map-indexed vector target-trees)
                                 (mapcat (fn [[idx tree]]
                                           (target-tree-leaves
                                            idx
@@ -359,10 +368,10 @@
                                                 idx)
                                            tree)))
                                 (remove #(same-leaf? leaf %))
-                                (map :expr))
+                                (map :data))
         state (reduce #(add-free-value %1 %2 free-anchor-value)
                       [[] #{}]
-                      current-leaf-exprs)
+                      current-leaf-data)
         state (reduce add-free-value state (:free-values context))
         [values _seen] (add-default-free-values state)]
     values))
@@ -379,7 +388,7 @@
 
 (defn- compress-leaf
   [context min-compression-rate target-trees leaf]
-  (let [values (into [(target-value (:expr leaf))]
+  (let [values (into [(target-value (:data leaf))]
                      (leaf-free-values context target-trees leaf))
         threshold-dl (* (:dl leaf)
                         (- 1.0 (/ min-compression-rate 100.0)))
@@ -396,7 +405,7 @@
         {:leaf leaf
          :candidate candidate
          :replacement-tree replacement
-         :selected (:expr replacement)
+         :selected (render-tree-expr replacement)
          :initial-dl (:dl leaf)
          :dl (:dl replacement)
          :compression-rate (alice/compression-rate (:dl leaf)
@@ -447,7 +456,7 @@
 (defn- selected-targets
   [target-trees]
   (zipmap (target-ids (count target-trees))
-          (map :expr target-trees)))
+          (map render-tree-expr target-trees)))
 
 (defn- record-step
   [{:keys [leaf selected initial-dl dl compression-rate candidates-consumed stop-reason]}]

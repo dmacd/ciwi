@@ -1,13 +1,17 @@
 (ns ciwi.dense.djl
   (:refer-clojure :exclude [repeat])
   (:require [ciwi.dense.protocols :as p]
-            [ciwi.dense.vector :as vector-backend])
+            [ciwi.dense.vector :as vector-backend]
+            [ciwi.value :as value])
   (:import [ai.djl.ndarray NDArray NDManager]
            [ai.djl.ndarray.types DataType Shape]
-           [java.math BigInteger]
-           [java.security MessageDigest]))
+           [java.util Arrays]))
 
-(defrecord DJLArray [dtype shape array flat data fingerprint])
+(defrecord DJLArray [dtype shape array flat primitive-flat data fingerprint])
+
+(def ^:private boolean-array-class (class (boolean-array 0)))
+(def ^:private long-array-class (class (long-array 0)))
+(def ^:private double-array-class (class (double-array 0)))
 
 (defonce ^:private manager*
   (atom nil))
@@ -135,41 +139,104 @@
 (defn- ravel
   [^DJLArray x]
   (or (:flat x)
+      (let [flat (or (:primitive-flat x)
+                     (let [^NDArray array (:array x)]
+                       (case (:dtype x)
+                         :bool (.toBooleanArray array)
+                         :int64 (.toLongArray array)
+                         :float64 (.toDoubleArray array))))]
+        (case (:dtype x)
+          :bool (vec flat)
+          :int64 (vec flat)
+          :float64 (vec flat)))))
+
+(defn- primitive-flat
+  [^DJLArray x]
+  (or (:primitive-flat x)
       (let [^NDArray array (:array x)]
         (case (:dtype x)
-          :bool (vec (.toBooleanArray array))
-          :int64 (vec (.toLongArray array))
-          :float64 (vec (.toDoubleArray array))))))
+          :bool (.toBooleanArray array)
+          :int64 (.toLongArray array)
+          :float64 (.toDoubleArray array)))))
+
+(def ^:private hash-seed-1 1469598103934665603)
+(def ^:private hash-seed-2 -7046029254386353131)
+(def ^:private hash-prime 1099511628211)
+
+(defn- mix-hash
+  [h bits]
+  (unchecked-multiply (bit-xor (long h) (long bits)) hash-prime))
+
+(defn- flat-hash-longs
+  [^longs flat]
+  (let [n (alength flat)]
+    (loop [idx 0
+           h1 hash-seed-1
+           h2 hash-seed-2]
+      (if (= idx n)
+        [h1 h2]
+        (let [bits (aget flat idx)]
+          (recur (inc idx)
+                 (mix-hash h1 bits)
+                 (mix-hash h2 (Long/rotateLeft bits 32))))))))
+
+(defn- flat-hash-doubles
+  [^doubles flat]
+  (let [n (alength flat)]
+    (loop [idx 0
+           h1 hash-seed-1
+           h2 hash-seed-2]
+      (if (= idx n)
+        [h1 h2]
+        (let [bits (Double/doubleToLongBits (aget flat idx))]
+          (recur (inc idx)
+                 (mix-hash h1 bits)
+                 (mix-hash h2 (Long/rotateLeft bits 32))))))))
+
+(defn- flat-hash-booleans
+  [^booleans flat]
+  (let [n (alength flat)]
+    (loop [idx 0
+           h1 hash-seed-1
+           h2 hash-seed-2]
+      (if (= idx n)
+        [h1 h2]
+        (let [bits (if (aget flat idx) 1 0)]
+          (recur (inc idx)
+                 (mix-hash h1 bits)
+                 (mix-hash h2 (Long/rotateLeft bits 32))))))))
+
+(defn- flat-hash-seq
+  [dtype flat]
+  (loop [xs (seq flat)
+         h1 hash-seed-1
+         h2 hash-seed-2]
+    (if-let [xs (seq xs)]
+      (let [x (first xs)
+            bits (case dtype
+                   :bool (if x 1 0)
+                   :int64 (long x)
+                   :float64 (Double/doubleToLongBits (double x)))]
+        (recur (next xs)
+               (mix-hash h1 bits)
+               (mix-hash h2 (Long/rotateLeft bits 32))))
+      [h1 h2])))
 
 (defn- flat->digest
   [dtype shape flat]
-  (let [digest (MessageDigest/getInstance "SHA-256")
-        update-str! (fn [s]
-                      (.update digest (.getBytes (str s) "UTF-8")))]
-    (update-str! "ciwi.dense.djl.v1|")
-    (update-str! dtype)
-    (update-str! "|")
-    (update-str! shape)
-    (update-str! "|")
-    (doseq [x flat]
-      (case dtype
-        :bool
-        (update-str! (if x "b1|" "b0|"))
+  [:ciwi.dense.djl.v3
+   (cond
+     (instance? boolean-array-class flat)
+     (flat-hash-booleans flat)
 
-        :int64
-        (do
-          (update-str! "i")
-          (update-str! (long x))
-          (update-str! "|"))
+     (instance? long-array-class flat)
+     (flat-hash-longs flat)
 
-        :float64
-        (if (vector-backend/nan? x)
-          (update-str! "fnan|")
-          (do
-            (update-str! "f")
-            (update-str! (Double/doubleToLongBits (double x)))
-            (update-str! "|")))))
-    (format "%064x" (BigInteger. 1 (.digest digest)))))
+     (instance? double-array-class flat)
+     (flat-hash-doubles flat)
+
+     :else
+     (flat-hash-seq dtype flat))])
 
 (defn content-fingerprint
   [x]
@@ -177,25 +244,230 @@
       [:dense
        (p/-dtype x)
        (p/-shape x)
-       (flat->digest (p/-dtype x) (p/-shape x) (p/-ravel x))]))
+       (flat->digest (p/-dtype x)
+                     (p/-shape x)
+                     (or (:flat x)
+                         (:primitive-flat x)
+                         (primitive-flat x)))]))
 
 (defn- array-data
   [x]
   (or (:data x)
       (vector-backend/build-tree (:shape x) (ravel x))))
 
+(declare wrap)
+
+(defn- one-dimensional-description-shape?
+  [shape]
+  (and (< (count shape) 3)
+       (not (and (= 2 (count shape))
+                 (> (second shape) 1)))))
+
+(defn- desc-len-data
+  [x {:keys [mode] :or {mode :use-gaussian} :as opts}]
+  (let [shape (p/-shape x)
+        kind (case (p/-dtype x)
+               :bool :bool
+               :int64 :int
+               :float64 :float)
+        size (expected-flat-size shape)]
+    (when (or (= :bool kind)
+              (not= mode :use-gaussian)
+              (one-dimensional-description-shape? shape))
+      (value/array-desc-len {:shape shape
+                             :flat (primitive-flat x)
+                             :kind kind
+                             :size size}
+                            opts))))
+
+(defn- better-partition-entry?
+  [left right]
+  (or (nil? right)
+      (> (:count left) (:count right))
+      (and (= (:count left) (:count right))
+           (neg? (compare (pr-str (:value left))
+                          (pr-str (:value right)))))))
+
+(defn- most-common-entry
+  [entries]
+  (reduce (fn [best entry]
+            (if (better-partition-entry? entry best)
+              entry
+              best))
+          nil
+          entries))
+
+(defn- long-counts
+  [^longs values]
+  (let [n (alength values)]
+    (loop [idx 0
+           counts {}]
+      (if (= idx n)
+        counts
+        (let [x (aget values idx)]
+          (recur (inc idx)
+                 (update counts x
+                         (fn [entry]
+                           (if entry
+                             (update entry :count inc)
+                             {:value x :count 1})))))))))
+
+(defn- double-key
+  [x]
+  (if (Double/isNaN x)
+    ::nan
+    (Double/doubleToLongBits x)))
+
+(defn- double-counts
+  [^doubles values]
+  (let [n (alength values)]
+    (loop [idx 0
+           counts {}]
+      (if (= idx n)
+        counts
+        (let [x (aget values idx)
+              k (double-key x)]
+          (recur (inc idx)
+                 (update counts k
+                         (fn [entry]
+                           (if entry
+                             (update entry :count inc)
+                             {:value x :count 1})))))))))
+
+(defn- wrap-long-flat
+  [^longs flat]
+  (let [shape [(alength flat)]]
+    (->DJLArray :int64
+                shape
+                (.create ^NDManager (manager) flat (shape-object shape))
+                nil
+                flat
+                nil
+                nil)))
+
+(defn- wrap-double-flat
+  [^doubles flat]
+  (let [shape [(alength flat)]]
+    (->DJLArray :float64
+                shape
+                (.create ^NDManager (manager) flat (shape-object shape))
+                nil
+                flat
+                nil
+                nil)))
+
+(defn- repeated-long-array
+  [n value]
+  (let [xs (long-array n)]
+    (Arrays/fill ^longs xs (long value))
+    xs))
+
+(defn- repeated-double-array
+  [n value]
+  (let [xs (double-array n)]
+    (Arrays/fill ^doubles xs (double value))
+    xs))
+
+(defn- partition-long-by-frequency
+  [^longs values]
+  (let [n (alength values)
+        {:keys [value count]} (most-common-entry (vals (long-counts values)))
+        content-count (- n count)]
+    (when (and (> count 1)
+               (pos? content-count))
+      (let [indices (long-array content-count)
+            content (long-array content-count)]
+        (loop [idx 0
+               out 0
+               first-content 0
+               seen-content? false
+               scalar? true]
+          (if (= idx n)
+            (let [content-value (if scalar?
+                                  first-content
+                                  (wrap-long-flat content))
+                  rest (wrap-long-flat (repeated-long-array count value))]
+              [[(wrap-long-flat indices) content-value rest]])
+            (let [x (aget values idx)]
+              (if (= value x)
+                (recur (inc idx)
+                       out
+                       first-content
+                       seen-content?
+                       scalar?)
+                (do
+                  (aset-long indices out idx)
+                  (aset-long content out x)
+                  (recur (inc idx)
+                         (inc out)
+                         (if seen-content? first-content x)
+                         true
+                         (and scalar?
+                              (or (not seen-content?)
+                                  (= first-content x)))))))))))))
+
+(defn- partition-double-by-frequency
+  [^doubles values]
+  (let [n (alength values)
+        {:keys [value count]} (most-common-entry (vals (double-counts values)))
+        rest-key (double-key value)
+        content-count (- n count)]
+    (when (and (> count 1)
+               (pos? content-count))
+      (let [indices (long-array content-count)
+            content (double-array content-count)]
+        (loop [idx 0
+               out 0
+               first-content 0.0
+               first-key nil
+               seen-content? false
+               scalar? true]
+          (if (= idx n)
+            (let [content-value (if scalar?
+                                  first-content
+                                  (wrap-double-flat content))
+                  rest (wrap-double-flat (repeated-double-array count value))]
+              [[(wrap-long-flat indices) content-value rest]])
+            (let [x (aget values idx)
+                  k (double-key x)]
+              (if (= rest-key k)
+                (recur (inc idx)
+                       out
+                       first-content
+                       first-key
+                       seen-content?
+                       scalar?)
+                (do
+                  (aset-long indices out idx)
+                  (aset-double content out x)
+                  (recur (inc idx)
+                         (inc out)
+                         (if seen-content? first-content x)
+                         (if seen-content? first-key k)
+                         true
+                         (and scalar?
+                              (or (not seen-content?)
+                                  (= first-key k)))))))))))))
+
+(defn- partition-by-frequency
+  [x]
+  (case (p/-dtype x)
+    :int64 (partition-long-by-frequency (primitive-flat x))
+    :float64 (partition-double-by-frequency (primitive-flat x))
+    :bool nil))
+
 (defn- djl-array
   [dtype shape array flat]
   (let [flat (vec flat)
-        data (vector-backend/build-tree shape flat)
-        fingerprint [:dense dtype shape (flat->digest dtype shape flat)]]
-    (->DJLArray dtype shape array flat data fingerprint)))
+        fingerprint nil]
+    (->DJLArray dtype shape array flat nil nil fingerprint)))
 
 (defn- wrap
   [^NDArray array]
   (->DJLArray (ciwi-dtype (.getDataType array))
               (shape-vector (.getShape array))
               array
+              nil
               nil
               nil
               nil))
@@ -274,7 +546,15 @@
   (-content-fingerprint [x]
     (content-fingerprint x))
   (-same-content? [x y]
-    (same-content? x y)))
+    (same-content? x y))
+
+  p/DenseArrayDescription
+  (-desc-len-data [x opts]
+    (desc-len-data x opts))
+
+  p/DenseArrayEdit
+  (-partition-by-frequency [x]
+    (partition-by-frequency x)))
 
 (defn- as-djl-array
   [backend x]

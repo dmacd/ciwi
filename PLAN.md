@@ -27,8 +27,13 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   Python-compatible value DL model, Alice operator DL alignment, per-run DL and
   value-content caching, deferred selected-expression realization,
   threshold-aware candidate yielding, and several translation/performance
-  fixes. Tests pass locally with 151 tests and 807 assertions on the default
-  vector backend, plus 8 tests and 40 assertions on the opt-in DJL backend.
+  fixes. The DJL backend now provides dense DL summaries, dense
+  insert-frequency partitioning, primitive-buffer metadata for arrays created
+  during partitioning, and a fast deterministic content hash. Alice's greedy
+  tree keeps dense data internally and renders plain expressions only for
+  public results. Tests pass locally with 151 tests and 807 assertions on the
+  default vector backend, plus 8 tests and 40 assertions on the opt-in DJL
+  backend.
 
 ## Current State
 
@@ -218,9 +223,10 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
 5. Debug the worst compression or performance gaps one at a time. Root causes
    should land in Wunderbaum, Alice orchestration, operator semantics,
    propagation, delayed building, bottleneck/MDL, or data-structure
-   performance. The current open gap is `increasing_runs`: CIWI matches the
-   Python solution and rate, but the best current warm median is still
-   429.1 ms with DJL versus Python's 88 ms.
+   performance. The current open gaps are runtime gaps, not compression gaps:
+   `increasing_runs` matches Python's solution/rate at 178.3 ms with DJL
+   versus Python's 88 ms, while `insert_repeat3` remains around 7.0 s because
+   its full threshold run exercises much more nested candidate search.
 6. After parity is credible, adapt the working Wunderbaum core into a
    resource-bounded local `RewriteOperator` over focused neighborhoods and
    explicit budgets.
@@ -231,11 +237,11 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
 
 ## Near-Term Next Tasks
 
-- Finish the `increasing_runs` performance audit before returning to the next
-  macro parity tranche. The next likely fixes are reducing Clojure-side
-  insert-frequency partition/materialization cost and reducing repeated
-  graph-scoring/DL overhead over large dense arrays without changing search
-  semantics.
+- Continue the performance audit with `insert_repeat3` as the primary outlier
+  and `increasing_runs` as the large-array sanity check. The next likely fixes
+  are reducing repeated graph-scoring/cache overhead and understanding why the
+  nested `insert_repeat3` candidate chain remains much slower than Python even
+  after dense partitioning and internal dense tree data.
 - After that, the next macro step is optimizer-backed numeric graph-search
   parity. Use `optimizer-graph-search-parity.md` as the evidence matrix for
   `test_discrete_optimizer.py`, `TestMatrixRegressionDebugPipeline`, and later
