@@ -269,18 +269,26 @@ These cleanup-review items are intentionally not active targets right now:
 
 ## Near-Term Next Tasks
 
-- Continue the performance audit with `insert_repeat3` as the primary outlier
-  only when performance becomes the active task again. The attachment-check
-  reduction options are now tracked in `OPTIMIZATION-BACKLOG.md`; they should
-  preserve Python Alice search semantics.
-- After that, the next macro step is optimizer-backed numeric graph-search
-  parity. Use `optimizer-graph-search-parity.md` as the evidence matrix for
-  `test_discrete_optimizer.py`, `TestMatrixRegressionDebugPipeline`, and later
+- The active macro step is optimizer-backed numeric graph-search parity,
+  starting with Python `TestMatrixRegressionDebugPipeline` and ultimately the
+  classifier debug rows. Use `optimizer-graph-search-parity.md` as the evidence
+  matrix for `test_discrete_optimizer.py`, matrix regression, and later
   clustering/classification rows.
-- The dense numeric graph-value migration is complete for the current operator
-  basis and test suite. The next implementation targets are residual-DL
-  adaptive optimizer examples, graph-level `try_to_optimize` over permeable
-  numeric leaves, and the matrix regression optimizer/pipeline rows.
+- First implement the residual-DL adaptive optimizer rows from
+  `test_discrete_optimizer.py`. These are the direct prerequisite for matrix
+  regression because they verify optimization against Python's compressed
+  residual objective rather than a generic regression loss.
+- Then cover matrix regression in this order: direct optimizer on the
+  Python-scale fixture, graph-level `try_to_optimize` over the permeable weight
+  leaf, Alice/Wunderbaum single compression step with the supplied solution,
+  greedy run with solution, and greedy run without solution.
+- After matrix regression is green, stage classifier parity as
+  `try_to_optimize`, single compression step, single-factor greedy with
+  solution, single-factor greedy without solution, then full Iris. Treat the
+  brute-force classifier rows as later application evidence.
+- Keep the `insert_repeat3` performance audit parked unless performance becomes
+  the active task again. The attachment-check reduction options are tracked in
+  `OPTIMIZATION-BACKLOG.md` and should preserve Python Alice search semantics.
 - Keep updating `alice-test-parity.md` only for plain Alice/Wunderbaum sequence
   compression, and update `optimizer-graph-search-parity.md` for numeric
   optimizer-backed rows.

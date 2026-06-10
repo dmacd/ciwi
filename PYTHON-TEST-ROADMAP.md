@@ -36,9 +36,9 @@ WILLIAM's core compression machinery.
 | `william/tests/test_conditions.py` | Covered for condition fixture shapes. CIWI covers `co0`-`co21` and `dag0`-`dag7` using native graph/composite specs, including the `co15` order-only fixture. Missing Python-only checks are the Rust hotloop comparison and DOT import mechanics, which are not CIWI proof targets. | Composite conditions decide which inversions/search attachments are legal. This is high leverage for learned composites later. |
 | `william/tests/test_composite.py` | Mostly covered for compression-relevant behavior. CIWI covers native shared-DAG execution for `dag4`/`dag5`, `dag5` extra-branch inversion, the Python inverse parameter table including `co*`, `trees*`, `cl_func`, `insert`, and `dec` rows, the full `co0`-`co21` graph commutativity table, and native keyword-spec synchronization over composite graphs from injected declarations. Remaining Python-only pieces are DOT import/resemblance, tuple reconstruction, S-expression reconstruction, and Python generic type-object APIs; do not port those as parser/API parity unless they block compression behavior. | Learned and builtin composites need to behave like native operators. This is central to the long-term library-compression plan. |
 
-Recommended order inside Priority 1:
-
-1. Move to the next core behavior gap outside `test_composite.py`.
+Priority 1 is currently good enough to support the next tranche. Return here
+only if matrix regression exposes a missing graph, propagation, delayed-builder,
+or composite behavior.
 
 ## Priority 2: Numeric Optimization as Search
 
@@ -52,21 +52,28 @@ compression is not conflated with numeric parameter search.
 
 | Python tests | CIWI target | Notes |
 | --- | --- | --- |
-| `william/tests/test_discrete_optimizer.py` | Partial. CIWI covers Newton, mixed int/float, adaptive grid, and joint sampling. Add the residual-DL adaptive examples that score `_jdesc_len_array_elias` once CIWI's value-DL helper is wired cleanly into optimizer objectives. | Keep this as optimizer protocol evidence, not Alice evidence. |
-| `william/tests/test_alice_pipeline.py::TestMatrixRegressionDebugPipeline` | Next macro target. Implement/verify `Dot` plus optimizer-backed `try_to_optimize`, then run matrix regression with `Dot` and `Add`. | This should be the first major post-core end-to-end demonstration. It proves graph search can produce a structure whose leaves are then optimized. |
+| `william/tests/test_discrete_optimizer.py` | Active prerequisite. CIWI covers Newton, mixed int/float, adaptive grid, and joint sampling. Add the residual-DL adaptive examples that score `_jdesc_len_array_elias` before claiming matrix regression parity. | Keep this as optimizer protocol evidence, not Alice evidence. |
+| `william/tests/test_alice_pipeline.py::TestMatrixRegressionDebugPipeline` | Active macro target. First match the direct matrix optimizer row, then graph-level `try_to_optimize`, then Alice single-step/greedy over `[Dot, Add]`. | This is the first major post-core end-to-end demonstration. It proves graph search can produce a symbolic structure whose permeable numeric leaves are optimized under the same DL objective Python uses. |
 | `william/tests/test_alice_pipeline.py::test_run_clustering_try_to_optimize_worker` | After matrix regression, add the clustering optimization worker with `Sub`, `Mult`, `Sum1`, `LessThan`, `GetItem`, and `Union`. | This is useful, but it pulls in more complex array operators and should not precede matrix regression. |
 
 ## Priority 3: Classification Demonstrations
 
-`william/tests/test_classification.py` is better treated as an application
-demo suite than as the next core parity target.
+`william/tests/test_classification.py` is better treated as an optimizer-backed
+application/debug suite than as a core Alice proof. It becomes relevant after
+matrix regression demonstrates the numeric graph-search loop.
 
 Candidate CIWI milestones:
 
-- Single-factor Iris compression with `SetItem` and `LessThan`.
-- Classification-by-propagated-residual-DL on a learned/found graph.
-- Brute-force compression classifier smoke test only after Alice matrix
-  regression and optimizer-backed graph search are stable.
+- Port the skipped Python debug rows as staged CIWI parity evidence:
+  `try_to_optimize`, single compression step, greedy single-factor with
+  solution, greedy single-factor without solution, then full Iris.
+- Keep the first classifier slice to `SetItem` and `LessThan`; broader logical
+  and arithmetic operators should only enter when matching the Python full-Iris
+  setup.
+- Add classification-by-propagated-residual-DL on a learned/found graph after
+  the single-factor graph search rows are green.
+- Treat brute-force compression classifier smoke/full rows as later
+  application evidence, not a near-term parity gate.
 
 These depend on the Priority 1 and Priority 2 work. They should not block core
 Wunderbaum/Alice parity.

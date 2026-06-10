@@ -1,6 +1,6 @@
 # Optimizer And Numeric Graph Search Parity
 
-Last updated: 2026-06-06.
+Last updated: 2026-06-10.
 
 This file tracks Python WILLIAM parity for optimizer-backed graph search:
 standalone discrete optimizers, `try_to_optimize`, and Alice pipeline tests
@@ -18,7 +18,7 @@ Target Python files:
 
 - `william/tests/test_discrete_optimizer.py`
 - `william/tests/test_alice_pipeline.py`
-- Later: optimizer-backed rows in `william/tests/test_classification.py`
+- `william/tests/test_classification.py`, staged after matrix regression
 
 Out of scope unless they block compression behavior:
 
@@ -43,6 +43,58 @@ Out of scope unless they block compression behavior:
 | `test_alice_pipeline.py::TestMatrixRegressionDebugPipeline::test_greedy_without_solution` | Not yet covered | Pending | End-to-end matrix regression from search without a solution hint. |
 | `test_alice_pipeline.py::test_run_clustering_try_to_optimize_worker` | Not yet covered | Pending after matrix regression | Needs `Sub`, `Mult`, `Sum1`, `LessThan`, `GetItem`, `Union`, and optimizer-backed centroid/radius improvement. |
 | skipped clustering Alice pipeline rows | Deferred | Pending after `try_to_optimize` clustering | Python marks these skipped. Treat as optional application evidence, not a near-term core gate. |
+| `test_classification.py::TestIrisClassificationDebugPipeline::test_try_to_optimize` | Deferred | Pending after matrix regression | Python currently skips this row. Useful as the first classifier debug target because it isolates `try_to_optimize` over a scalar threshold leaf. |
+| `test_classification.py::TestIrisClassificationDebugPipeline::test_single_compression_step` | Deferred | Pending after classifier `try_to_optimize` | Python currently skips this row. Uses only `SetItem` and `LessThan` over the single-factor Iris fixture. |
+| `test_classification.py::TestIrisClassificationDebugPipeline::test_greedy_single_factor_with_solution` | Deferred | Pending after classifier compression step | Python currently skips this row. End-to-end Alice run with the supplied single-factor solution. |
+| `test_classification.py::TestIrisClassificationDebugPipeline::test_greedy_single_factor_without_solution` | Deferred | Pending after with-solution single-factor run | Python currently skips this row. Same operator basis, but requires search to find the structure. |
+| `test_classification.py::TestIrisClassificationDebugPipeline::test_greedy_full` | Deferred | Pending after single-factor rows | Python currently skips this row. Uses the full four-feature Iris task and residual-DL classification evaluation. |
+| skipped brute-force Iris classifier rows | Deferred | Application demo, not core parity | Python marks these skipped. Treat as later application evidence once optimizer-backed Alice is stable. |
+
+## Matrix Regression Fixture
+
+Python's `TestMatrixRegressionDebugPipeline` is the active next tranche. The
+fixture is deliberately small in operator vocabulary but large enough to stress
+dense numeric scoring:
+
+- RNG seed `123`
+- `x_mat`: `1000 x 10` Gaussian matrix, scaled by `10`, rounded to 3 decimals
+- `w_init`: length-10 Gaussian vector, rounded to 3 decimals, permeable
+- `w_true`: length-10 Gaussian vector scaled by `2.0`, rounded to 3 decimals
+- `y`: `round(dot(x_mat, w_true) + 0.85 + noise, 3)`, with noise from
+  `Normal(0, 0.2)` rounded to 3 decimals
+- graph shape: `(add (dot x_mat w) residual)`, where `w` is optimized and the
+  residual leaf is inferred/provided according to the pipeline stage
+- task/domain shape: target values `[y, x_mat]`, `free_values=[w_init]`,
+  `threshold_rate=0.01`, `max_dag_dl=20`, operator set `[Dot, Add]`
+
+The direct optimizer test scores:
+
+```text
+_jdesc_len_array_elias(y - round(dot(x_mat, w), 3), 3)
++ Value(round(w, 3)).desc_len()
+```
+
+That is the first parity gate. CIWI should not substitute mean squared error,
+least squares, or a closed-form regression shortcut. Those can be future
+specialized search operators, but they are not evidence that the Python Alice
+pipeline has been ported.
+
+## Classification Fixture
+
+The classifier path is broader and should come after matrix regression. The
+debug fixture uses Iris data permuted with `RandomState(0)`, one feature column
+for the early rows, an initial scalar threshold `4.8`, and the graph shape:
+
+```text
+(setitem rest (lessthan factor threshold) selection)
+```
+
+The minimal operator basis for the first classifier rows is `[SetItem,
+LessThan]`. The full exploratory classifier grows to feature sections and
+residual-DL evaluation over candidate labels; Python also contains skipped
+brute-force compression classifier rows. CIWI should stage these as application
+evidence after optimizer-backed graph search is already proven on matrix
+regression.
 
 ## Dense Numerics Decision
 
@@ -123,15 +175,30 @@ graph-search path is behaviorally correct.
 3. Done: add `ciwi.dense.djl` as an opt-in DJL/PyTorch CPU backend under the
    `:djl` dependency alias, with focused backend tests and a compression-level
    smoke run using DJL as the process default backend.
-4. Next: add residual-DL adaptive optimizer tests from
-   `test_discrete_optimizer.py`.
-5. Implement graph-level `try_to_optimize` as a composable recursive graph
-   search operator over permeable leaves.
-6. Add matrix regression `test_optimizer` and `test_try_to_optimize` parity.
-7. Wire optimizer-backed candidates into Alice/Wunderbaum compression step.
-8. Only then decide whether DJL should become the default backend, whether to
-   add a Neanderthal backend for BLAS/LAPACK performance, or whether matrix
-   regression exposes protocol gaps.
+4. Active next: add residual-DL adaptive optimizer tests from
+   `test_discrete_optimizer.py::test_adaptive_optimizer_example` and
+   `::test_adaptive_grid_mixed_float_int`. These prove the optimizer is moving
+   on the same compressed-residual objective Python uses.
+5. Add matrix regression `test_optimizer` parity on the Python-scale fixture.
+   This should exercise dense `dot`, residual DL, and `Value` DL for the
+   optimized weight vector, still outside graph search.
+6. Implement graph-level `try_to_optimize` as a composable recursive graph
+   search operator over permeable leaves. It should take the operator registry,
+   propagation strategy, dense backend/defaults, optimizer, and objective
+   policy as injected dependencies rather than hardcoding Alice globals.
+7. Add matrix regression `test_try_to_optimize` parity. This proves CIWI can
+   optimize a permeable numeric leaf inside an existing graph while preserving
+   the non-permeable matrix input.
+8. Wire optimizer-backed candidates into Alice/Wunderbaum compression step and
+   cover matrix regression `test_single_compression_step`,
+   `test_greedy_with_solution`, and `test_greedy_without_solution`.
+9. Stage classifier debug parity: classifier `try_to_optimize`, single
+   compression step, single-factor greedy with solution, single-factor greedy
+   without solution, then full Iris. Keep brute-force classifier rows as later
+   application evidence.
+10. Only after behavior is green decide whether DJL should become the default
+    backend, whether to add a Neanderthal backend for BLAS/LAPACK performance,
+    or whether matrix/classifier work exposes protocol gaps.
 
 ## Sources
 
