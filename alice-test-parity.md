@@ -8,8 +8,9 @@ Status as of the current working tree: the straight CIWI Wunderbaum path has
 Python-scale core evidence for `simple_repeat`, `insert_repeat`,
 `insert_repeat2`, `insert_repeat3`, `repeat_with_noise`, `simply_linear`, and
 `sprinkled`, `increasing_runs`, and `map_negate`. The default local rewrite
-Alice harness still installs no rewrite operators by default, so it cannot
-accidentally use local recognizer templates as parity evidence.
+Alice baseline now lives in `ciwi.alice-legacy`; it still installs no rewrite
+operators by default, so it cannot accidentally use local recognizer templates
+as parity evidence.
 
 The Python timings below use `GreedyAlice` with `min_rate=0.01`,
 `max_dag_dl=35`, `learn=false`, `trees_only=false`, and `use_rust=false`.
@@ -18,7 +19,7 @@ startup effects are excluded. The Python timing column measures wall-clock
 `GreedyAlice.run_task` calls after warmups; Python rates and final DLs come
 from `GreedyAlice.last_run_stats`.
 
-The core CIWI columns use `ciwi.alice-wunderbaum/run-greedy-task` with the
+The core CIWI columns use `ciwi.alice.wunderbaum/run-greedy-task` with the
 injected Python Alice operator basis, `max_dag_dl=35`, and row-specific
 `max_popped` / `max_yields` safety bounds where shown in the status. This
 compresses the largest worthy raw leaf one accepted candidate at a time, like
@@ -107,16 +108,16 @@ CIWI's native selected-expression syntax. The exact expanded Clojure expression
 contains several Python-scale raw vectors, so the table names the structural
 solution and keeps the full raw-vector definitions in the task fixture rather
 than duplicating them inline. The focused regression in
-`ciwi.alice-wunderbaum-test` asserts the formerly missing fourth-step
+`ciwi.alice.wunderbaum-test` asserts the formerly missing fourth-step
 `[:insert [:cumsum [:insert ...]] ...]` candidate on the Python-scale target.
 
 ## Current Interpretation
 
 The active parity claim is limited to the Alice operator basis and the
 Python-scale task definitions under the Python WILLIAM value DL model.
-`ciwi.alice-test` asserts that default local rewrite Alice runs perform no
-recognizer rewrites, which prevents accidental shortcut-based parity.
-`ciwi.alice-wunderbaum-test` now carries Python-scale core Wunderbaum rows and
+The legacy local baseline tests assert that `ciwi.alice-legacy` performs no
+recognizer rewrites by default, which prevents accidental shortcut-based parity.
+`ciwi.alice.wunderbaum-test` now carries Python-scale core Wunderbaum rows and
 a focused `insert_repeat3` regression for the hard nested fourth step. The
 full `insert_repeat3` seven-step threshold run is tracked here because it is
 an important regression case for nested delayed materialization.
@@ -137,7 +138,7 @@ Debugging conclusions retained from the recognizer baseline:
 ## Current Core Evidence
 
 The active core implementation checkpoint is `ciwi.wunderbaum` plus
-`ciwi.alice-wunderbaum`. That path contains the first task-level
+`ciwi.alice.wunderbaum`. That path contains the first task-level
 frontier/materialization slice with injected registries, operator/count
 declarations, conditioned-spec indexing, delayed graph building, operator
 inversion, and MDL-selected yielded graphs. It is not wired into the default

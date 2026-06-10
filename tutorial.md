@@ -30,8 +30,16 @@ The notebook is meant to be read and edited interactively. It demonstrates:
 - exhaustive convergence with `ciwi.search/exhaustive-converge`
 - bounded convergence with `ciwi.search/bounded-converge`
 - compression wrappers in `ciwi.compress`
-- bounded enumerative rewrite with `ciwi.enumerative-rewrite`
-- graph rewrite with local DAG node reuse through `ciwi.graph-rewrite`
+- graph-native bounded rewrite and local DAG node reuse through
+  `ciwi.graph-rewrite`
+
+## Terminology
+
+- `ciwi.alice` is shared Alice task/domain data and operator-basis plumbing.
+- `ciwi.alice.wunderbaum` is the active Python Alice parity runner.
+- `ciwi.alice-legacy` is the old local exhaustive/bounded baseline harness.
+- Primitive recognizer templates are opt-in proposal/debugging tools; they are
+  not installed by default and are not Alice parity evidence.
 
 ## Running Clerk
 
@@ -124,16 +132,16 @@ Clerk will re-evaluate the notebook when the watched files change.
 For Cursive-only notebook work, open
 `notebooks/ciwi/notebook/alice_machinery.clj`, load the namespace in the REPL,
 and evaluate forms inside the `(comment ...)` blocks one at a time. That file
-defines `case-names`, `case-data`, `compare-case`, `inspect`, `summary`,
-`step-rows`, `history-rows`, `graph-state`, and `pp` locally in its own
+defines `case-names`, `case-data`, `run-case`, `run-step`, `run-all`,
+`inspect`, `summary`, `step-rows`, and `pp` locally in its own
 namespace, so nothing needs to be added to `dev/user.clj`.
 
 Good experiments:
 
-- lower `:max-depth` in the square enumerator from `2` to `1`
+- lower `:max-depth` in the square graph rewrite operator from `2` to `1`
 - reduce `:max-generated` until a rewrite disappears
 - change `:re-eval-budget` and inspect bounded neighborhoods
-- add `{:op :add :arity 2}` to the enumerator operator list
+- add `{:op :add :arity 2}` to the graph rewrite operator list
 - replace the sample vectors with your own data and compare candidate deltas
 
 ## Verification Commands

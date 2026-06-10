@@ -1,7 +1,6 @@
 (ns ciwi.notebook.alice-machinery
   (:require [ciwi.alice :as alice]
-            [ciwi.graph :as graph]
-            [ciwi.mdl :as mdl]
+            [ciwi.alice.wunderbaum :as alice-wunderbaum]
             [clojure.pprint :as pprint]
             [clojure.set :as set]))
 
@@ -15,14 +14,18 @@
 ;; Start a REPL with the `:dev` alias, load this file, then put the cursor after
 ;; any form in the comment blocks and evaluate it with Cursive.
 
-(def default-comparison-opts
-  {:bounded-opts {:parallel? true
-                  :re-eval-budget 64}})
+(def default-run-opts
+  {:registry alice/basic-operator-registry
+   :operator-ids alice/basic-operator-ids
+   :max-dag-dl 35
+   :max-popped 5000
+   :max-yields 500
+   ;; The real Python-scale parity rows use the production default worthy DL.
+   ;; Setting this to zero makes the small notebook examples compressible.
+   :worthy-dl 0})
 
-(def deep-comparison-opts
-  {:bounded-opts {:parallel? true
-                  :re-eval-budget 256}
-   :exhaustive-opts {:parallel? false}})
+(def python-scale-run-opts
+  (dissoc default-run-opts :worthy-dl))
 
 (defn pp
   [x]
@@ -138,8 +141,9 @@
 
 ;; ## Task Construction
 ;;
-;; Alice runs against `CompressionTask` values. The helpers here let you go from
-;; a named case to the exact task and result maps the production code uses.
+;; Alice/Wunderbaum runs against `CompressionTask` values. The helpers here let
+;; you go from a named case to the exact task and greedy result maps the
+;; production parity path uses.
 
 (defn task
   ([case-or-name]
@@ -158,26 +162,31 @@
                                      :metadata metadata}
                                     opts)))))
 
-(defn run
-  "Run one case in one mode. `mode` is `:exhaustive` or `:bounded`."
+(defn run-case
   ([case-or-name]
-   (run case-or-name :exhaustive {}))
-  ([case-or-name mode opts]
-   (alice/run-task (task case-or-name)
-                   {:mode mode
-                    :opts opts})))
-
-(defn compare-case
-  ([case-or-name]
-   (compare-case case-or-name default-comparison-opts))
+   (run-case case-or-name {}))
   ([case-or-name opts]
-   (alice/run-task-comparison (task case-or-name) opts)))
+   (let [case-data (case-data case-or-name)]
+     (assoc (alice-wunderbaum/run-greedy-task
+             (task case-data)
+             (merge default-run-opts opts))
+            :case case-data))))
 
-(defn compare-all
+(defn run-step
+  ([case-or-name]
+   (run-step case-or-name {}))
+  ([case-or-name opts]
+   (let [case-data (case-data case-or-name)]
+     (assoc (alice-wunderbaum/run-compression-step
+             (task case-data)
+             (merge default-run-opts opts))
+            :case case-data))))
+
+(defn run-all
   ([]
-   (compare-all default-comparison-opts))
+   (run-all {}))
   ([opts]
-   (mapv #(compare-case % opts) cases)))
+   (mapv #(run-case % opts) cases)))
 
 ;; ## Inspection Helpers
 ;;
@@ -203,81 +212,41 @@
     :else
     #{}))
 
-(defn selected-operator-ids
-  [comparison]
+(defn result-operator-ids
+  [result]
   (apply set/union
          #{}
-         (for [mode [:exhaustive :bounded]
-               expr (vals (get-in comparison [mode :selected]))]
+         (for [expr (vals (:selected result))]
            (expression-operator-ids expr))))
 
 (defn selected
-  [comparison]
-  {:exhaustive (get-in comparison [:exhaustive :selected :target0])
-   :bounded (get-in comparison [:bounded :selected :target0])})
-
-(defn candidate-row
-  [candidate]
-  (-> candidate
-      (select-keys [:node-id :rewrite-operator-id :template-id :reason :op
-                    :child-refs :before :after :delta :expression :edit-form])
-      (update :op #(some-> % :id))))
-
-(defn history-rows
-  [result-or-summary]
-  (mapv candidate-row
-        (get-in result-or-summary [:result :history] (:history result-or-summary))))
+  [result]
+  (get-in result [:selected :target0]))
 
 (defn step-row
-  [step]
-  {:step (:step step)
-   :reason (get-in step [:candidate :reason])
-   :rewrite-operator-id (get-in step [:candidate :rewrite-operator-id])
-   :node-id (get-in step [:candidate :node-id])
-   :dl-before (:dl-before step)
-   :dl-after (:dl-after step)
-   :delta (get-in step [:candidate :delta])
-   :mode (get-in step [:resource :mode])
-   :candidates-accepted (get-in step [:resource :candidates-accepted])})
+  [idx step]
+  {:step idx
+   :target-id (:target-id step)
+   :path (:path step)
+   :initial-dl (:initial-dl step)
+   :dl (:dl step)
+   :compression-rate (:compression-rate step)
+   :selected (:selected step)
+   :candidates-consumed (:candidates-consumed step)
+   :stop-reason (:stop-reason step)})
 
 (defn step-rows
-  [result-or-summary]
-  (mapv step-row
-        (get-in result-or-summary [:result :steps] (:steps result-or-summary))))
-
-(defn graph-rows
-  [g]
-  (->> (:nodes g)
-       (sort-by (comp str key))
-       (mapv (fn [[id n]]
-               (case (:kind n)
-                 :value {:id id
-                         :kind :value
-                         :data (get-in n [:value :data])
-                         :parents (:parents n)
-                         :options (:options n)}
-                 :operator {:id id
-                            :kind :operator
-                            :op (get-in n [:operator :id])
-                            :parent (:parent n)
-                            :children (:children n)})))))
-
-(defn graph-state
-  [result-or-summary]
-  (graph-rows (get-in result-or-summary [:result :graph] (:graph result-or-summary))))
-
-(defn target-dl
-  [result-or-summary target-id]
-  (mdl/node-dl (get-in result-or-summary [:result :graph] (:graph result-or-summary))
-               target-id))
+  [result]
+  (mapv step-row (range) (:steps result)))
 
 (defn summary
-  [comparison]
-  (let [{:keys [required forbidden exact]} (case-data (:task-name comparison))
-        selected (selected comparison)
-        selected-ops (selected-operator-ids comparison)]
-    {:task-name (:task-name comparison)
-     :target-preview (let [target (:target (case-data (:task-name comparison)))]
+  [result]
+  (let [{:keys [required forbidden exact] :as case-data}
+        (or (:case result) (case-data (:task-name result)))
+        selected (selected result)
+        selected-ops (result-operator-ids result)]
+    {:task-name (:task-name result)
+     :target-preview (let [target (:target case-data)]
                        (if (and (sequential? target) (> (count target) 24))
                          {:count (count target)
                           :head (vec (take 12 target))
@@ -295,41 +264,35 @@
                           true)
      :exact exact
      :exact-match? (if exact
-                     (= exact (:exhaustive selected))
+                     (= exact selected)
                      true)
-     :same-selected? (:same-selected? comparison)
-     :same-dl? (:same-dl? comparison)
-     :meets-threshold? (:meets-threshold? comparison)
-     :exhaustive-rate (get-in comparison [:exhaustive :compression-rate])
-     :bounded-rate (get-in comparison [:bounded :compression-rate])
-     :exhaustive-dl (get-in comparison [:exhaustive :dl])
-     :bounded-dl (get-in comparison [:bounded :dl])}))
+     :meets-threshold? (:meets-threshold? result)
+     :compression-rate (:compression-rate result)
+     :initial-dl (:initial-dl result)
+     :dl (:dl result)
+     :steps (count (:steps result))
+     :candidates-consumed (get-in result [:resource :candidates-consumed])
+     :stop-reason (get-in result [:resource :stop-reason])}))
 
 (defn inspect
   ([case-or-name]
-   (inspect case-or-name default-comparison-opts))
+   (inspect case-or-name {}))
   ([case-or-name opts]
-   (let [comparison (compare-case case-or-name opts)]
-     {:summary (summary comparison)
-      :exhaustive-steps (step-rows (:exhaustive comparison))
-      :bounded-steps (step-rows (:bounded comparison))
-      :exhaustive-history (history-rows (:exhaustive comparison))
-      :bounded-history (history-rows (:bounded comparison))
-      :exhaustive-resource (get-in comparison [:exhaustive :resource])
-      :bounded-resource (get-in comparison [:bounded :resource])
-      :comparison comparison})))
+   (let [result (run-case case-or-name opts)]
+     {:summary (summary result)
+      :steps (step-rows result)
+      :resource (:resource result)
+      :result result})))
 
 (defn failing-summaries
   ([]
-   (failing-summaries (compare-all)))
-  ([comparisons]
-   (->> comparisons
+   (failing-summaries (run-all)))
+  ([results]
+   (->> results
         (map summary)
-        (remove (fn [{:keys [same-selected? same-dl? meets-threshold?
-                             required-present? forbidden-absent? exact-match?]}]
-                  (and same-selected?
-                       same-dl?
-                       meets-threshold?
+        (remove (fn [{:keys [meets-threshold? required-present?
+                             forbidden-absent? exact-match?]}]
+                  (and meets-threshold?
                        required-present?
                        forbidden-absent?
                        exact-match?)))
@@ -338,7 +301,7 @@
 ;; ## REPL Cells
 ;;
 ;; Evaluate these forms one at a time in Cursive. Keep the intermediate defs if
-;; you want to drill into raw comparison maps with the value inspector.
+;; you want to drill into raw result maps with the value inspector.
 
 (comment
   (case-names)
@@ -347,36 +310,35 @@
 
   (pp (case-data "insert_repeat2"))
 
-  (def range-comparison
-    (compare-case "range"))
+  (def range-result
+    (run-case "range"))
 
-  (pp (summary range-comparison))
+  (pp (summary range-result))
 
-  (pp (selected range-comparison))
+  (pp (selected range-result))
 
-  (pp (step-rows (:exhaustive range-comparison)))
+  (pp (step-rows range-result))
 
-  (pp (graph-state (:exhaustive range-comparison)))
+  (def noisy-result
+    (run-case "repeat_with_noise"))
 
-  (def noisy-comparison
-    (compare-case "repeat_with_noise" deep-comparison-opts))
+  (pp (summary noisy-result))
 
-  (pp (summary noisy-comparison))
+  (pp (step-rows noisy-result))
 
-  (pp (step-rows (:exhaustive noisy-comparison)))
+  (def noisy-step
+    (run-step "repeat_with_noise"))
 
-  (pp (step-rows (:bounded noisy-comparison)))
+  (pp (summary noisy-step))
 
-  (pp (history-rows (:bounded noisy-comparison)))
+  (pp (step-rows noisy-step))
 
-  (pp (target-dl (:exhaustive noisy-comparison) :target0))
+  (def all-results
+    (run-all))
 
-  (def all-comparisons
-    (compare-all deep-comparison-opts))
+  (pp (mapv summary all-results))
 
-  (pp (mapv summary all-comparisons))
-
-  (pp (failing-summaries all-comparisons))
+  (pp (failing-summaries all-results))
 
   ;; Make an ad hoc case without touching the test file.
   (def my-case

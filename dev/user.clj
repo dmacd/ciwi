@@ -1,7 +1,7 @@
 (ns user
-  (:require [ciwi.core :as ciwi]))
+  (:require [clojure.pprint :refer [pprint]]
+            [clojure.repl :refer [doc source]]))
 
 (defn reset
   []
-  (ciwi/ready?))
-
+  :ready)

@@ -1,6 +1,6 @@
-(ns ciwi.alice-wunderbaum-test
+(ns ciwi.alice.wunderbaum-test
   (:require [ciwi.alice :as alice]
-            [ciwi.alice-wunderbaum :as sut]
+            [ciwi.alice.wunderbaum :as sut]
             [ciwi.operator :as op]
             [clojure.test :refer [deftest is testing]]))
 

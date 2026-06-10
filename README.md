@@ -19,6 +19,16 @@ CIWI is pre-alpha research code and still very much under construction. It is
 not yet at parity with WILLIAM, and APIs, data shapes, search behavior, and
 performance characteristics may change quickly.
 
+## Terminology
+
+- `ciwi.alice` is shared Alice task/domain data and operator-basis plumbing.
+- `ciwi.alice.wunderbaum` is the active Python Alice parity path.
+- `ciwi.alice-legacy` is the old local exhaustive/bounded baseline harness; it
+  is retained to prove local compression does not use recognizer shortcuts by
+  default.
+- Primitive recognizer templates are opt-in proposal/debugging tools, not
+  default rewrite machinery and not Alice parity evidence.
+
 ## Local Tooling
 
 This checkout uses a repo-local Clojure CLI install under `.tooling/clojure`.
@@ -26,8 +36,13 @@ Use the wrapper scripts so Clojure config and Maven dependencies stay inside
 this workspace.
 
 ```bash
-./bin/clojure -M -m ciwi.core
 ./bin/test
+```
+
+For an interactive development REPL:
+
+```bash
+./bin/clojure -M:dev
 ```
 
 To run the Clerk notebook:
@@ -57,9 +72,9 @@ If `.tooling/clojure` is missing, run:
 ./scripts/bootstrap-clojure
 ```
 
-## Prototype Slice
+## Current Shape
 
-The first prototype model mirrors WILLIAM's bipartite graph shape:
+The current prototype mirrors WILLIAM's bipartite graph shape:
 
 - value nodes hold `ciwi.value/Value`
 - operator nodes hold `ciwi.operator/Operator`
@@ -67,9 +82,11 @@ The first prototype model mirrors WILLIAM's bipartite graph shape:
 - propagation can fire up from known inputs or fire down from a known output
   plus invertible inputs
 
-The initial operator set is deliberately small: `add` and `negate`. The tests
-include a small golden case transcribed from
-`../william/william/tests/test_propagation.py`.
+On top of that graph model, CIWI has MDL selection, graph-backed composites,
+local rewrite operators, bounded and exhaustive compression loops, and the
+Alice/Wunderbaum path that is currently driving parity work. The graph rewrite
+operator is the active local bounded rewrite mechanism; the older standalone
+enumerative rewrite path has been removed.
 
 ## License
 

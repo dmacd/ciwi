@@ -1,5 +1,6 @@
 (ns ciwi.delayed-builder
-  (:require [ciwi.graph :as graph]
+  (:require [ciwi.cache :as cache]
+            [ciwi.graph :as graph]
             [ciwi.hashing :as hashing]
             [ciwi.operator :as op]
             [ciwi.propagation :as propagation]
@@ -254,22 +255,23 @@
 
 (defn- try-invert-op
   [operator output known-inputs known-positions opts]
-  (if-let [inverse-cache (:inverse-cache opts)]
-    (let [value-content-cache (:value-content-cache opts)
-          k (inverse-cache-key value-content-cache
-                               operator
-                               output
-                               known-inputs
-                               known-positions)]
-      (if-let [entry (find @inverse-cache k)]
-        (val entry)
-        (let [result (raw-invert-op operator
-                                    output
-                                    known-inputs
-                                    known-positions)]
-          (swap! inverse-cache assoc k result)
-          result)))
-    (raw-invert-op operator output known-inputs known-positions)))
+  (let [cache-context (cache/search-context (:cache-context opts))]
+    (if-let [inverse-cache (cache/inverse-cache cache-context)]
+      (let [value-content-cache (cache/value-content-cache cache-context)
+            k (inverse-cache-key value-content-cache
+                                 operator
+                                 output
+                                 known-inputs
+                                 known-positions)]
+        (if-let [entry (find @inverse-cache k)]
+          (val entry)
+          (let [result (raw-invert-op operator
+                                      output
+                                      known-inputs
+                                      known-positions)]
+            (swap! inverse-cache assoc k result)
+            result)))
+      (raw-invert-op operator output known-inputs known-positions))))
 
 (defn- costed-operator
   [{:keys [operator dl]}]
@@ -315,7 +317,7 @@
         (let [output (memory-value memory output-id)
               known-inputs (mapv #(memory-value memory %) known-child-ids)
               missing-positions (vec (remove (set known-positions) (range arity)))
-              value-content-cache (:value-content-cache opts)
+              value-content-cache (cache/value-content-cache (:cache-context opts))
               existing-value-buckets (memory-value-fingerprint-buckets
                                       value-content-cache
                                       memory)]
@@ -360,7 +362,9 @@
   [build-info elements-by-key {:keys [registry]
                                :or {registry op/registry}
                                :as opts}]
-  (let [element (selected-element build-info elements-by-key registry)
+  (let [cache-context (cache/search-context (:cache-context opts))
+        opts (assoc opts :cache-context cache-context)
+        element (selected-element build-info elements-by-key registry)
         positions (position-map (:gen-cond element) (:conditioned-nodes build-info))
         g (:graph build-info)
         memory (:memory build-info)

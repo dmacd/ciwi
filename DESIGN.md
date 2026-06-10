@@ -133,7 +133,7 @@ A rewrite search result is structured data, not just a candidate vector:
 ```clojure
 {:node-ids [:target]
  :requested-node-ids [:target]
- :rewrite-operator-ids [:bounded-enum]
+ :rewrite-operator-ids [:graph-rewrite]
  :candidates [...]
  :resource {:rewrite-operators-considered 1
             :nodes-requested 1
@@ -142,7 +142,7 @@ A rewrite search result is structured data, not just a candidate vector:
             :candidates-accepted 1
             :generated-edits 64}
  :trace [{:kind :rewrite-operator
-          :rewrite-operator-id :bounded-enum
+          :rewrite-operator-id :graph-rewrite
           :resource {...}}]}
 ```
 
@@ -537,7 +537,9 @@ Recognizer templates are useful proposal operators and debugging baselines, but
 they are not evidence for Alice parity. In particular, the primitive template
 sweep must not invent unconditioned `map :negate` or arbitrary `concat` splits,
 because Python `Map` requires a conditioned callable and Python `Concat`
-requires a conditioned side.
+requires a conditioned side. Keep them quarantined as opt-in machinery until a
+future library-compression or learned-proposal pass has a concrete use for
+them.
 
 ## Clojure Graph Literals
 
@@ -643,21 +645,14 @@ care whether a rule was built in, hand-written, loaded from EDN, or produced by
 an outer library-compression/amortization phase. Later source rendering,
 compilation, and dynamic loading should preserve that boundary.
 
-## Enumeration Components
+## Graph Rewrite And Enumeration Helpers
 
-`ciwi.enumerative-rewrite` is a local forward-expression enumerator. For each
-focused value node, it enumerates expression trees over a configured operator
-set and literal generator, bounded by `:max-depth`, `:max-generated`, and
-`:beam-width`. The beam keeps the cheapest expressions by predicted expression
-DL with deterministic form tie-breaking. Local neighborhood values can seed the
-beam so accepted candidates reuse existing nodes instead of rematerializing
-duplicate children.
-
-`ciwi.graph-rewrite` is the graph-native bounded rewrite operator. It enumerates
-local edits directly by choosing a focused parent, a root operator, child
-operands from DAG-safe local node refs and literal value refs, and optional
-nested generated edits. It emits normal rewrite candidates with `:child-refs`
-and resource metadata.
+`ciwi.graph-rewrite` is the graph-native bounded rewrite operator. It
+enumerates local edits directly by choosing a focused parent, a root operator,
+child operands from DAG-safe local node refs and literal value refs, and
+optional nested generated edits. It emits normal rewrite candidates with
+`:child-refs` and resource metadata. This supersedes the older standalone
+forward-expression enumerative rewrite path.
 
 `ciwi.enumerator/effective-dl` ports the useful Dirichlet-process posterior
 predictive score from Python WILLIAM's DAG enumerator. It is a pure
@@ -719,10 +714,10 @@ compression candidates rather than every explored frontier materialization.
 Once a threshold-accepted graph has been scored, CIWI returns it without
 expanding descendants that will be discarded by the stopping rule.
 
-`ciwi.alice-wunderbaum` is the Alice-facing greedy runner over that core with
+`ciwi.alice.wunderbaum` is the Alice-facing greedy runner over that core with
 an explicit declaration table for the Python `test_alice.py` operator basis. It
-requires an injected registry and does not change the default `ciwi.alice`
-no-recognizer harness.
+requires an injected registry and does not depend on the legacy local baseline
+in `ciwi.alice-legacy`.
 
 `run-greedy-task` mirrors Python `GreedyAlice`: sort raw leaves by DL, compress
 the largest worthy leaf, accept the first Wunderbaum candidate above
@@ -761,7 +756,7 @@ graph.
 
 Focused Alice steps score only the primary target root, not the whole temporary
 graph containing dummy/free values. CIWI exposes this as Wunderbaum's
-`:score-target-count`, which `ciwi.alice-wunderbaum` sets to `1` for a
+`:score-target-count`, which `ciwi.alice.wunderbaum` sets to `1` for a
 leaf-local compression step. Without this, a candidate can look worse or better
 for the wrong reason because free anchors are included in the temporary graph's
 DL.
@@ -845,8 +840,9 @@ machinery. `compress-exhaustive` searches every value node until a fixed point.
 nodes. Both return the final graph, history, DL, stop reason, and selected
 expressions derived from the MDL choice tree.
 
-`ciwi.alice/run-task-comparison` lifts those loops to Alice-style tasks by
-running both modes over the same task graph and comparing selected target
-expressions and global DL. The parity-focused Alice/Wunderbaum path remains
-separate so the Python port can be validated before it is folded into the local
+`ciwi.alice` holds the shared Alice task records, task constructors, operator
+registry, and compression-rate helpers. `ciwi.alice-legacy` holds the old local
+no-recognizer task runner and is kept only as a baseline harness. The
+parity-focused Alice path is `ciwi.alice.wunderbaum/run-greedy-task`, which
+validates the Python Wunderbaum port before any future folding into the local
 bounded rewrite model.

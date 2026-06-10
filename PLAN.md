@@ -1,6 +1,6 @@
 # CIWI Plan
 
-Last updated: 2026-06-06.
+Last updated: 2026-06-09.
 
 ## Objective
 
@@ -31,7 +31,7 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   insert-frequency partitioning, primitive-buffer metadata for arrays created
   during partitioning, and a fast deterministic content hash. Alice's greedy
   tree keeps dense data internally and renders plain expressions only for
-  public results. Tests pass locally with 151 tests and 807 assertions on the
+  public results. Tests pass locally with 146 tests and 786 assertions on the
   default vector backend, plus 8 tests and 40 assertions on the opt-in DJL
   backend.
 
@@ -49,8 +49,11 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   Wunderbaum with injected registries, operator/count declarations,
   generalized conditions, node-tuple enumeration, delayed graph building,
   operator inversion, usage-biased DL, and MDL-selected materialized results.
-- `ciwi.alice-wunderbaum` adds an Alice-facing greedy runner over that core.
-  It is separate from the default `ciwi.alice` no-recognizer harness.
+- `ciwi.alice.wunderbaum` adds an Alice-facing greedy runner over that core.
+  It is the main Alice parity path. `ciwi.alice` still supplies shared task
+  records, the Alice operator registry, constructors, and compression-rate
+  helpers. `ciwi.alice-legacy` contains the old local no-recognizer runner,
+  retained only as a baseline harness.
 - `ciwi.value` now ports Python WILLIAM's scalar, structural, array, and
   Gaussian value description length model, with a faster 1D homogeneous-vector
   scoring path that preserves the Python DL formula. Alice/Wunderbaum
@@ -64,10 +67,10 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
 - Python-scale `simple_repeat`, `insert_repeat`, `insert_repeat2`,
   `insert_repeat3`, `repeat_with_noise`, `simply_linear`, `sprinkled`,
   `increasing_runs`, and `map_negate` pass through the injected Alice operator
-  basis via `ciwi.alice-wunderbaum`, with no recognizer templates. The live
+  basis via `ciwi.alice.wunderbaum`, with no recognizer templates. The live
   evidence matrix is `alice-test-parity.md`, which now records both default
   vector-backend and opt-in DJL-backend warm timings for the core path.
-- `ciwi.alice-wunderbaum/run-greedy-task` now mirrors Python GreedyAlice's
+- `ciwi.alice.wunderbaum/run-greedy-task` now mirrors Python GreedyAlice's
   outer loop: compress the largest worthy raw leaf, accept the first candidate
   above the one-percent step threshold, splice it into the task tree, and
   repeat until the task threshold is reached. `simple_repeat`,

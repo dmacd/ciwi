@@ -1,5 +1,6 @@
 (ns ciwi.mdl
-  (:require [ciwi.graph :as graph]
+  (:require [ciwi.cache :as cache]
+            [ciwi.graph :as graph]
             [ciwi.value :as value]))
 
 (defn scoring-context
@@ -11,13 +12,12 @@
   "
   ([]
    (scoring-context {}))
-  ([{:keys [value-dl-cache node-dl-cache]}]
-   {:value-dl-cache (or value-dl-cache (atom {}))
-    :node-dl-cache (or node-dl-cache (atom {}))}))
+  ([opts]
+   (cache/scoring-context opts)))
 
 (defn- value-dl
-  [{:keys [value-dl-cache]} v]
-  (value/desc-len-cached value-dl-cache v))
+  [context v]
+  (value/desc-len-cached (cache/value-dl-cache context) v))
 
 (defn node-dl
   "Return the best description for a value node as
@@ -26,7 +26,8 @@
   ([g id]
    (node-dl g id (scoring-context)))
   ([g id context]
-   (let [{:keys [node-dl-cache] :as context} (scoring-context context)]
+   (let [context (scoring-context context)
+         node-dl-cache (cache/node-dl-cache context)]
      (letfn [(best-value [value-id trace]
                (if-let [cached (get @node-dl-cache value-id)]
                  cached

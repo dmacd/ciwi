@@ -1,7 +1,6 @@
 (ns ciwi.notebook.core-machinery
   (:require [ciwi.compress :as compress]
             [ciwi.dsl :as dsl]
-            [ciwi.enumerative-rewrite :as enum]
             [ciwi.graph :as graph]
             [ciwi.graph-rewrite :as graph-rewrite]
             [ciwi.mdl :as mdl]
@@ -64,20 +63,6 @@
 (defn step-rows
   [result]
   (mapv step-row (:steps result)))
-
-(defn expression-row
-  [expr]
-  {:kind (:kind expr)
-   :form (:form expr)
-   :value (:value expr)
-   :dl (:dl expr)
-   :depth (:depth expr)})
-
-(defn expression-rows
-  [expressions]
-  (->> expressions
-       (sort-by (juxt :depth :dl (comp pr-str :form)))
-       (mapv expression-row)))
 
 (defn edit-row
   [edit]
@@ -171,16 +156,23 @@
 
 (mdl/selected-expression range-with-option :out)
 
-;; ## Primitive Template Rewrites
+;; ## Opt-In Recognizer Templates
 ;;
-;; The default rewrite operator runs a small set of exact templates over value
-;; nodes. A candidate is accepted only when its description length delta is
-;; negative.
+;; The primitive template operator runs a small set of exact templates over
+;; value nodes. A candidate is accepted only when its description length delta is
+;; negative. This operator is injected explicitly; it is not part of the default
+;; Alice parity path. Treat these templates as proposal/debugging tools for now.
 
 (mapv rewrite/template-id (rewrite/primitive-templates))
 
+(def primitive-rewrite-operators
+  [(rewrite/primitive-template-operator)])
+
 (def primitive-search
-  (search/rewrite-search raw-range [:out] {:parallel? false}))
+  (search/rewrite-search raw-range
+                         [:out]
+                         {:parallel? false
+                          :rewrite-operators primitive-rewrite-operators}))
 
 (:resource primitive-search)
 
@@ -203,7 +195,9 @@
       (graph/add-value :out [2 5 8 11 14 17])))
 
 (def exhaustive-affine
-  (search/exhaustive-converge affine-graph {:parallel? false}))
+  (search/exhaustive-converge affine-graph
+                              {:parallel? false
+                               :rewrite-operators primitive-rewrite-operators}))
 
 (:stopped exhaustive-affine)
 
@@ -223,6 +217,7 @@
   (search/bounded-converge affine-graph
                            [:out]
                            {:parallel? false
+                            :rewrite-operators primitive-rewrite-operators
                             :re-eval-budget 4}))
 
 (step-rows bounded-affine)
@@ -245,12 +240,15 @@
       (graph/add-value :affine [10 12 14 16 18])))
 
 (def exhaustive-compression
-  (compress/compress-exhaustive compression-workload {:parallel? false}))
+  (compress/compress-exhaustive compression-workload
+                                {:parallel? false
+                                 :rewrite-operators primitive-rewrite-operators}))
 
 (def bounded-compression
   (compress/compress-bounded compression-workload
                              [:range :repeat :affine]
                              {:parallel? false
+                              :rewrite-operators primitive-rewrite-operators
                               :re-eval-budget 64}))
 
 (:selected exhaustive-compression)
@@ -261,11 +259,11 @@
                             bounded-compression
                             [:range :repeat :affine])
 
-;; ## Bounded Enumerative Rewrite
+;; ## Graph Rewrite
 ;;
-;; Primitive templates only find patterns that someone wrote down. The
-;; enumerative operator builds expressions from operators and literal seeds, then
-;; keeps the best expression per value inside resource bounds.
+;; Primitive templates only find patterns that someone wrote down. The graph
+;; rewrite operator builds edit operands from operators and literal seeds, then
+;; keeps the best operand per value inside resource bounds.
 
 (defn square-literals
   [data]
@@ -276,42 +274,41 @@
 (def square-data
   [0 1 4 9 16 25])
 
-(def shallow-square-enumeration
-  (enum/enumeration-result square-data
-                           {:operators [{:op :brange :arity 2}
-                                        {:op :mult :arity 2}]
-                            :literal-values square-literals
-                            :max-depth 1
-                            :max-generated 200
-                            :beam-width 64}))
+(def shallow-square-edits
+  (graph-rewrite/enumerate-edits square-data
+                                 {:operators [{:op :brange :arity 2}
+                                              {:op :mult :arity 2}]
+                                  :literal-values square-literals
+                                  :max-depth 1
+                                  :max-generated 200
+                                  :beam-width 64}))
 
-(:resource shallow-square-enumeration)
+(:resource shallow-square-edits)
 
-(take 12 (expression-rows (:expressions shallow-square-enumeration)))
+(take 12 (edit-rows (:edits shallow-square-edits)))
 
-(def deep-square-enumeration
-  (enum/enumeration-result square-data
-                           {:operators [{:op :brange :arity 2}
-                                        {:op :mult :arity 2}]
-                            :literal-values square-literals
-                            :max-depth 2
-                            :max-generated 200
-                            :beam-width 64}))
+(def deep-square-edits
+  (graph-rewrite/enumerate-edits square-data
+                                 {:operators [{:op :brange :arity 2}
+                                              {:op :mult :arity 2}]
+                                  :literal-values square-literals
+                                  :max-depth 2
+                                  :max-generated 200
+                                  :beam-width 64}))
 
-(:resource deep-square-enumeration)
+(:resource deep-square-edits)
 
-(->> (:expressions deep-square-enumeration)
-     expression-rows
+(->> (:edits deep-square-edits)
+     edit-rows
      (filter #(= square-data (:value %))))
 
 (def square-graph
   (-> (graph/empty-graph)
       (graph/add-value :out square-data)))
 
-(def square-enumerator
-  (enum/enumerative-operator
-   {:id :square-enum
-    :reason :square-enum
+(def square-graph-rewrite-operator
+  (graph-rewrite/graph-rewrite-operator
+   {:id :square-graph-rewrite
     :operators [{:op :brange :arity 2}
                 {:op :mult :arity 2}]
     :literal-values square-literals
@@ -319,20 +316,20 @@
     :max-generated 200
     :beam-width 64}))
 
-(def square-enum-result
+(def square-graph-rewrite-result
   (search/exhaustive-converge square-graph
                               {:parallel? false
-                               :rewrite-operators [square-enumerator]}))
+                               :rewrite-operators [square-graph-rewrite-operator]}))
 
-(step-rows square-enum-result)
+(step-rows square-graph-rewrite-result)
 
-(mdl/selected-expression (:graph square-enum-result) :out)
+(mdl/selected-expression (:graph square-graph-rewrite-result) :out)
 
-;; ## Graph Rewrite
+;; ## Graph Rewrite With Node Reuse
 ;;
-;; Graph rewrite is similar to enumerative rewrite, but it enumerates edit
-;; operands and can reuse nearby value nodes by reference. This is how a local
-;; DAG can share one discovered range twice instead of materializing it twice.
+;; Graph rewrite can also reuse nearby value nodes by reference. This is how a
+;; local DAG can share one discovered range twice instead of materializing it
+;; twice.
 
 (def square-with-range
   (let [g (-> (graph/empty-graph)
@@ -389,8 +386,8 @@
 ;;
 ;; Good knobs to edit in this notebook:
 ;;
-;; * Change `:max-depth` from 2 to 1 in `square-enumerator`.
+;; * Change `:max-depth` from 2 to 1 in `square-graph-rewrite-operator`.
 ;; * Lower `:max-generated` until the square rewrite disappears.
 ;; * Change `:re-eval-budget` in bounded convergence and inspect neighborhoods.
-;; * Add another operator spec such as `{:op :add :arity 2}` to the enumerator.
+;; * Add another operator spec such as `{:op :add :arity 2}` to the rewrite operator.
 ;; * Replace the vectors with your own values and watch candidate deltas.

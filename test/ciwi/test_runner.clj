@@ -1,16 +1,15 @@
 (ns ciwi.test-runner
   (:require [clojure.test :as test]
-            [ciwi.alice-wunderbaum-test]
+            [ciwi.alice.wunderbaum-test]
             [ciwi.alice-test]
+            [ciwi.cache-test]
             [ciwi.compress-test]
             [ciwi.composite-test]
             [ciwi.conditions-test]
-            [ciwi.core-test]
             [ciwi.dense-test]
             [ciwi.delayed-builder-test]
             [ciwi.dsl-test]
             [ciwi.enumerator-test]
-            [ciwi.enumerative-rewrite-test]
             [ciwi.fix-test]
             [ciwi.graph-test]
             [ciwi.graph-rewrite-test]
@@ -28,16 +27,15 @@
 (defn -main
   [& _args]
   (let [{:keys [fail error]} (test/run-tests 'ciwi.alice-test
-                                             'ciwi.alice-wunderbaum-test
+                                             'ciwi.alice.wunderbaum-test
+                                             'ciwi.cache-test
                                              'ciwi.compress-test
                                              'ciwi.composite-test
                                              'ciwi.conditions-test
-                                             'ciwi.core-test
                                              'ciwi.dense-test
                                              'ciwi.delayed-builder-test
                                              'ciwi.dsl-test
                                              'ciwi.enumerator-test
-                                             'ciwi.enumerative-rewrite-test
                                              'ciwi.fix-test
                                              'ciwi.graph-test
                                              'ciwi.graph-rewrite-test

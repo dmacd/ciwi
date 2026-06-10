@@ -329,7 +329,12 @@
                                               (local-ref rest)]
                          :insert)))
 
-(defn primitive-templates
+(defn ^:recognizer-baseline primitive-templates
+  "Opt-in local recognizer templates.
+
+  These exact recognizers are retained as proposal/debugging baselines and as
+  possible future library-compression seed material. They are not installed by
+  default and are not Alice parity evidence."
   []
   [(value-template :brange brange-candidate)
    (value-template :repeat repeat-candidate)
@@ -433,7 +438,8 @@
   ([id templates]
    (->TemplateRewriteOperator id (mapv ensure-template templates))))
 
-(defn primitive-template-operator
+(defn ^:recognizer-baseline primitive-template-operator
+  "Wrap the opt-in primitive recognizer templates as a rewrite operator."
   []
   (template-operator :primitive-templates (primitive-templates)))
 
