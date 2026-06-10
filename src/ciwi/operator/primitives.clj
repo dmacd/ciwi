@@ -16,6 +16,7 @@
 (def add numeric/add)
 (def sub numeric/sub)
 (def mult numeric/mult)
+(def dot numeric/dot)
 (def negate numeric/negate)
 (def lessthan numeric/lessthan)
 (def equal numeric/equal)
@@ -51,6 +52,7 @@
   {:add add
    :sub sub
    :mult mult
+   :dot dot
    :negate negate
    :lessthan lessthan
    :equal equal

@@ -37,7 +37,7 @@ Out of scope unless they block compression behavior:
 | `test_discrete_optimizer.py::test_adaptive_optimizer_example` | Behavior covered | `ciwi.optimize-test/adaptive-grid-optimizes-python-scale-residual-dl-slope` | Uses a deterministic 1000-point CIWI fixture, signal-only Elias residual DL, and the Python assertion shape against a brute grid optimum. Exact NumPy fixture capture remains pending before calling this full fixture parity. |
 | `test_discrete_optimizer.py::test_adaptive_grid_mixed_float_int` | Behavior covered | `ciwi.optimize-test/adaptive-grid-optimizes-python-scale-mixed-residual-dl` | Uses a deterministic 1000-point CIWI fixture, mixed float/int dimensions, joint sampling, and Python-style slope/bias tolerances. Exact NumPy fixture capture remains pending. |
 | `test_alice_pipeline.py::TestMatrixRegressionDebugPipeline::test_optimizer` | Behavior covered | `ciwi.optimize-test/adaptive-grid-optimizes-python-scale-matrix-regression` | Exercises dense `dot`, rounded predictions, signal-only residual DL, rounded weight `Value.desc_len`, and Python-style improvement/closer-to-true-weight assertions on a deterministic `1000 x 10` fixture. Exact NumPy fixture capture remains pending. |
-| `test_alice_pipeline.py::TestMatrixRegressionDebugPipeline::test_try_to_optimize` | Not yet covered | Pending | Needs `try_to_optimize` over a graph with permeable numeric parameters. |
+| `test_alice_pipeline.py::TestMatrixRegressionDebugPipeline::test_try_to_optimize` | Behavior covered | `ciwi.graph-optimize-test/try-to-optimize-improves-matrix-regression-weight-leaf` | Uses graph-level `try-to-optimize` over a permeable dense weight leaf with explicit matrix-regression section ids. It verifies finite DL, improvement, fixed matrix preservation, re-inferred residual precision, and movement toward true weights on a deterministic `1000 x 10` fixture. Exact NumPy fixture capture remains pending. |
 | `test_alice_pipeline.py::TestMatrixRegressionDebugPipeline::test_single_compression_step` | Not yet covered | Pending | Needs Alice/Wunderbaum to compose symbolic `Dot`/`Add` search with optimizer-backed parameter improvement. |
 | `test_alice_pipeline.py::TestMatrixRegressionDebugPipeline::test_greedy_with_solution` | Not yet covered | Pending | End-to-end matrix regression with provided solution graph. |
 | `test_alice_pipeline.py::TestMatrixRegressionDebugPipeline::test_greedy_without_solution` | Not yet covered | Pending | End-to-end matrix regression from search without a solution hint. |
@@ -85,6 +85,11 @@ operations, rounded prediction scoring, signal-only residual DL, and rounded
 weight value DL, but it is not an exact checked-in capture of NumPy
 `default_rng(123)` data. Exact fixture capture is still needed for the final
 evidence table before claiming full Python fixture parity.
+
+The graph-level `try_to_optimize` behavior is also covered on the same
+deterministic fixture. CIWI uses explicit `section-ids` to mirror Python's
+cross-section graph semantics: `root`, `x`, and permeable `w` are copied into
+each trial memory, while the residual leaf is re-inferred by propagation.
 
 ## Classification Fixture
 
@@ -192,14 +197,16 @@ graph-search path is behaviorally correct.
    This should exercise dense `dot`, residual DL, and `Value` DL for the
    optimized weight vector, still outside graph search. Exact NumPy fixture
    capture remains pending.
-6. Active next: implement graph-level `try_to_optimize` as a composable recursive graph
+6. Done at behavior level: implement graph-level `try_to_optimize` as a composable recursive graph
    search operator over permeable leaves. It should take the operator registry,
    propagation strategy, dense backend/defaults, optimizer, and objective
-   policy as injected dependencies rather than hardcoding Alice globals.
-7. Add matrix regression `test_try_to_optimize` parity. This proves CIWI can
-   optimize a permeable numeric leaf inside an existing graph while preserving
-   the non-permeable matrix input.
-8. Wire optimizer-backed candidates into Alice/Wunderbaum compression step and
+   policy as injected dependencies rather than hardcoding Alice globals. CIWI's
+   first implementation takes explicit `section-ids`, propagation options, a
+   value-DL cache, and an optimizer factory.
+7. Done at behavior level: add matrix regression `test_try_to_optimize`
+   coverage on a deterministic Python-scale fixture. Exact NumPy fixture
+   capture remains pending.
+8. Active next: wire optimizer-backed candidates into Alice/Wunderbaum compression step and
    cover matrix regression `test_single_compression_step`,
    `test_greedy_with_solution`, and `test_greedy_without_solution`.
 9. Stage classifier debug parity: classifier `try_to_optimize`, single

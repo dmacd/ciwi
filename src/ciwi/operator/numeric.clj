@@ -1,7 +1,43 @@
 (ns ciwi.operator.numeric
   (:require [ciwi.dense.core :as dense]
             [ciwi.operator.core :as core]
-            [ciwi.operator.util :as u]))
+            [ciwi.operator.util :as u]
+            [ciwi.value :as value]))
+
+(defn- numeric-precision
+  [x]
+  (cond
+    (dense/ndarray? x) (value/precision-array (dense/ravel x))
+    (u/seqish? x) (value/precision-array (u/seq-values x))
+    (number? x) (value/precision-scalar x)
+    :else 0))
+
+(defn- round-numeric
+  [x decimals]
+  (cond
+    (integer? x)
+    x
+
+    (and (dense/ndarray? x)
+         (= :int64 (dense/dtype x)))
+    x
+
+    (dense/ndarray? x)
+    (dense/array-like x (mapv #(value/round-to-precision % decimals)
+                              (dense/ravel x)))
+
+    (u/seqish? x)
+    (dense/array (mapv #(value/round-to-precision % decimals)
+                       (u/seq-values x)))
+
+    (number? x)
+    (value/round-to-precision x decimals)
+
+    :else x))
+
+(defn- round-to-input-precision
+  [result inputs]
+  (round-numeric result (apply max (map numeric-precision inputs))))
 
 (defn- cumsum-call
   [xs]
@@ -53,7 +89,7 @@
                (when (= 1 (count cond))
                  (let [known (first cond-inputs)]
                    (when-let [result (u/maybe-call dense/subtract output known)]
-                     [[result]]))))}))
+                     [[(round-to-input-precision result [output known])]]))))}))
 
 (def sub
   (core/operator
@@ -84,8 +120,14 @@
                                  (and (u/seqish? known)
                                       (some zero? (u/seq-values known))))
                      (when-let [result (u/maybe-call dense/divide output known)]
-                       (when-let [result (u/maybe-integral-quotient output known result)]
-                         [[result]]))))))}))
+                     (when-let [result (u/maybe-integral-quotient output known result)]
+                       [[result]]))))))}))
+
+(def dot
+  (core/operator
+   {:id :dot
+    :call (fn [[x y]]
+            (round-to-input-precision (dense/dot x y) [x y]))}))
 
 (def negate
   (core/operator

@@ -835,6 +835,20 @@ That score excludes fixed array shape and precision code lengths, which matters
 for documenting optimizer parity even when the argmin would be unchanged by
 adding those constants.
 
+`ciwi.graph-optimize/try-to-optimize` is the graph-level adapter equivalent to
+Python Wunderbaum's `try_to_optimize`. It extracts permeable scalar leaves and
+short dense float-array leaves, runs an injected optimizer, rebuilds a trial
+memory from explicit `section-ids`, propagates the graph, and scores the
+propagated leaf frontier. The explicit `section-ids` are important: Python's
+`Graph([root, x, w])` matrix-regression fixture copies only the cross-section
+nodes into each trial and re-infers the residual leaf.
+
+Numeric propagation has a small precision hook for this path: `dot` outputs and
+`add` inverse outputs are rounded through `ciwi.value/round-to-precision` while
+preserving integer values. This matches the part of Python WILLIAM's precision
+layer that keeps inferred matrix residuals at the fixture precision instead of
+letting raw double arithmetic dominate residual DL.
+
 ## Structural Graph Operations
 
 Graph comparison is based on canonical structural keys over immutable node ids.

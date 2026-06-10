@@ -127,6 +127,13 @@
     (let [scale (pow10 decimals)]
       (/ (python-rint (* (double x) scale)) scale))))
 
+(defn round-to-precision
+  "Round a numeric scalar with Python WILLIAM's `np.round`-style semantics."
+  [x decimals]
+  (if (missing-number? x)
+    x
+    (python-round x decimals)))
+
 (defn precision-scalar
   "Port of Python WILLIAM's `precision_scalar`.
 

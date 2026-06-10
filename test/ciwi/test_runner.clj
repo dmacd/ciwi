@@ -12,6 +12,7 @@
             [ciwi.enumerator-test]
             [ciwi.fix-test]
             [ciwi.graph-test]
+            [ciwi.graph-optimize-test]
             [ciwi.graph-rewrite-test]
             [ciwi.hashing-test]
             [ciwi.library-test]
@@ -38,6 +39,7 @@
                                              'ciwi.enumerator-test
                                              'ciwi.fix-test
                                              'ciwi.graph-test
+                                             'ciwi.graph-optimize-test
                                              'ciwi.graph-rewrite-test
                                              'ciwi.hashing-test
                                              'ciwi.library-test

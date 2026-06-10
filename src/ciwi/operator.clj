@@ -14,6 +14,7 @@
 (def add primitives/add)
 (def sub primitives/sub)
 (def mult primitives/mult)
+(def dot primitives/dot)
 (def negate primitives/negate)
 (def lessthan primitives/lessthan)
 (def equal primitives/equal)
