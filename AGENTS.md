@@ -23,6 +23,10 @@ WILLIAM/Alice compression behavior before adding new mechanisms.
   for optimizer-backed numeric graph search, including discrete optimizer,
   `try_to_optimize`, matrix regression, and later clustering rows. Keep it
   separate from plain Alice/Wunderbaum compression parity.
+- `OPTIMIZATION-BACKLOG.md` records deferred performance work that should
+  preserve current semantics. Use it for optimization ideas that are worth
+  revisiting but should not clutter the roadmap, design record, or parity
+  evidence.
 - User-facing introductory material belongs in `README.md`, `tutorial.md`, or
   notebooks, not in the internal planning/design docs.
 

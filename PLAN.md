@@ -1,6 +1,6 @@
 # CIWI Plan
 
-Last updated: 2026-06-09.
+Last updated: 2026-06-10.
 
 ## Objective
 
@@ -233,8 +233,9 @@ These cleanup-review items are intentionally not active targets right now:
    `DESIGN.md` records technical decisions, `AGENTS.md` records workflow rules,
    `style.md` records coding style, `alice-test-parity.md` records Alice
    evidence, `optimizer-graph-search-parity.md` records optimizer-backed
-   numeric graph-search evidence, and `PYTHON-TEST-ROADMAP.md` records broader
-   Python WILLIAM test parity sequencing.
+   numeric graph-search evidence, `OPTIMIZATION-BACKLOG.md` records deferred
+   semantics-preserving performance work, and `PYTHON-TEST-ROADMAP.md` records
+   broader Python WILLIAM test parity sequencing.
 2. Complete a straight Clojure port of the Python Wunderbaum/Alice path before
    adding resource-bounded local semantics. Preserve the Python search concepts:
    operator/count inputs, typed specs, generalized conditions, node-tuple
@@ -268,11 +269,10 @@ These cleanup-review items are intentionally not active targets right now:
 
 ## Near-Term Next Tasks
 
-- Continue the performance audit with `insert_repeat3` as the primary outlier.
-  The next likely fixes are structural: reduce repeated `expand-graph`
-  frontier work, avoid millions of repeated attachment-validity checks, and
-  make delayed graph construction cheaper without changing Python Alice search
-  semantics.
+- Continue the performance audit with `insert_repeat3` as the primary outlier
+  only when performance becomes the active task again. The attachment-check
+  reduction options are now tracked in `OPTIMIZATION-BACKLOG.md`; they should
+  preserve Python Alice search semantics.
 - After that, the next macro step is optimizer-backed numeric graph-search
   parity. Use `optimizer-graph-search-parity.md` as the evidence matrix for
   `test_discrete_optimizer.py`, `TestMatrixRegressionDebugPipeline`, and later
