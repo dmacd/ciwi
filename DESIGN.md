@@ -824,6 +824,17 @@ operators over explicit state. This lets later work replace numeric search with
 graph rewrite search, gradient descent on differentiable subgraphs, or mixed
 specialized search without changing the surrounding compression loop.
 
+The adaptive grid operator scores grid candidates directly, matching Python
+`AdaptiveOptimizer`. It does not run Newton search inside each grid point.
+Newton/pattern search remains a separate operator that can be composed by a
+higher-level controller later.
+
+CIWI exposes `ciwi.value/desc-len-array-elias-signal` for optimizer objectives
+that intentionally mirror Python's private `_jdesc_len_array_elias` helper.
+That score excludes fixed array shape and precision code lengths, which matters
+for documenting optimizer parity even when the argmin would be unchanged by
+adding those constants.
+
 ## Structural Graph Operations
 
 Graph comparison is based on canonical structural keys over immutable node ids.

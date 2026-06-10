@@ -436,6 +436,24 @@
                          (+ sig-dl (jelias-posneg significand))
                          false))))))))))
 
+(defn desc-len-array-elias-signal
+  "Return `[dl all-nan?]` for Python WILLIAM's `_jdesc_len_array_elias` score.
+
+  This intentionally excludes array shape and precision code lengths. It is
+  useful for optimizer objectives that score a fixed residual array, where the
+  Python reference calls the private helper directly.
+  "
+  [x decimals]
+  (let [info (or (python-array-info x)
+                 (throw (ex-info "expected dense or rectangular array data"
+                                 {:value x})))
+        flat (:flat info)]
+    (case (:kind info)
+      :int (array-elias-int flat decimals)
+      :float (array-elias flat decimals)
+      (throw (ex-info "Elias signal DL only supports numeric arrays"
+                      {:kind (:kind info)})))))
+
 (defn- valid-number?
   [x]
   (and (number? x)

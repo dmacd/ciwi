@@ -34,9 +34,9 @@ Out of scope unless they block compression behavior:
 | `test_discrete_optimizer.py::test_newton_optimizer` | Covered | `ciwi.optimize-test/newton-optimizer-finds-integer-bowl-minimum` | Confirms integer Newton-style search finds `[20 -15]` with score `3.0`. |
 | `test_discrete_optimizer.py::test_mixed_int_float_newton_optimizer` | Covered | `ciwi.optimize-test/newton-optimizer-handles-mixed-int-float-dimensions` | Confirms mixed int/float search reaches the same bowl minimum shape. |
 | `test_discrete_optimizer.py::test_adaptive_optimizer_sampling_finds_joint_improvement` | Covered | `ciwi.optimize-test/adaptive-grid-joint-sampling-finds-non-coordinate-improvement` | Confirms joint sampling finds an improvement when coordinate-only moves do not. |
-| `test_discrete_optimizer.py::test_adaptive_optimizer_example` | Not yet covered | Pending | Needs a residual-DL objective wired to CIWI's Python-compatible value description length helpers. |
-| `test_discrete_optimizer.py::test_adaptive_grid_mixed_float_int` | Partial | Existing adaptive-grid infrastructure only | Need the Python-scale residual-DL objective over generated arrays and mixed float/int parameters. |
-| `test_alice_pipeline.py::TestMatrixRegressionDebugPipeline::test_optimizer` | Not yet covered | Pending | First target in this tranche. Needs dense dot, residual DL objective, and adaptive optimizer parity on the Python-scale matrix regression fixture. |
+| `test_discrete_optimizer.py::test_adaptive_optimizer_example` | Behavior covered | `ciwi.optimize-test/adaptive-grid-optimizes-python-scale-residual-dl-slope` | Uses a deterministic 1000-point CIWI fixture, signal-only Elias residual DL, and the Python assertion shape against a brute grid optimum. Exact NumPy fixture capture remains pending before calling this full fixture parity. |
+| `test_discrete_optimizer.py::test_adaptive_grid_mixed_float_int` | Behavior covered | `ciwi.optimize-test/adaptive-grid-optimizes-python-scale-mixed-residual-dl` | Uses a deterministic 1000-point CIWI fixture, mixed float/int dimensions, joint sampling, and Python-style slope/bias tolerances. Exact NumPy fixture capture remains pending. |
+| `test_alice_pipeline.py::TestMatrixRegressionDebugPipeline::test_optimizer` | Behavior covered | `ciwi.optimize-test/adaptive-grid-optimizes-python-scale-matrix-regression` | Exercises dense `dot`, rounded predictions, signal-only residual DL, rounded weight `Value.desc_len`, and Python-style improvement/closer-to-true-weight assertions on a deterministic `1000 x 10` fixture. Exact NumPy fixture capture remains pending. |
 | `test_alice_pipeline.py::TestMatrixRegressionDebugPipeline::test_try_to_optimize` | Not yet covered | Pending | Needs `try_to_optimize` over a graph with permeable numeric parameters. |
 | `test_alice_pipeline.py::TestMatrixRegressionDebugPipeline::test_single_compression_step` | Not yet covered | Pending | Needs Alice/Wunderbaum to compose symbolic `Dot`/`Add` search with optimizer-backed parameter improvement. |
 | `test_alice_pipeline.py::TestMatrixRegressionDebugPipeline::test_greedy_with_solution` | Not yet covered | Pending | End-to-end matrix regression with provided solution graph. |
@@ -78,6 +78,13 @@ That is the first parity gate. CIWI should not substitute mean squared error,
 least squares, or a closed-form regression shortcut. Those can be future
 specialized search operators, but they are not evidence that the Python Alice
 pipeline has been ported.
+
+Current CIWI status: the direct optimizer behavior is covered on a deterministic
+Python-scale CIWI fixture. The fixture uses the same dimensions, dense
+operations, rounded prediction scoring, signal-only residual DL, and rounded
+weight value DL, but it is not an exact checked-in capture of NumPy
+`default_rng(123)` data. Exact fixture capture is still needed for the final
+evidence table before claiming full Python fixture parity.
 
 ## Classification Fixture
 
@@ -175,14 +182,17 @@ graph-search path is behaviorally correct.
 3. Done: add `ciwi.dense.djl` as an opt-in DJL/PyTorch CPU backend under the
    `:djl` dependency alias, with focused backend tests and a compression-level
    smoke run using DJL as the process default backend.
-4. Active next: add residual-DL adaptive optimizer tests from
+4. Done at behavior level: add residual-DL adaptive optimizer tests from
    `test_discrete_optimizer.py::test_adaptive_optimizer_example` and
    `::test_adaptive_grid_mixed_float_int`. These prove the optimizer is moving
-   on the same compressed-residual objective Python uses.
-5. Add matrix regression `test_optimizer` parity on the Python-scale fixture.
+   on the same compressed-residual objective Python uses. Exact NumPy fixture
+   capture remains pending.
+5. Done at behavior level: add matrix regression `test_optimizer` parity on a
+   deterministic Python-scale fixture.
    This should exercise dense `dot`, residual DL, and `Value` DL for the
-   optimized weight vector, still outside graph search.
-6. Implement graph-level `try_to_optimize` as a composable recursive graph
+   optimized weight vector, still outside graph search. Exact NumPy fixture
+   capture remains pending.
+6. Active next: implement graph-level `try_to_optimize` as a composable recursive graph
    search operator over permeable leaves. It should take the operator registry,
    propagation strategy, dense backend/defaults, optimizer, and objective
    policy as injected dependencies rather than hardcoding Alice globals.

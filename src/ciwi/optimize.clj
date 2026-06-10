@@ -199,7 +199,7 @@
         (recur next-state (inc iter))
         state))))
 
-(defrecord AdaptiveGridSearch [int-mask n-points grow shrink max-iters jointly-optimize?])
+(defrecord AdaptiveGridSearch [int-mask n-points grow shrink max-iters jointly-optimize? evals])
 
 (defn adaptive-grid-search
   [{:keys [int-mask n-points grow shrink max-iters jointly-optimize?]
@@ -208,7 +208,7 @@
          shrink 0.5
          max-iters 20
          jointly-optimize? false}}]
-  (->AdaptiveGridSearch (vec int-mask) n-points grow shrink max-iters jointly-optimize?))
+  (->AdaptiveGridSearch (vec int-mask) n-points grow shrink max-iters jointly-optimize? (atom 0)))
 
 (defn- linspace
   [lo hi n]
@@ -242,22 +242,38 @@
 
 (defn- adaptive-candidate
   [search objective x]
-  (candidate-state (newton-search {:int-mask (:int-mask search)}) objective x))
+  (let [x (round-int-dims x (:int-mask search))
+        result (try
+                 (objective-value objective x)
+                 (catch Exception _ {:score nil :params nil}))]
+    (swap! (:evals search) inc)
+    (when (finite? (:score result))
+      (make-state x (:score result) (:params result)))))
 
 (defn- axis-search
   [search objective state dim values]
-  (let [f-init (:score state)]
-    (reduce (fn [{:keys [best all-equal?]} v]
-              (let [candidate (adaptive-candidate search objective (assoc (:x state) dim v))
-                    score (:score candidate)
-                    all-equal? (and all-equal?
-                                    (or (not (finite? score))
-                                        (= score f-init)))]
-                {:best (better-state best candidate)
-                 :all-equal? all-equal?}))
-            {:best state
-             :all-equal? true}
-            values)))
+  (let [f-init (:score state)
+        {:keys [best all-equal? invalid-count]}
+        (reduce (fn [{:keys [best all-equal? invalid-count]} v]
+                  (let [candidate (adaptive-candidate search objective (assoc (:x state) dim v))
+                        score (:score candidate)
+                        invalid? (not (finite? score))
+                        all-equal? (and all-equal?
+                                        (or invalid?
+                                            (= score f-init)))]
+                    {:best (better-state best candidate)
+                     :all-equal? all-equal?
+                     :invalid-count (if invalid?
+                                      (inc invalid-count)
+                                      invalid-count)}))
+                {:best state
+                 :all-equal? true
+                 :invalid-count 0}
+                values)]
+    {:best best
+     :all-equal? (if (>= invalid-count (dec (count values)))
+                   false
+                   all-equal?)}))
 
 (defn- product
   [xss]

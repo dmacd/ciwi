@@ -31,7 +31,7 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   insert-frequency partitioning, primitive-buffer metadata for arrays created
   during partitioning, and a fast deterministic content hash. Alice's greedy
   tree keeps dense data internally and renders plain expressions only for
-  public results. Tests pass locally with 146 tests and 786 assertions on the
+  public results. Tests pass locally with 152 tests and 802 assertions on the
   default vector backend, plus 8 tests and 40 assertions on the opt-in DJL
   backend.
 
@@ -274,14 +274,17 @@ These cleanup-review items are intentionally not active targets right now:
   classifier debug rows. Use `optimizer-graph-search-parity.md` as the evidence
   matrix for `test_discrete_optimizer.py`, matrix regression, and later
   clustering/classification rows.
-- First implement the residual-DL adaptive optimizer rows from
-  `test_discrete_optimizer.py`. These are the direct prerequisite for matrix
-  regression because they verify optimization against Python's compressed
-  residual objective rather than a generic regression loss.
-- Then cover matrix regression in this order: direct optimizer on the
-  Python-scale fixture, graph-level `try_to_optimize` over the permeable weight
-  leaf, Alice/Wunderbaum single compression step with the supplied solution,
-  greedy run with solution, and greedy run without solution.
+- Residual-DL adaptive optimizer behavior is now covered on Python-scale
+  deterministic CIWI fixtures, using signal-only Elias residual DL and the
+  Python assertion shapes from `test_discrete_optimizer.py`. Exact NumPy
+  fixture capture is still pending before full fixture parity claims.
+- Matrix regression direct optimizer behavior is now covered on a deterministic
+  `1000 x 10` fixture using dense `dot`, rounded predictions, signal-only
+  residual DL, and rounded weight `Value.desc_len`.
+- Next implement graph-level `try_to_optimize` over the permeable matrix
+  regression weight leaf. After that, cover Alice/Wunderbaum single compression
+  step with the supplied solution, greedy run with solution, and greedy run
+  without solution.
 - After matrix regression is green, stage classifier parity as
   `try_to_optimize`, single compression step, single-factor greedy with
   solution, single-factor greedy without solution, then full Iris. Treat the
