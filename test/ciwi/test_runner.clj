@@ -1,7 +1,7 @@
 (ns ciwi.test-runner
   (:require [clojure.test :as test]
             [ciwi.alice.wunderbaum-test]
-            [ciwi.alice-test]
+            [ciwi.alice-legacy-test]
             [ciwi.cache-test]
             [ciwi.compress-test]
             [ciwi.composite-test]
@@ -26,7 +26,7 @@
 
 (defn -main
   [& _args]
-  (let [{:keys [fail error]} (test/run-tests 'ciwi.alice-test
+  (let [{:keys [fail error]} (test/run-tests 'ciwi.alice-legacy-test
                                              'ciwi.alice.wunderbaum-test
                                              'ciwi.cache-test
                                              'ciwi.compress-test

@@ -12,9 +12,6 @@
 
 (defrecord Wunderbaum [registry elements-by-condition-key opts])
 
-(def generalized-conditions declarations/generalized-conditions)
-(def operator-elements-by-condition-key declarations/operator-elements-by-condition-key)
-
 (defn wunderbaum
   [{:keys [registry ops-with-counts] :as opts}]
   (let [registry (declarations/require-registry registry)]
@@ -42,8 +39,6 @@
     {:graph g
      :memory memory
      :target-ids target-ids}))
-
-(def node-tuples tuples/node-tuples)
 
 (defn- node-condition-key
   [g node-ids]

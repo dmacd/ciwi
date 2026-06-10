@@ -6,6 +6,8 @@
             [ciwi.test-helpers :as h]
             [ciwi.value :as value]
             [ciwi.wunderbaum :as sut]
+            [ciwi.wunderbaum.declarations :as declarations]
+            [ciwi.wunderbaum.tuples :as tuples]
             [clojure.test :refer [deftest is testing]]))
 
 (defn- range-wunderbaum
@@ -77,7 +79,7 @@
        (sut/wunderbaum {:ops-with-counts []}))))
 
 (deftest operator-elements-are-indexed-by-generalized-condition-specs
-  (let [elements (sut/operator-elements-by-condition-key
+  (let [elements (declarations/operator-elements-by-condition-key
                   {:brange op/brange}
                   [{:op :brange
                     :count 0
@@ -98,8 +100,8 @@
               (graph/add-value :b 2)
               (graph/add-value :c 3)
               (graph/set-roots [:a :b :c]))
-        tuples (sut/node-tuples g {:max-tuple-len 2
-                                   :max-results 7})]
+        tuples (tuples/node-tuples g {:max-tuple-len 2
+                                      :max-results 7})]
     (is (= [[0] [0 0] [1] [2] [0 1] [0 2] [1 0]]
            (mapv :indices tuples)))
     (is (= [[:a] [:a :a] [:b] [:c] [:a :b] [:a :c] [:b :a]]

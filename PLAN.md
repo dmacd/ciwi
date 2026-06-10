@@ -204,6 +204,29 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   is still materially slower than Python and remains the active performance
   investigation before moving on.
 
+## Deferred Cleanup Decisions
+
+These cleanup-review items are intentionally not active targets right now:
+
+- Operator type specs remain in declaration tables rather than beside runtime
+  operator definitions. This is acceptable for now because one runtime operator
+  can have many typed Alice/Wunderbaum signatures, while Python count/jitter
+  metadata is declaration-specific.
+- Dense backend state should stay as-is unless it creates observable global
+  state interference. DJL remains the default dense backend focus for the
+  foreseeable future.
+- Composite internals still use local mutable accumulators during template
+  analysis. Composites are active parity/library machinery, so leave this alone
+  unless we are specifically working on composite learning or library
+  compression.
+- `ciwi.enumerator` still contains reference/test helpers for tree counting and
+  tuple enumeration. The live Wunderbaum path only depends on usage-biased DL,
+  but the remaining helpers are low-priority reference machinery.
+- `ciwi.optimize` owns mutable per-search eval/cache state. That is acceptable
+  for now because it is scoped to a `NewtonSearch` instance and not shared
+  globally.
+- The local counter in `ciwi.dsl/from-expr` is not worth cleaning up right now.
+
 ## Roadmap
 
 1. Keep the documentation split clean. `PLAN.md` stays current after each turn,

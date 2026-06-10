@@ -1,4 +1,4 @@
-(ns ciwi.alice-test
+(ns ciwi.alice-legacy-test
   (:require [ciwi.alice :as alice]
             [ciwi.alice-legacy :as legacy]
             [clojure.test :refer [deftest is testing]]))

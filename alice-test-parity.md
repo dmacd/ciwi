@@ -115,7 +115,7 @@ than duplicating them inline. The focused regression in
 
 The active parity claim is limited to the Alice operator basis and the
 Python-scale task definitions under the Python WILLIAM value DL model.
-The legacy local baseline tests assert that `ciwi.alice-legacy` performs no
+`ciwi.alice-legacy-test` asserts that `ciwi.alice-legacy` performs no
 recognizer rewrites by default, which prevents accidental shortcut-based parity.
 `ciwi.alice.wunderbaum-test` now carries Python-scale core Wunderbaum rows and
 a focused `insert_repeat3` regression for the hard nested fourth step. The
