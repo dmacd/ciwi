@@ -79,7 +79,7 @@ and modify this code for non-commercial purposes with attribution. See
 [LICENSE.md](./LICENSE.md) for the license notice and canonical legal terms.
 
 
-## But..._why_?
+## But ... _why_?
 
 I'll admit, this started as one of those late-night "I wonder what would happen
 if I asked Codex to ..." experiments. I didn't even look at the
@@ -92,7 +92,7 @@ else to build them.
 
 So that's the emotional rationale. The more technical motivation is clojure 
 seems like a more natural fit for experimenting
-with more sophisticated graph local, incremental, bounded graph rewrites due
+with more sophisticated local, incremental, and bounded graph rewrites due
 to its emphasis on immutability and use of efficient persistent data
 structures, and the avenues for scalability that those properties unlock.
 Plus it's just a lot more fun to read and write than python. The reasons
