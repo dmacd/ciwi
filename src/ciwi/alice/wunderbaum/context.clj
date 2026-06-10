@@ -2,6 +2,8 @@
   (:require [ciwi.alice :as alice]
             [ciwi.alice.declarations :as alice-declarations]
             [ciwi.cache :as cache]
+            [ciwi.graph-optimize :as graph-optimize]
+            [ciwi.mdl :as mdl]
             [ciwi.spec :as spec]
             [ciwi.value :as value]
             [ciwi.wunderbaum :as wunderbaum]))
@@ -67,6 +69,50 @@
   {:targets (mapv target-value (:targets task))
    :free-values (mapv free-value (:free-values task))})
 
+(defn- score-target-dl
+  [graph target-ids cache-context score-target-count]
+  (let [context (cache/scoring-context cache-context)]
+    (if score-target-count
+      (reduce + 0.0
+              (map #(:dl (mdl/node-dl graph % context))
+                   (take score-target-count target-ids)))
+      (mdl/graph-dl graph context))))
+
+(defn- optimized-candidate-summary
+  [summary]
+  (let [cache-context (:cache-context summary)
+        optimization (graph-optimize/try-to-optimize
+                      (:graph summary)
+                      (:memory summary)
+                      {:root-id (:primary-root-id summary)
+                       :section-ids (:root-order summary)
+                       :value-dl-cache (cache/value-dl-cache cache-context)})]
+    (if-let [optimized-memory (:memory optimization)]
+      (let [optimized-graph (graph-optimize/apply-memory-values
+                             (:graph summary)
+                             optimized-memory)]
+        (assoc summary
+               :graph optimized-graph
+               :memory optimized-memory
+               :optimizer-result optimization
+               :dl (score-target-dl optimized-graph
+                                    (:target-ids summary)
+                                    cache-context
+                                    (:score-target-count summary))))
+      summary)))
+
+(defn- with-candidate-transform
+  [opts]
+  (cond
+    (:candidate-transform opts)
+    opts
+
+    (:optimize-candidates? opts)
+    (assoc opts :candidate-transform optimized-candidate-summary)
+
+    :else
+    opts))
+
 (defn target-ids
   [n]
   (mapv #(keyword (str "target" %)) (range n)))
@@ -77,7 +123,9 @@
         registry (require-registry registry)
         cache-context (cache/search-context (:cache-context opts))
         value-dl-cache (cache/value-dl-cache cache-context)
-        opts (assoc opts :cache-context cache-context)
+        opts (-> opts
+                 (assoc :cache-context cache-context)
+                 with-candidate-transform)
         ops-with-counts (or ops-with-counts
                             (declarations-for-registry registry opts))
         {:keys [targets free-values]} (task-values task)

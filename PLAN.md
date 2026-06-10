@@ -31,9 +31,10 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   insert-frequency partitioning, primitive-buffer metadata for arrays created
   during partitioning, and a fast deterministic content hash. Alice's greedy
   tree keeps dense data internally and renders plain expressions only for
-  public results. Tests pass locally with 153 tests and 807 assertions on the
-  default vector backend, plus 8 tests and 40 assertions on the opt-in DJL
-  backend.
+  public results. Optimizer-backed Wunderbaum candidates now cover the Python
+  matrix-regression single-compression-step shape with an exact NumPy fixture.
+  Tests pass locally with 154 tests and 811 assertions on the default vector
+  backend, plus 8 tests and 40 assertions on the opt-in DJL backend.
 
 ## Current State
 
@@ -201,8 +202,29 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   uses strict two-pass loops, and integer array DL uses the integer
   precision/Elias specialization instead of the generic floating round loop.
   Fresh warm medians are recorded in `alice-test-parity.md`. `increasing_runs`
-  is still materially slower than Python and remains the active performance
-  investigation before moving on.
+  is still materially slower than Python but is parked for now; matrix
+  regression is the active macro step.
+- Optimizer-backed candidate search is now wired into Alice/Wunderbaum as an
+  opt-in candidate transform. A caller can also supply a generic
+  `:candidate-predicate` to filter materialized candidate summaries before
+  transformation and expansion. This is used by the matrix-regression parity
+  test as a native structural solution-prefix filter, matching Python's
+  provided-solution test setup without introducing a matrix-specific
+  recognizer.
+- `ciwi.alice.wunderbaum/compression-step-candidate` mirrors Python's direct
+  `GreedyAlice.compression_step(target, free_values=...)` call for one target
+  and explicit free values. This is deliberately distinct from
+  `run-compression-step`, which mirrors Python's task-level greedy choice of
+  the largest worthy leaf. That distinction matters for matrix regression:
+  the Python single-step test focuses `y` while the task contains both `y` and
+  `x_mat`.
+- Matrix regression now has an exact checked-in NumPy fixture generated from
+  Python `default_rng(123)`. CIWI's direct compression-step row finds the
+  Python-shaped `(add (dot x_mat w) residual)` solution prefix and optimizes
+  the permeable weight leaf to the Python `try_to_optimize` result. The `add`
+  inverse now rounds the inferred residual to the output precision, matching
+  Python's residual precision behavior and preventing high-precision optimized
+  dot outputs from making the residual artificially expensive.
 
 ## Deferred Cleanup Decisions
 
@@ -277,16 +299,22 @@ These cleanup-review items are intentionally not active targets right now:
 - Residual-DL adaptive optimizer behavior is now covered on Python-scale
   deterministic CIWI fixtures, using signal-only Elias residual DL and the
   Python assertion shapes from `test_discrete_optimizer.py`. Exact NumPy
-  fixture capture is still pending before full fixture parity claims.
+  fixture capture is still pending for those standalone optimizer rows before
+  full fixture parity claims.
 - Matrix regression direct optimizer behavior is now covered on a deterministic
   `1000 x 10` fixture using dense `dot`, rounded predictions, signal-only
   residual DL, and rounded weight `Value.desc_len`.
 - Graph-level `try-to-optimize` behavior is now covered for the matrix
   regression weight leaf with explicit cross-section `section-ids`, precision
   preserving `dot`/`add` propagation, and a deterministic `1000 x 10` fixture.
-- Next wire optimizer-backed candidates into Alice/Wunderbaum and cover the
-  matrix regression single compression step with the supplied solution, then
-  greedy run with solution and greedy run without solution.
+- The matrix regression single compression step with the supplied solution is
+  now covered on the exact NumPy fixture through the direct
+  `compression-step-candidate` API, optimizer-backed candidate transformation,
+  and a native structural solution-prefix predicate.
+- Next cover matrix regression greedy run with solution and greedy run without
+  solution. The main design question is how to integrate the direct
+  compression-step behavior with the task-level multi-root greedy loop without
+  losing Python's root-section semantics.
 - After matrix regression is green, stage classifier parity as
   `try_to_optimize`, single compression step, single-factor greedy with
   solution, single-factor greedy without solution, then full Iris. Treat the

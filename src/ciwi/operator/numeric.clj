@@ -89,7 +89,7 @@
                (when (= 1 (count cond))
                  (let [known (first cond-inputs)]
                    (when-let [result (u/maybe-call dense/subtract output known)]
-                     [[(round-to-input-precision result [output known])]]))))}))
+                     [[(round-numeric result (numeric-precision output))]]))))}))
 
 (def sub
   (core/operator

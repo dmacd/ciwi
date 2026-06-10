@@ -42,6 +42,9 @@
    {:op :cumsum :input-specs [:array-int] :output-spec :array-int}
    {:op :cumsum :input-specs [:array-float] :output-spec :array-float}
 
+   {:op :dot :input-specs [:array-float :array-float] :output-spec :float}
+   {:op :dot :input-specs [:array-float :array-float] :output-spec :array-float}
+
    {:op :getitem :input-specs [:array-int :int] :output-spec :int}
    {:op :getitem :input-specs [:array-int :array-int] :output-spec :array-int}
    {:op :getitem :input-specs [:array-int :array-bool] :output-spec :array-int}

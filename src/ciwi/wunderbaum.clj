@@ -111,12 +111,30 @@
       (mdl/graph-dl graph context))))
 
 (defn- result-summary
-  [graph memory build-dl target-ids cache-context {:keys [score-target-count]}]
+  [graph memory build-dl target-ids cache-context
+   {:keys [score-target-count primary-root-id root-order free-root-ids]}]
   {:graph graph
    :memory memory
    :build-dl build-dl
    :dl (score-target-dl graph target-ids cache-context score-target-count)
-   :target-ids target-ids})
+   :target-ids target-ids
+   :primary-root-id primary-root-id
+   :root-order root-order
+   :free-root-ids free-root-ids
+   :score-target-count score-target-count
+   :cache-context cache-context})
+
+(defn- transform-result-summary
+  [summary {:keys [candidate-transform]}]
+  (if candidate-transform
+    (candidate-transform summary)
+    summary))
+
+(defn- keep-result-summary?
+  [summary {:keys [candidate-predicate]}]
+  (if candidate-predicate
+    (boolean (candidate-predicate summary))
+    true))
 
 (defn realize-selected
   "Attach selected target expressions to a materialized Wunderbaum summary.
@@ -195,18 +213,21 @@
                                   build-dl
                                   target-ids
                                   cache-context
-                                  opts)
-          emit? (or (not threshold?)
-                    (< (:dl summary) (double threshold-dl)))]
-      (cond
-        (and threshold? emit?)
-        (reduced [queue order (inc yielded) (conj emitted summary) true])
+                                  opts)]
+      (if-not (keep-result-summary? summary opts)
+        [queue order yielded emitted false]
+        (let [summary (transform-result-summary summary opts)
+              emit? (or (not threshold?)
+                        (< (:dl summary) (double threshold-dl)))]
+          (cond
+            (and threshold? emit?)
+            (reduced [queue order (inc yielded) (conj emitted summary) true])
 
-        :else
-        (let [[queue order] (expand-graph wb queue graph memory build-dl opts order)]
-          (if emit?
-            [queue order (inc yielded) (conj emitted summary) false]
-            [queue order yielded emitted false]))))))
+            :else
+            (let [[queue order] (expand-graph wb queue graph memory build-dl opts order)]
+              (if emit?
+                [queue order (inc yielded) (conj emitted summary) false]
+                [queue order yielded emitted false]))))))))
 
 (defn- process-frontier-item
   [wb opts seen target-ids cache-context item queue order yielded]

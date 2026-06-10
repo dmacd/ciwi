@@ -17,3 +17,6 @@
 
 (def run-compression-step
   greedy/run-compression-step)
+
+(def compression-step-candidate
+  greedy/compression-step-candidate)

@@ -37,6 +37,18 @@
     (assoc mem id (propagation/entry false
                                      (preserve-value-metadata old-value data)))))
 
+(defn apply-memory-values
+  "Return `g` with value-node outputs replaced by matching values in `mem`."
+  [g mem]
+  (reduce-kv (fn [acc id entry]
+               (let [n (graph/node acc id)
+                     v (:value entry)]
+                 (if (and (graph/value-node? n) v)
+                   (assoc-in acc [:nodes id :value] v)
+                   acc)))
+             g
+             mem))
+
 (defn- optimizable-scalar-slot
   [id data start]
   (cond

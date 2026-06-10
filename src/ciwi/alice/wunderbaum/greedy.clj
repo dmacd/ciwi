@@ -2,7 +2,8 @@
   (:require [ciwi.alice :as alice]
             [ciwi.alice.wunderbaum.context :as wb-context]
             [ciwi.alice.wunderbaum.render :as render]
-            [ciwi.cache :as cache]))
+            [ciwi.cache :as cache]
+            [ciwi.value :as value]))
 
 (defn- same-leaf?
   [left right]
@@ -136,6 +137,50 @@
    :selected selected
    :candidates-consumed candidates-consumed
    :stop-reason stop-reason})
+
+(defn- nonpermeable-dl
+  [value-dl-cache values]
+  (reduce + 0.0
+          (map #(value/desc-len-cached value-dl-cache %)
+               (remove :permeable? values))))
+
+(defn compression-step-candidate
+  "Run Python `GreedyAlice.compression_step`-shaped candidate search.
+
+  This searches one target value with explicit free values. It does not choose
+  among task leaves; callers that want Python `run_task` behavior should use
+  `run-compression-step` or `run-greedy-task`.
+  "
+  [target free-values opts]
+  (let [target-value (wb-context/target-value target)
+        free-values (mapv wb-context/free-value free-values)
+        values (into [target-value] free-values)
+        task (alice/compression-task []
+                                     {:name "compression_step"})
+        search-context (wb-context/task-search-context task opts)
+        value-dl-cache (cache/value-dl-cache (:cache-context search-context))
+        initial-dl (nonpermeable-dl value-dl-cache values)
+        min-compression-rate (double (or (:min-compression-rate opts) 1.0))
+        threshold-dl (* initial-dl (- 1.0 (/ min-compression-rate 100.0)))
+        search (wb-context/first-candidate-at-rate
+                initial-dl
+                min-compression-rate
+                (wb-context/candidate-seq search-context
+                                          values
+                                          {:threshold-dl threshold-dl}))]
+    (if-let [candidate (:candidate search)]
+      {:candidate candidate
+       :initial-dl initial-dl
+       :dl (:dl candidate)
+       :compression-rate (:compression-rate search)
+       :candidates-consumed (:candidates-consumed search)
+       :stop-reason (:stop-reason search)
+       :selected (get (:selected candidate) :target0)}
+      {:candidate nil
+       :initial-dl initial-dl
+       :candidates-consumed (:candidates-consumed search)
+       :stop-reason (:stop-reason search)
+       :compression-rate 0.0})))
 
 (defn- greedy-result
   [task search-context initial-dl target-trees steps resource]

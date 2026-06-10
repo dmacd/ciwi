@@ -697,6 +697,17 @@ expressions. Most candidates are only compared and discarded, so selected
 expressions are computed explicitly with `wunderbaum/realize-selected` when a
 caller needs to inspect or accept a candidate.
 
+Callers can install two generic hooks on materialized summaries.
+`:candidate-predicate` filters summaries before they are yielded, transformed,
+or expanded. It is the native equivalent of Python's provided-solution
+filtering for tests that intentionally constrain the search to a solution
+prefix; it is not a recognizer or shortcut because it only rejects already
+materialized candidates. `:candidate-transform` can replace a materialized
+summary with another summary before threshold scoring. Alice uses this hook for
+optimizer-backed numeric candidates: the symbolic DAG is still found by
+Wunderbaum, then permeable leaves are optimized and the candidate DL is
+recomputed.
+
 The delayed builder uses explicit caller-owned caches for expensive immutable
 facts. Value DL and value-content caches avoid repeated scoring and exact
 duplicate checks. An inverse cache keys runtime inversions by operator id,
@@ -725,6 +736,14 @@ the largest worthy leaf, accept the first Wunderbaum candidate above
 task tree, and repeat until the task threshold is reached or no worthy leaf can
 improve. `run-compression-step` exposes the same mechanism capped at one greedy
 step for diagnostics.
+
+`compression-step-candidate` mirrors Python's direct
+`GreedyAlice.compression_step(target, free_values=...)` API: it searches one
+explicit target with caller-supplied free values and returns the first
+threshold-accepted candidate. It does not choose among task leaves. That
+separation matters for multi-root tasks such as matrix regression, where the
+single-step Python test focuses `y` directly while the task-level greedy loop
+would first sort all raw leaves by DL.
 
 For each leaf-local compression step, the other current task-tree leaves are
 passed to Wunderbaum as dummy free values. This matches Python
@@ -845,9 +864,17 @@ nodes into each trial and re-infers the residual leaf.
 
 Numeric propagation has a small precision hook for this path: `dot` outputs and
 `add` inverse outputs are rounded through `ciwi.value/round-to-precision` while
-preserving integer values. This matches the part of Python WILLIAM's precision
-layer that keeps inferred matrix residuals at the fixture precision instead of
-letting raw double arithmetic dominate residual DL.
+preserving integer values. For `add`, the inferred missing addend is rounded to
+the known output precision, matching Python `Add._inverse`; the optimized
+`dot` output must not force the residual leaf to inherit high floating
+precision. This keeps inferred matrix residuals at the fixture precision
+instead of letting raw double arithmetic dominate residual DL.
+
+Optimizer-backed candidate transformation projects improved permeable leaves
+back into the candidate graph with `ciwi.graph-optimize/apply-memory-values`.
+The graph shape is unchanged: optimized value nodes receive updated `Value`
+records, propagation re-infers dependent leaves, and the candidate is rescored
+by the same graph DL machinery as non-optimized candidates.
 
 ## Structural Graph Operations
 
