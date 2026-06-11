@@ -43,8 +43,8 @@ Out of scope unless they block compression behavior:
 | `test_alice_pipeline.py::TestMatrixRegressionDebugPipeline::test_greedy_without_solution` | Covered | `ciwi.alice.matrix-regression-test/matrix-regression-greedy-without-solution-reaches-threshold` | End-to-end greedy task over the exact NumPy fixture without a solution predicate; the injected operator set is only `[Dot, Add]`. |
 | `test_alice_pipeline.py::test_run_clustering_try_to_optimize_worker` | Behavior covered | `ciwi.graph-optimize-test/try-to-optimize-improves-clustering-centroid-and-radius` | Uses a deterministic Python-scale `1000 x 2` five-cluster fixture and the native graph shape `union(getitem(x, lessthan(sum1(mult(sub(x, c), sub(x, c))), s)), rest)`. It verifies finite DL, at least 1% DL improvement against the Python-style original section DL, inferred residual/rest rows, and movement of centroid or radius. Exact NumPy fixture capture remains pending. |
 | skipped clustering Alice pipeline rows | Deferred | Pending after classifier `try_to_optimize` unless clustering Alice search becomes the next application target | Python marks these skipped. Treat as optional application evidence, not a near-term core gate. |
-| `test_classification.py::TestIrisClassificationDebugPipeline::test_try_to_optimize` | Active next | Pending after clustering worker | Python currently skips this row. Useful as the first classifier debug target because it isolates `try_to_optimize` over a scalar threshold leaf. |
-| `test_classification.py::TestIrisClassificationDebugPipeline::test_single_compression_step` | Deferred | Pending after classifier `try_to_optimize` | Python currently skips this row. Uses only `SetItem` and `LessThan` over the single-factor Iris fixture. |
+| `test_classification.py::TestIrisClassificationDebugPipeline::test_try_to_optimize` | Behavior covered | `ciwi.graph-optimize-test/try-to-optimize-scores-iris-threshold-classifier` | Uses the canonical Iris sepal-length/label fixture with Python `RandomState(0)` permutation, native graph shape `setitem(rest, lessthan(factor, threshold), selection)`, inferred rest/selection leaves, and optimizer-backed scalar threshold movement. Python currently only asserts finite DL; CIWI also asserts the optimized threshold remains numeric. |
+| `test_classification.py::TestIrisClassificationDebugPipeline::test_single_compression_step` | Active next | Pending after classifier `try_to_optimize` | Python currently skips this row. Uses only `SetItem` and `LessThan` over the single-factor Iris fixture. |
 | `test_classification.py::TestIrisClassificationDebugPipeline::test_greedy_single_factor_with_solution` | Deferred | Pending after classifier compression step | Python currently skips this row. End-to-end Alice run with the supplied single-factor solution. |
 | `test_classification.py::TestIrisClassificationDebugPipeline::test_greedy_single_factor_without_solution` | Deferred | Pending after with-solution single-factor run | Python currently skips this row. Same operator basis, but requires search to find the structure. |
 | `test_classification.py::TestIrisClassificationDebugPipeline::test_greedy_full` | Deferred | Pending after single-factor rows | Python currently skips this row. Uses the full four-feature Iris task and residual-DL classification evaluation. |
@@ -160,6 +160,14 @@ residual-DL evaluation over candidate labels; Python also contains skipped
 brute-force compression classifier rows. CIWI should stage these as application
 evidence after optimizer-backed graph search is already proven on matrix
 regression.
+
+Current CIWI status: graph-level classifier `try_to_optimize` behavior is
+covered. CIWI embeds the canonical Iris sepal-length vector and Python
+`RandomState(0)` permutation directly in the Clojure test fixture to avoid a
+runtime sklearn dependency. The test mirrors Python's fixed graph, propagates
+`rest` and `selection` from the target/factor/threshold interface, and verifies
+finite optimized DL. Under CIWI's current optimizer the threshold moves from
+`4.8` to `5.4375`.
 
 ## Dense Numerics Decision
 

@@ -66,8 +66,9 @@ behavior.
 Candidate CIWI milestones:
 
 - Port the skipped Python debug rows as staged CIWI parity evidence:
-  `try_to_optimize`, single compression step, greedy single-factor with
-  solution, greedy single-factor without solution, then full Iris.
+  `try_to_optimize` is now behavior-covered; next are single compression step,
+  greedy single-factor with solution, greedy single-factor without solution,
+  then full Iris.
 - Keep the first classifier slice to `SetItem` and `LessThan`; broader logical
   and arithmetic operators should only enter when matching the Python full-Iris
   setup.

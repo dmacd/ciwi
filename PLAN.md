@@ -34,8 +34,9 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   public results. Optimizer-backed Wunderbaum candidates now cover the Python
   matrix-regression single-compression-step and greedy task shapes with an
   exact NumPy fixture. Graph-level optimizer parity now also covers the
-  clustering `try_to_optimize` worker shape at Python scale.
-  Tests pass locally with 159 tests and 832 assertions on the default vector
+  clustering `try_to_optimize` worker shape and the first Iris classifier
+  `try_to_optimize` debug row at Python scale.
+  Tests pass locally with 160 tests and 836 assertions on the default vector
   backend, plus 8 tests and 43 assertions on the opt-in DJL backend.
 
 ## Current State
@@ -254,6 +255,11 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   rows, and movement of the permeable centroid or radius. Exact NumPy
   `default_rng(2026)` fixture capture remains pending before claiming exact
   fixture parity.
+- Iris classifier `try_to_optimize` behavior is now covered on the canonical
+  sepal-length/label fixture with Python `RandomState(0)` permutation. The
+  native graph mirrors Python's `setitem(rest, lessthan(factor, threshold),
+  selection)` shape, infers `rest` and `selection`, and verifies finite
+  optimized DL with scalar threshold movement.
 
 ## Deferred Cleanup Decisions
 
@@ -321,7 +327,7 @@ These cleanup-review items are intentionally not active targets right now:
 ## Near-Term Next Tasks
 
 - The active macro step is optimizer-backed numeric graph-search parity,
-  continuing with the classifier `try_to_optimize` debug row. Use
+  continuing with the classifier single-compression-step debug row. Use
   `optimizer-graph-search-parity.md` as the evidence matrix for
   `test_discrete_optimizer.py`, matrix regression, clustering, and later
   classification rows.

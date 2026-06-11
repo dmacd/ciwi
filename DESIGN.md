@@ -253,7 +253,10 @@ operator used by propagation parity; it does not fabricate inverse values.
 For `setitem`, CIWI preserves scalar single-edit behavior for string-like
 vectors, but numeric and boolean vectors use Python NumPy-array semantics:
 given a source array and output array, inversion can return all changed indices
-and assigned values in one step.
+and assigned values in one step. When `setitem` inversion marks unknown slots
+in a dense integer target, the inferred rest array promotes to a floating dense
+array with `NaN` missing slots; dense integer arrays cannot carry missing
+values directly.
 
 Large vector operator probes use implementation-specific fast paths only when
 they preserve the same concrete values. Elementwise operations and `cumsum` /

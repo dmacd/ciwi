@@ -333,7 +333,9 @@
                          (range (u/seq-count output))
                          (u/seq-values output))]
         (if (dense/ndarray? output)
-          (dense/with-flat output values)
+          (dense/from-flat values
+                           (dense/shape output)
+                           {:backend (dense/backend output)})
           values)))))
 
 (defn- setitem-source-inversions
