@@ -15,7 +15,8 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   from profiling the largest gaps, and full Python
   `test_bottleneck.py::test_min_desc_len` and `test_propagation.py`
   propagation parity, `test_delayed_builder.py` materialization parity, and
-  the serial `test_wunderbaum.py::test_wunderbaum_iteration` solution case,
+  the serial `test_wunderbaum.py::test_wunderbaum_iteration` solution case
+  plus the Python parallel bounded-drain shape,
   native fixture parity for Python `test_conditions.py` condition shapes, and
   representative `test_composite.py` behavior slices including the full
   `co0`-`co21` graph commutativity table, selected callable/sequence-edit
@@ -42,8 +43,11 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   experimental application/debug evidence, not core Alice proof rows. CIWI
   also covers Python `test_wunderbaum.py` optimizer helper behavior for
   extracting scalar/small-array leaves, skipping large arrays, and applying
-  mixed scalar/float-array/integer-array optimizer coordinates.
-  Tests pass locally with 166 tests and 863 assertions on the default vector
+  mixed scalar/float-array/integer-array optimizer coordinates. The first
+  JVM-threaded `wunderbaum/iterate-parallel` path is opt-in through
+  `:parallelism` or `:num-workers` and is wired through Alice's candidate
+  context without changing serial defaults.
+  Tests pass locally with 169 tests and 868 assertions on the default vector
   backend, plus 8 tests and 43 assertions on the opt-in DJL backend.
 
 ## Current State
@@ -59,7 +63,8 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
 - `ciwi.wunderbaum` contains the first straight-port slice of Python
   Wunderbaum with injected registries, operator/count declarations,
   generalized conditions, node-tuple enumeration, delayed graph building,
-  operator inversion, usage-biased DL, and MDL-selected materialized results.
+  operator inversion, usage-biased DL, MDL-selected materialized results, and
+  an opt-in partitioned parallel iterator for Python's parallel-drain shape.
 - `ciwi.alice.wunderbaum` adds an Alice-facing greedy runner over that core.
   It is the main Alice parity path. `ciwi.alice` still supplies shared task
   records, the Alice operator registry, constructors, and compression-rate
@@ -161,7 +166,9 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   `test_wunderbaum.py::test_wunderbaum_iteration` using an injected registry
   and explicit declarations for that test's operator set. The test compares
   native graph option expressions rather than MDL-selected expressions because
-  Python checks structural resemblance to the solution graph.
+  Python checks structural resemblance to the solution graph. CIWI also covers
+  the Python parallel-drain variant with `iterate-parallel`, worker-local
+  queues, and `threshold-dl 0`.
 - Native condition extraction now covers Python `test_conditions.py` fixture
   shapes `co0`-`co21` and `dag0`-`dag7`, including the `co15` order-only
   fixture. These are expressed as native graph/composite specs instead of DOT
@@ -350,11 +357,19 @@ These cleanup-review items are intentionally not active targets right now:
 
 ## Near-Term Next Tasks
 
-- The active macro step is optimizer-backed numeric graph-search parity,
-  continuing from the classifier single-factor greedy rows to the full Iris
-  row. Use
-  `optimizer-graph-search-parity.md` as the evidence matrix for
-  `test_discrete_optimizer.py`, matrix regression, clustering, and later
+- The active non-Iris cleanup step is parallel Wunderbaum/Alice parity. The
+  first slice is implemented: `wunderbaum/iterate-parallel` partitions the
+  delayed frontier across worker-local searches, the Alice context opts into it
+  through `:parallelism` or Python-shaped `:num-workers`, and tests cover a
+  direct compression result plus the Python standalone bounded-drain shape.
+  The next deepening option is to run the Python-scale Alice task rows through
+  `:parallelism 8` as completion/compression checks, matching Python's
+  `test_single_task_parallel` intent.
+- Optimizer-backed numeric graph-search parity remains the next application
+  tranche after this non-Iris cleanup. Continue from the classifier
+  single-factor greedy rows to the full Iris row when classification becomes
+  active again. Use `optimizer-graph-search-parity.md` as the evidence matrix
+  for `test_discrete_optimizer.py`, matrix regression, clustering, and later
   classification rows.
 - Residual-DL adaptive optimizer behavior is now covered on Python-scale
   deterministic CIWI fixtures, using signal-only Elias residual DL and the

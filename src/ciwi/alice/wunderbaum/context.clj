@@ -145,13 +145,26 @@
      :cache-context cache-context
      :wunderbaum wb}))
 
+(defn- parallel-search?
+  [opts]
+  (> (long (or (:parallelism opts)
+               (:num-workers opts)
+               1))
+     1))
+
+(defn- iterate-candidates
+  [wunderbaum values opts]
+  (if (parallel-search? opts)
+    (wunderbaum/iterate-parallel wunderbaum values opts)
+    (wunderbaum/iterate wunderbaum values opts)))
+
 (defn candidate-seq
   ([context]
    (candidate-seq context (:all-values context)))
   ([{:keys [wunderbaum opts]} values]
-   (wunderbaum/iterate wunderbaum values opts))
+   (iterate-candidates wunderbaum values opts))
   ([{:keys [wunderbaum opts]} values candidate-opts]
-   (wunderbaum/iterate wunderbaum values (merge opts candidate-opts))))
+   (iterate-candidates wunderbaum values (merge opts candidate-opts))))
 
 (defn first-candidate-at-rate
   [initial-dl threshold-rate candidates]

@@ -743,6 +743,18 @@ compression candidates rather than every explored frontier materialization.
 Once a threshold-accepted graph has been scored, CIWI returns it without
 expanding descendants that will be discarded by the stopping rule.
 
+`wunderbaum/iterate-parallel` is the first JVM-threaded parallel port. It is
+enabled only when callers pass `:parallelism` or Python-shaped `:num-workers`.
+It builds the same initial delayed frontier as serial `iterate`, partitions
+that frontier across worker-local queues, and runs the same materialization,
+attachment, predicate, transform, and scoring code in each worker. Each worker
+owns its `seen` set and pop/yield counters; the expensive immutable value and
+inverse caches stay caller-owned and can be shared through the search context.
+This mirrors the shape of Python's `iterate_parallel` tests, where workers
+search local frontier heaps after initial seeding. It does not yet provide a
+globally ordered parallel best-first queue, work stealing, cancellation after a
+global first threshold hit, or the future bounded local rewrite semantics.
+
 `ciwi.alice.wunderbaum` is the Alice-facing greedy runner over that core with
 an explicit declaration table for the Python `test_alice.py` operator basis. It
 requires an injected registry and does not depend on the legacy local baseline

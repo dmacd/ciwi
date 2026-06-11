@@ -270,6 +270,52 @@
                                 (inc popped)
                                 yielded)))))))
 
+(defn- worker-count
+  [opts]
+  (long (max 1
+             (or (:parallelism opts)
+                 (:num-workers opts)
+                 1))))
+
+(defn- partition-frontier
+  [n queue]
+  (let [n (worker-count {:parallelism n})]
+    (->> queue
+         (map-indexed vector)
+         (reduce (fn [parts [idx item]]
+                   (update parts (mod idx n) conj item))
+                 (vec (repeat n [])))
+         (remove empty?)
+         vec)))
+
+(defn- frontier-order
+  [default-order items]
+  (reduce (fn [order item]
+            (max order (:order item)))
+          default-order
+          items))
+
+(defn- search-frontier-partition
+  [wb opts target-ids cache-context initial-order items]
+  (let [queue (into (empty-queue) items)
+        order (frontier-order initial-order items)]
+    (doall
+     (walk-frontier wb
+                    opts
+                    #{}
+                    target-ids
+                    cache-context
+                    queue
+                    order
+                    0
+                    0))))
+
+(defn- cap-yields
+  [results opts]
+  (if-let [max-yields (:max-yields opts)]
+    (take max-yields results)
+    results))
+
 (defn iterate
   "Yield materialized Wunderbaum candidate graphs in frontier order.
 
@@ -291,3 +337,34 @@
                     order
                     0
                     0))))
+
+(defn iterate-parallel
+  "Yield materialized Wunderbaum candidate graphs from partitioned frontiers.
+
+  This mirrors Python Wunderbaum's first parallel shape: split the current
+  frontier across worker-local searches, keep operator registries and search
+  opts injected, and let each worker own its queue and seen set. It is not yet
+  the later resource-bounded local rewrite interface.
+  "
+  ([wb targets]
+   (iterate-parallel wb targets {}))
+  ([wb targets opts]
+   (let [n-workers (worker-count opts)]
+     (if (<= n-workers 1)
+       (iterate wb targets opts)
+       (let [{:keys [queue order target-ids cache-context opts]}
+             (initial-frontier wb targets opts)
+             partitions (partition-frontier n-workers queue)]
+         (if (empty? partitions)
+           '()
+           (let [workers (mapv (fn [items]
+                                  (future
+                                    (search-frontier-partition wb
+                                                               opts
+                                                               target-ids
+                                                               cache-context
+                                                               order
+                                                               items)))
+                                partitions)
+                 results (mapcat deref workers)]
+             (cap-yields results opts))))))))

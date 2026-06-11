@@ -121,6 +121,41 @@
     (is (< (:dl result)
            (mdl/graph-dl (:graph initial))))))
 
+(deftest wunderbaum-parallel-finds-range-by-delayed-output-inversion
+  (let [target (value/value [0 1 2 3] {:spec :array-int})
+        result (sut/realize-selected
+                (first (sut/iterate-parallel (range-wunderbaum)
+                                             [target]
+                                             {:parallelism 2
+                                              :max-popped 8
+                                              :max-yields 1})))]
+    (is (some? result))
+    (is (= [:brange 0 4]
+           (get-in result [:selected :target0])))))
+
+(deftest python-wunderbaum-parallel-drains-bounded-prefix
+  (let [wb (sut/wunderbaum
+            {:registry python-wunderbaum-registry
+             :ops-with-counts python-wunderbaum-operator-declarations})
+        targets [(value/value [45 87 87]
+                              {:spec :array-int
+                               :permeable? false
+                               :name "target"})
+                 (value/value [45]
+                              {:spec :array-int
+                               :permeable? false
+                               :name "target2"})
+                 (value/value 3
+                              {:spec :int
+                               :name "free"})]
+        results (doall (sut/iterate-parallel wb
+                                             targets
+                                             {:parallelism 2
+                                              :max-popped 1000
+                                              :threshold-dl 0.0
+                                              :max-yields 1}))]
+    (is (empty? results))))
+
 (deftest python-wunderbaum-finds-setitem-repeat-negate-solution
   (let [wb (sut/wunderbaum
             {:registry python-wunderbaum-registry
