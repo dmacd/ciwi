@@ -49,9 +49,10 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   context without changing serial defaults, and now covers Python-scale
   sequence-task completion, Python `reg_only_y` regression completion, and the
   exact matrix-regression greedy row through the parallel Alice path.
-  A first CIWI-vs-Python parallel scaling sweep is recorded in
+  A first CIWI-vs-Python parallel scaling sweep, plus the first coordinated
+  global queue prototype results, is recorded in
   `parallel-performance-scaling.md`.
-  Tests pass locally with 172 tests and 925 assertions on the default vector
+  Tests pass locally with 174 tests and 929 assertions on the default vector
   backend, plus 8 tests and 43 assertions on the opt-in DJL backend.
 
 ## Current State
@@ -185,6 +186,12 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   exact matrix regression greedy row through the optimizer-backed `[Dot, Add]`
   path. The other stochastic Python regression rows still need exact NumPy
   fixture capture before CIWI should claim direct fixture parity.
+- CIWI now has an experimental `:parallel-strategy :global-best-first` path
+  with one coordinated frontier, shared pop/yield counters, and shared
+  delayed-builder `seen` state. It is not the Python-parity path. Initial
+  measurements show that it improves threshold stability on medium
+  `insert_repeat3` but is not a blanket speedup; strict result ordering,
+  frontier-level coordination, and hard cancellation remain open design work.
 - Native condition extraction now covers Python `test_conditions.py` fixture
   shapes `co0`-`co21` and `dag0`-`dag7`, including the `co15` order-only
   fixture. These are expressed as native graph/composite specs instead of DOT
@@ -381,9 +388,9 @@ These cleanup-review items are intentionally not active targets right now:
   Python-scale sequence rows complete through `:num-workers 8`, and
   non-sequence `reg_only_y` plus matrix-regression rows now have parallel
   completion coverage. `parallel-performance-scaling.md` records the first
-  diagnostic timing sweep. The next parallel deepening option is to improve the
-  shared stopping/search-order story before expanding stochastic regression
-  fixture coverage.
+  diagnostic timing sweep and coordinated global-queue prototype. The next
+  parallel deepening option is to improve the shared stopping/search-order
+  story before expanding stochastic regression fixture coverage.
 - Optimizer-backed numeric graph-search parity remains the next application
   tranche after this non-Iris cleanup. Continue from the classifier
   single-factor greedy rows to the full Iris row when classification becomes

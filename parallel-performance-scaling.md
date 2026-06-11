@@ -44,9 +44,13 @@ Worker count `1` means serial search: Python `num_workers=None`, CIWI without
 `:num-workers`. Worker counts `2`, `4`, and `8` use Python multiprocessing and
 CIWI's scoped JVM fixed-thread executor.
 
-Rows marked `false` in the threshold column did not reach the task threshold.
-Their timing is time to the implementation's current stop condition, not
-time-to-solution.
+Rows marked `false` in the threshold column did not reach the task-level
+compression target. This does not mean the run crashed. It means Alice accepted
+whatever local compression steps it found above the per-step minimum, then
+stopped because the task threshold was still unmet and no remaining leaf was
+worth searching under the current `worthy-dl`/frontier limits. Their timing is
+time to that stop condition, not time-to-solution. They are useful diagnostic
+rows, but they must not be compared as successful time-to-solution results.
 
 ## Task Scales
 
@@ -131,12 +135,65 @@ Each cell is `milliseconds / threshold?`.
   because they show how worker-local ordering changes search outcomes under the
   same threshold.
 
+## Coordinated Global Queue Prototype
+
+CIWI also has an experimental coordinated strategy that does not replace the
+Python-parity partitioned path. It is selected with:
+
+```bash
+./bin/clojure -M:dev -m ciwi.bench.parallel-scaling \
+  --tasks insert_repeat3,increasing_runs,reg_only_y \
+  --scales large \
+  --workers 2,4,8 \
+  --strategy global-best-first \
+  --warmups 1 \
+  --runs 1
+```
+
+Additional medium rows were collected for the cases where the partitioned path
+had surprising threshold failures:
+
+```bash
+./bin/clojure -M:dev -m ciwi.bench.parallel-scaling \
+  --tasks insert_repeat3,increasing_runs \
+  --scales medium \
+  --workers 2,4,8 \
+  --strategy global-best-first \
+  --warmups 1 \
+  --runs 1
+```
+
+Each cell is again `milliseconds / threshold?`.
+
+### CIWI Global Best-First
+
+| Task | Scale | w2 | w4 | w8 |
+| --- | --- | ---: | ---: | ---: |
+| `insert_repeat3` | medium | 130.237 / true | 91.144 / true | 1442.798 / true |
+| `insert_repeat3` | large | 2928.537 / true | 3054.152 / true | 1772.129 / true |
+| `increasing_runs` | medium | 465.614 / true | 456.743 / true | 1295.652 / false |
+| `increasing_runs` | large | 1179.023 / true | 1272.274 / true | 11240.027 / true |
+| `reg_only_y` | large | 62.963 / true | 68.028 / true | 80.761 / true |
+
+The coordinated queue improves outcome stability on medium `insert_repeat3`:
+the partitioned path failed threshold at 2/4/8 workers, while the global queue
+reached it. It does not automatically improve throughput. On large
+`insert_repeat3`, the partitioned 2-worker result was faster (`439.539 ms`)
+than global 2-worker (`2928.537 ms`) because the partitioned strategy happened
+to find a good above-threshold path quickly. On `increasing_runs`, the global
+queue keeps 2/4 workers on the stable 3- or 4-step path, while 8 workers can
+still create a longer path. The right next optimization is therefore not just
+"use a shared queue"; it is coordinated stopping and better control over how
+many workers are allowed to race past the current best frontier level.
+
 ## Follow-Up
 
 - Rerun the solved rows with `--runs 3` or `--runs 5` and report medians once
   the next parallel implementation change lands.
-- Add a globally coordinated threshold-stop path or shared frontier before
-  treating 4/8-worker results as expected wins.
+- Improve the coordinated global queue before treating 4/8-worker results as
+  expected wins. The current prototype has a shared frontier and counters, but
+  not level barriers, strict serial result ordering, or hard cancellation of
+  in-flight materializations.
 - Keep `reg_only_y` in the suite as overhead calibration; do not use it as
   evidence that parallel search improves useful work.
 - Revisit `increasing_runs` after the planned dense primitive backend cleanup,

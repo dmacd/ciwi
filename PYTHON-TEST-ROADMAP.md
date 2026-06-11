@@ -32,6 +32,12 @@ adding new mechanisms. CIWI does not yet claim full Python `all_tasks`
 parallel coverage for the stochastic non-sequence regression rows in
 `test_alice.py`.
 
+CIWI also has an explicitly non-parity
+`:parallel-strategy :global-best-first` path for performance experiments. Keep
+its evidence in `parallel-performance-scaling.md`; do not fold it into Python
+parity claims unless the row is also covered by the default partitioned
+Python-shaped path.
+
 ## Priority 1: Core Graph/Search Semantics
 
 These are the next tests that most directly demonstrate that CIWI implements

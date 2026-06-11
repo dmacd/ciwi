@@ -155,7 +155,19 @@
 (defn- iterate-candidates
   [wunderbaum values opts]
   (if (parallel-search? opts)
-    (wunderbaum/iterate-parallel wunderbaum values opts)
+    (case (:parallel-strategy opts)
+      :global-best-first
+      (wunderbaum/iterate-global-best-first wunderbaum values opts)
+
+      nil
+      (wunderbaum/iterate-parallel wunderbaum values opts)
+
+      :partitioned
+      (wunderbaum/iterate-parallel wunderbaum values opts)
+
+      (throw (ex-info "Unknown Wunderbaum parallel strategy"
+                      {:parallel-strategy (:parallel-strategy opts)
+                       :allowed #{:partitioned :global-best-first}})))
     (wunderbaum/iterate wunderbaum values opts)))
 
 (defn candidate-seq

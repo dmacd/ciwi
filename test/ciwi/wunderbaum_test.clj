@@ -133,6 +133,19 @@
     (is (= [:brange 0 4]
            (get-in result [:selected :target0])))))
 
+(deftest wunderbaum-global-best-first-finds-range-by-delayed-output-inversion
+  (let [target (value/value [0 1 2 3] {:spec :array-int})
+        result (sut/realize-selected
+                (first (sut/iterate-global-best-first
+                        (range-wunderbaum)
+                        [target]
+                        {:parallelism 2
+                         :max-popped 8
+                         :max-yields 1})))]
+    (is (some? result))
+    (is (= [:brange 0 4]
+           (get-in result [:selected :target0])))))
+
 (deftest python-wunderbaum-parallel-drains-bounded-prefix
   (let [wb (sut/wunderbaum
             {:registry python-wunderbaum-registry

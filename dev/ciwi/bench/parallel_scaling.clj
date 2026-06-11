@@ -23,6 +23,9 @@
 (def ^:private default-workers
   [1 2 4 8])
 
+(def ^:private strategies
+  #{"partitioned" "global-best-first"})
+
 (defn- insert-repeat3-target
   [{:keys [head pairs tail]}]
   (let [head (long head)
@@ -96,14 +99,18 @@
          2.0))))
 
 (defn- timed-run
-  [task scale workers]
+  [task scale workers strategy]
   (let [{:keys [target threshold-rate]} (task-case task scale)
         compression-task (alice/compression-task [target]
                                                  {:name task
                                                   :threshold-rate threshold-rate})
         opts (cond-> base-opts
                (> workers 1)
-               (assoc :num-workers workers))
+               (assoc :num-workers workers)
+
+               (and (> workers 1)
+                    (= "global-best-first" strategy))
+               (assoc :parallel-strategy :global-best-first))
         t0 (now-ms)
         result (alice-wb/run-greedy-task compression-task opts)
         elapsed (- (now-ms) t0)]
@@ -115,17 +122,20 @@
      :stop-reason (name (get-in result [:resource :stop-reason]))}))
 
 (defn- summarize
-  [task scale workers warmups runs]
+  [task scale workers strategy warmups runs]
   (dotimes [_ warmups]
-    (timed-run task scale workers))
-  (let [samples (repeatedly runs #(timed-run task scale workers))
+    (timed-run task scale workers strategy))
+  (let [samples (repeatedly runs #(timed-run task scale workers strategy))
         times (mapv :elapsed-ms samples)
         last-result (last samples)]
     (merge last-result
-           {:impl "ciwi"
+           {:impl (if (= "global-best-first" strategy)
+                    "ciwi-global"
+                    "ciwi")
             :task task
             :scale scale
             :workers workers
+            :strategy strategy
             :warmups warmups
             :runs runs
             :median-ms (median times)
@@ -165,6 +175,7 @@
          opts {:tasks default-tasks
                :scales default-scales
                :workers default-workers
+               :strategy "partitioned"
                :warmups 1
                :runs 1}]
     (if-let [flag (first args)]
@@ -179,6 +190,14 @@
           "--workers"
           (recur (nnext args) (assoc opts :workers (parse-int-list value)))
 
+          "--strategy"
+          (do
+            (when-not (contains? strategies value)
+              (throw (ex-info "Unknown benchmark strategy"
+                              {:strategy value
+                               :allowed strategies})))
+            (recur (nnext args) (assoc opts :strategy value)))
+
           "--warmups"
           (recur (nnext args) (assoc opts :warmups (parse-long value)))
 
@@ -190,7 +209,7 @@
 
 (defn -main
   [& args]
-  (let [{:keys [tasks scales workers warmups runs]} (cli-opts args)]
+  (let [{:keys [tasks scales workers strategy warmups runs]} (cli-opts args)]
     (println "impl,task,scale,workers,length,warmups,runs,median_ms,min_ms,max_ms,compression_rate,meets_threshold,steps,stop_reason")
     (doseq [task tasks
             scale scales
@@ -198,5 +217,6 @@
       (println (csv-row (summarize task
                                    scale
                                    worker-count
+                                   strategy
                                    warmups
                                    runs))))))

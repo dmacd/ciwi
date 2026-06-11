@@ -228,6 +228,21 @@
     (is (= [:repeat 10 [140 -50]]
            (get-in result [:selected :target0])))))
 
+(deftest alice-wunderbaum-global-best-first-compresses-motif-repeat
+  (let [target (vec (take 20 (cycle [140 -50])))
+        task (alice/compression-task [target]
+                                     {:name "repeat"
+                                      :threshold-rate 0.01})
+        result (sut/run-greedy-task task {:registry {:repeat op/repeat}
+                                          :parallelism 2
+                                          :parallel-strategy :global-best-first
+                                          :max-popped 32
+                                          :max-yields 8
+                                          :worthy-dl 0})]
+    (is (:meets-threshold? result))
+    (is (= [:repeat 10 [140 -50]]
+           (get-in result [:selected :target0])))))
+
 (deftest alice-wunderbaum-compresses-python-scale-sequence-rows
   (doseq [{:keys [name target expected expected-steps threshold-rate opts]}
           (python-scale-sequence-cases)]

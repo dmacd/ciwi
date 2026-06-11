@@ -745,20 +745,29 @@ expanding descendants that will be discarded by the stopping rule.
 
 `wunderbaum/iterate-parallel` is the first JVM-threaded parallel port. It is
 enabled only when callers pass `:parallelism` or Python-shaped `:num-workers`.
-It builds the same initial delayed frontier as serial `iterate`, partitions
-that frontier across worker-local queues, and runs the same materialization,
-attachment, predicate, transform, and scoring code in each worker. Each worker
-owns its `seen` set and pop/yield counters; the expensive immutable value and
-inverse caches stay caller-owned and can be shared through the search context.
-Thresholded searches share a halt flag so that once one worker emits an
-accepted graph, the other worker-local loops stop at their next frontier
-boundary. The implementation uses a scoped fixed executor rather than
-Clojure's global future pool, so worker lifecycle belongs to the iterator call.
-This mirrors the shape of Python's `iterate_parallel` tests, where workers
-search local frontier heaps after initial seeding. It does not yet provide a
-globally ordered parallel best-first queue, work stealing, hard cancellation
-inside an already-running materialization, or the future bounded local rewrite
-semantics.
+With the default `:parallel-strategy :partitioned`, it builds the same initial
+delayed frontier as serial `iterate`, partitions that frontier across
+worker-local queues, and runs the same materialization, attachment, predicate,
+transform, and scoring code in each worker. Each worker owns its `seen` set and
+pop/yield counters; the expensive immutable value and inverse caches stay
+caller-owned and can be shared through the search context. Thresholded searches
+share a halt flag so that once one worker emits an accepted graph, the other
+worker-local loops stop at their next frontier boundary. The implementation
+uses a scoped fixed executor rather than Clojure's global future pool, so
+worker lifecycle belongs to the iterator call. This mirrors the shape of
+Python's `iterate_parallel` tests, where workers search local frontier heaps
+after initial seeding.
+
+`wunderbaum/iterate-global-best-first` is a separate experimental parallel
+strategy selected by Alice callers with
+`:parallel-strategy :global-best-first`. It uses one coordinated best-first
+frontier, shared pop/yield counters, and shared delayed-builder `seen` state.
+This makes worker counts less likely to diverge into unrelated local heaps, and
+it is the right place to explore shared stopping and work coordination. It is
+not the Python-parity implementation. Because workers can materialize popped
+items at different speeds, it still does not guarantee exact serial result
+order, work stealing beyond the shared queue, hard cancellation inside an
+already-running materialization, or the future bounded local rewrite semantics.
 
 `ciwi.alice.wunderbaum` is the Alice-facing greedy runner over that core with
 an explicit declaration table for the Python `test_alice.py` operator basis. It

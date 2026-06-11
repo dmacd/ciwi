@@ -159,6 +159,9 @@ Current root-cause notes from the core path:
   serial-solution or timing claim for all Python `test_single_task_parallel`
   task domains. The first timing sweep lives in
   `parallel-performance-scaling.md`.
+- `:parallel-strategy :global-best-first` is an experimental CIWI performance
+  strategy. Keep it out of Python parity claims unless the same row is also
+  covered by the default partitioned Python-shaped path.
 - Numeric inverse shape mismatches must yield no inverse. Returning `nil`
   produced bogus zero-DL children such as `[:add [100] nil]`.
 - Python-compatible value DL is necessary parity infrastructure. With the old
