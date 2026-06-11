@@ -730,12 +730,17 @@ an explicit declaration table for the Python `test_alice.py` operator basis. It
 requires an injected registry and does not depend on the legacy local baseline
 in `ciwi.alice-legacy`.
 
-`run-greedy-task` mirrors Python `GreedyAlice`: sort raw leaves by DL, compress
-the largest worthy leaf, accept the first Wunderbaum candidate above
-`:min-compression-rate` (default 1%), splice that selected expression into the
-task tree, and repeat until the task threshold is reached or no worthy leaf can
-improve. `run-compression-step` exposes the same mechanism capped at one greedy
-step for diagnostics.
+`run-greedy-task` mirrors Python `GreedyAlice`: choose the current task leaf,
+accept the first Wunderbaum candidate above `:min-compression-rate` (default
+1%), splice that selected expression into the task tree, and repeat until the
+task threshold is reached or no worthy leaf can improve. `run-compression-step`
+exposes the same mechanism capped at one greedy step for diagnostics.
+
+There is one Python control-flow detail that matters for multi-root tasks:
+step 0 uses the task root order as given, and only later successful steps sort
+the current leaves by descending DL. CIWI preserves that rule. This is why the
+matrix-regression task `[y, x_mat]` focuses `y` first even though the raw
+matrix leaf has a larger description length.
 
 `compression-step-candidate` mirrors Python's direct
 `GreedyAlice.compression_step(target, free_values=...)` API: it searches one
@@ -744,6 +749,12 @@ threshold-accepted candidate. It does not choose among task leaves. That
 separation matters for multi-root tasks such as matrix regression, where the
 single-step Python test focuses `y` directly while the task-level greedy loop
 would first sort all raw leaves by DL.
+
+Task solution hints are native candidate predicates keyed by greedy step index
+in `CompressionTask/:solutions`. They are combined with any caller-provided
+`:candidate-predicate` for that step. This mirrors Python's supplied-solution
+debug path while staying in CIWI's native graph representation instead of
+parsing Python S-expressions.
 
 For each leaf-local compression step, the other current task-tree leaves are
 passed to Wunderbaum as dummy free values. This matches Python

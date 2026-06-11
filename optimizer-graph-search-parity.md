@@ -39,8 +39,8 @@ Out of scope unless they block compression behavior:
 | `test_alice_pipeline.py::TestMatrixRegressionDebugPipeline::test_optimizer` | Behavior covered | `ciwi.optimize-test/adaptive-grid-optimizes-python-scale-matrix-regression` | Exercises dense `dot`, rounded predictions, signal-only residual DL, rounded weight `Value.desc_len`, and Python-style improvement/closer-to-true-weight assertions on a deterministic `1000 x 10` fixture. Exact NumPy fixture capture remains pending. |
 | `test_alice_pipeline.py::TestMatrixRegressionDebugPipeline::test_try_to_optimize` | Behavior covered | `ciwi.graph-optimize-test/try-to-optimize-improves-matrix-regression-weight-leaf` | Uses graph-level `try-to-optimize` over a permeable dense weight leaf with explicit matrix-regression section ids. It verifies finite DL, improvement, fixed matrix preservation, re-inferred residual precision, and movement toward true weights on a deterministic `1000 x 10` fixture. Exact NumPy fixture capture remains pending. |
 | `test_alice_pipeline.py::TestMatrixRegressionDebugPipeline::test_single_compression_step` | Covered with supplied solution | `ciwi.alice.matrix-regression-test/matrix-regression-compression-step-finds-python-dot-add-solution` | Uses the exact NumPy `default_rng(123)` fixture, a native structural solution-prefix predicate, symbolic `Dot`/`Add` Wunderbaum search, and optimizer-backed improvement of the permeable `w` leaf. |
-| `test_alice_pipeline.py::TestMatrixRegressionDebugPipeline::test_greedy_with_solution` | Not yet covered | Pending | End-to-end matrix regression with provided solution graph. |
-| `test_alice_pipeline.py::TestMatrixRegressionDebugPipeline::test_greedy_without_solution` | Not yet covered | Pending | End-to-end matrix regression from search without a solution hint. |
+| `test_alice_pipeline.py::TestMatrixRegressionDebugPipeline::test_greedy_with_solution` | Covered | `ciwi.alice.matrix-regression-test/matrix-regression-greedy-with-solution-reaches-threshold` | End-to-end greedy task over `[y, x_mat]` with Python step-0 target ordering, native supplied-solution predicate, symbolic `Dot`/`Add` search, and optimizer-backed `w` improvement. |
+| `test_alice_pipeline.py::TestMatrixRegressionDebugPipeline::test_greedy_without_solution` | Covered | `ciwi.alice.matrix-regression-test/matrix-regression-greedy-without-solution-reaches-threshold` | End-to-end greedy task over the exact NumPy fixture without a solution predicate; the injected operator set is only `[Dot, Add]`. |
 | `test_alice_pipeline.py::test_run_clustering_try_to_optimize_worker` | Not yet covered | Pending after matrix regression | Needs `Sub`, `Mult`, `Sum1`, `LessThan`, `GetItem`, `Union`, and optimizer-backed centroid/radius improvement. |
 | skipped clustering Alice pipeline rows | Deferred | Pending after `try_to_optimize` clustering | Python marks these skipped. Treat as optional application evidence, not a near-term core gate. |
 | `test_classification.py::TestIrisClassificationDebugPipeline::test_try_to_optimize` | Deferred | Pending after matrix regression | Python currently skips this row. Useful as the first classifier debug target because it isolates `try_to_optimize` over a scalar threshold leaf. |
@@ -98,6 +98,15 @@ predicate corresponding to Python's supplied solution, optimizes `w`, projects
 the improved memory back into the graph, and scores the candidate with graph
 DL. The optimized `w` vector matches Python's `try_to_optimize` result within
 the test tolerance.
+
+The greedy matrix rows use the same exact fixture. CIWI now preserves Python's
+task leaf control flow for multi-root tasks: step 0 attempts target roots in
+task order, then later steps sort current leaves by descending DL. With the
+fixture task `[y, x_mat]`, that means the first greedy step focuses `y`, as in
+Python. The with-solution row supplies the same native solution-prefix
+predicate as the direct compression-step row; the without-solution row runs
+unconstrained over `[Dot, Add]` and still reaches the task threshold in one
+step.
 
 ## Classification Fixture
 
@@ -180,8 +189,9 @@ Current decision: the CIWI dense boundary is in place. The default backend is
 vector-backed for correctness and stable test behavior; an opt-in DJL/PyTorch
 CPU backend now validates the same protocol against a real native NDArray
 engine. Numeric graph arrays use dense values with NaN missing slots. CIWI still
-defers making a native backend the default until the matrix regression
-graph-search path is behaviorally correct.
+defers making a native backend the default until clustering/classifier work
+exposes whether DJL's current boundary is enough or whether BLAS/LAPACK or a
+JAX-like backend should move up the priority list.
 
 ## Implementation Order
 
@@ -214,13 +224,12 @@ graph-search path is behaviorally correct.
 7. Done at behavior level: add matrix regression `test_try_to_optimize`
    coverage on a deterministic Python-scale fixture. Exact NumPy fixture
    capture remains pending.
-8. Done for supplied-solution single step: wire optimizer-backed candidates
-   into Alice/Wunderbaum and cover matrix regression
-   `test_single_compression_step` with the exact NumPy fixture.
-9. Active next: cover matrix regression `test_greedy_with_solution` and
-   `test_greedy_without_solution`. This requires integrating the direct
-   one-target compression-step behavior with the multi-root greedy task loop
-   while preserving Python root-section semantics.
+8. Done: wire optimizer-backed candidates into Alice/Wunderbaum and cover
+   matrix regression `test_single_compression_step`,
+   `test_greedy_with_solution`, and `test_greedy_without_solution` with the
+   exact NumPy fixture.
+9. Active next: add clustering `try_to_optimize` worker coverage from
+   `test_alice_pipeline.py`.
 10. Stage classifier debug parity: classifier `try_to_optimize`, single
    compression step, single-factor greedy with solution, single-factor greedy
    without solution, then full Iris. Keep brute-force classifier rows as later

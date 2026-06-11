@@ -55,20 +55,62 @@
         [values _seen] (add-default-free-values state)]
     values))
 
-(defn- worthy-leaves
-  [target-trees worthy-dl]
+(defn- task-leaves
+  [target-trees]
   (let [ids (wb-context/target-ids (count target-trees))]
     (->> (map-indexed vector target-trees)
          (mapcat (fn [[idx tree]]
                    (render/target-tree-leaves idx (nth ids idx) tree)))
-         (filter #(>= (:dl %) worthy-dl))
-         (sort-by (juxt #(- (:dl %)) :target-index :path))
          vec)))
 
+(defn- ordered-leaves
+  [target-trees sort-by-dl?]
+  (let [leaves (task-leaves target-trees)]
+    (if sort-by-dl?
+      (vec (sort-by (juxt #(- (:dl %)) :target-index :path) leaves))
+      leaves)))
+
+(defn- native-solution-predicate
+  [solution]
+  (cond
+    (nil? solution)
+    nil
+
+    (fn? solution)
+    solution
+
+    :else
+    (throw (ex-info "Alice solution hints must be native candidate predicates"
+                    {:solution solution}))))
+
+(defn- combine-candidate-predicates
+  [left right]
+  (cond
+    (and left right)
+    (fn [summary]
+      (and (left summary)
+           (right summary)))
+
+    left
+    left
+
+    right
+    right))
+
+(defn- step-candidate-opts
+  [opts solution]
+  (let [predicate (combine-candidate-predicates
+                   (:candidate-predicate opts)
+                   (native-solution-predicate solution))]
+    (cond-> {}
+      predicate
+      (assoc :candidate-predicate predicate))))
+
 (defn- compress-leaf
-  [search-context min-compression-rate target-trees leaf]
+  [search-context opts min-compression-rate target-trees leaf solution]
   (let [values (into [(wb-context/target-value (:data leaf))]
                      (leaf-free-values search-context target-trees leaf))
+        candidate-opts (step-candidate-opts opts solution)
         threshold-dl (* (:dl leaf)
                         (- 1.0 (/ min-compression-rate 100.0)))
         search (wb-context/first-candidate-at-rate
@@ -76,8 +118,9 @@
                 min-compression-rate
                 (wb-context/candidate-seq search-context
                                           values
-                                          {:threshold-dl threshold-dl
-                                           :score-target-count 1}))]
+                                          (assoc candidate-opts
+                                                 :threshold-dl threshold-dl
+                                                 :score-target-count 1)))]
     (if-let [candidate (:candidate search)]
       (let [replacement (render/candidate-tree search-context candidate :target0)]
         {:leaf leaf
@@ -95,25 +138,33 @@
        :stop-reason (:stop-reason search)})))
 
 (defn- first-successful-compression
-  [search-context min-compression-rate worthy-dl target-trees]
-  (loop [leaves (worthy-leaves target-trees worthy-dl)
+  [search-context opts min-compression-rate worthy-dl target-trees step-index]
+  (loop [leaves (ordered-leaves target-trees (pos? step-index))
          consumed 0
          attempts []]
     (if-let [leaf (first leaves)]
-      (let [attempt (compress-leaf search-context
-                                   min-compression-rate
-                                   target-trees
-                                   leaf)
-            consumed (+ consumed (:candidates-consumed attempt))
-            attempt (assoc attempt :candidates-consumed consumed)]
-        (if (:replacement-tree attempt)
-          (assoc attempt :attempts attempts)
-          (recur (rest leaves)
-                 consumed
-                 (conj attempts (select-keys attempt
-                                             [:leaf
-                                              :candidates-consumed
-                                              :stop-reason])))))
+      (if (< (:dl leaf) worthy-dl)
+        {:replacement-tree nil
+         :candidates-consumed consumed
+         :attempts attempts
+         :stop-reason :leaf-below-worthy}
+        (let [solution (get (:solutions search-context) step-index)
+              attempt (compress-leaf search-context
+                                     opts
+                                     min-compression-rate
+                                     target-trees
+                                     leaf
+                                     solution)
+              consumed (+ consumed (:candidates-consumed attempt))
+              attempt (assoc attempt :candidates-consumed consumed)]
+          (if (:replacement-tree attempt)
+            (assoc attempt :attempts attempts)
+            (recur (rest leaves)
+                   consumed
+                   (conj attempts (select-keys attempt
+                                               [:leaf
+                                                :candidates-consumed
+                                                :stop-reason]))))))
       {:replacement-tree nil
        :candidates-consumed consumed
        :attempts attempts
@@ -200,7 +251,8 @@
   [task opts {:keys [mode stop-at-task-threshold? max-steps]
               :or {stop-at-task-threshold? true}}]
   (let [{:keys [targets initial-dl cache-context] :as search-context}
-        (wb-context/task-search-context task opts)
+        (assoc (wb-context/task-search-context task opts)
+               :solutions (:solutions task))
         value-dl-cache (cache/value-dl-cache cache-context)
         target-trees (mapv #(render/raw-tree value-dl-cache %) targets)
         min-compression-rate (double (or (:min-compression-rate opts) 1.0))
@@ -241,9 +293,11 @@
 
           :else
           (let [step (first-successful-compression search-context
+                                                   opts
                                                    min-compression-rate
                                                    worthy-dl
-                                                   target-trees)
+                                                   target-trees
+                                                   (count steps))
                 consumed (+ consumed (:candidates-consumed step))]
             (if (:replacement-tree step)
               (recur (apply-compression target-trees step)

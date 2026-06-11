@@ -1,6 +1,7 @@
 (ns ciwi.alice.matrix-regression-test
   (:require [clojure.edn :as edn]
             [clojure.test :refer [deftest is]]
+            [ciwi.alice :as alice]
             [ciwi.alice.wunderbaum :as alice-wb]
             [ciwi.dense.core :as dense]
             [ciwi.graph :as graph]
@@ -38,6 +39,13 @@
          (map #(op-shape (:graph summary) %)
               (graph/operator-ids (:graph summary))))))
 
+(defn- expr-shape
+  [expr]
+  (if (and (vector? expr)
+           (keyword? (first expr)))
+    (into [(first expr)] (map expr-shape (rest expr)))
+    :leaf))
+
 (defn- matrix-fixture
   []
   (let [data (edn/read-string (slurp matrix-fixture-path))]
@@ -50,6 +58,27 @@
   [expected actual]
   (< (Math/abs (- (double expected) (double actual)))
      1.0e-6))
+
+(defn- matrix-regression-task
+  [{:keys [x-mat y w-init]} with-solution?]
+  (alice/compression-task
+   [y x-mat]
+   {:name "reg_matrix_x_nx10"
+    :threshold-rate 0.01
+    :free-values [w-init]
+    :solutions (if with-solution?
+                 {0 solution-prefix?}
+                 {})}))
+
+(defn- matrix-regression-opts
+  []
+  {:registry {:dot op/dot
+              :add op/add}
+   :operator-ids [:dot :add]
+   :max-dag-dl 20
+   :max-popped 100
+   :max-yields 20
+   :optimize-candidates? true})
 
 (deftest matrix-regression-compression-step-finds-python-dot-add-solution
   (let [{:keys [x-mat w-init y]} (matrix-fixture)
@@ -87,3 +116,25 @@
     (is (>= (:compression-rate result) 1.0))
     (is (contains? shapes [:add [:dot :leaf :leaf] :leaf]))
     (is (every? true? (map close? expected-w w-best)))))
+
+(deftest matrix-regression-greedy-with-solution-reaches-threshold
+  (let [fixture (matrix-fixture)
+        result (alice-wb/run-greedy-task
+                (matrix-regression-task fixture true)
+                (matrix-regression-opts))]
+    (is (:meets-threshold? result))
+    (is (>= (:compression-rate result) 0.01))
+    (is (= 1 (count (:steps result))))
+    (is (= [:add [:dot :leaf :leaf] :leaf]
+           (expr-shape (get-in result [:selected :target0]))))))
+
+(deftest matrix-regression-greedy-without-solution-reaches-threshold
+  (let [fixture (matrix-fixture)
+        result (alice-wb/run-greedy-task
+                (matrix-regression-task fixture false)
+                (matrix-regression-opts))]
+    (is (:meets-threshold? result))
+    (is (>= (:compression-rate result) 0.01))
+    (is (= 1 (count (:steps result))))
+    (is (= [:add [:dot :leaf :leaf] :leaf]
+           (expr-shape (get-in result [:selected :target0]))))))
