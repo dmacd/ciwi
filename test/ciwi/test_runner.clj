@@ -1,5 +1,6 @@
 (ns ciwi.test-runner
   (:require [clojure.test :as test]
+            [ciwi.alice.classification-test]
             [ciwi.alice.matrix-regression-test]
             [ciwi.alice.wunderbaum-test]
             [ciwi.alice-legacy-test]
@@ -29,6 +30,7 @@
 (defn -main
   [& _args]
   (let [{:keys [fail error]} (test/run-tests 'ciwi.alice-legacy-test
+                                             'ciwi.alice.classification-test
                                              'ciwi.alice.matrix-regression-test
                                              'ciwi.alice.wunderbaum-test
                                              'ciwi.cache-test

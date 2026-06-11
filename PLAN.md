@@ -34,9 +34,10 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   public results. Optimizer-backed Wunderbaum candidates now cover the Python
   matrix-regression single-compression-step and greedy task shapes with an
   exact NumPy fixture. Graph-level optimizer parity now also covers the
-  clustering `try_to_optimize` worker shape and the first Iris classifier
-  `try_to_optimize` debug row at Python scale.
-  Tests pass locally with 160 tests and 836 assertions on the default vector
+  clustering `try_to_optimize` worker shape, the first Iris classifier
+  `try_to_optimize` debug row, and the Iris classifier direct
+  single-compression-step row at Python scale.
+  Tests pass locally with 161 tests and 841 assertions on the default vector
   backend, plus 8 tests and 43 assertions on the opt-in DJL backend.
 
 ## Current State
@@ -260,6 +261,14 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   native graph mirrors Python's `setitem(rest, lessthan(factor, threshold),
   selection)` shape, infers `rest` and `selection`, and verifies finite
   optimized DL with scalar threshold movement.
+- Iris classifier direct single-compression-step behavior is now covered with
+  the same shared fixture and the injected `[SetItem, LessThan]` operator
+  basis. The native solution hint is a solution-prefix predicate: it admits
+  the partial `lessthan(factor, threshold)` graph so Wunderbaum can expand
+  toward the full `setitem(rest, lessthan(factor, threshold), selection)`
+  structure, matching Python's supplied-solution subgraph filter. The
+  classifier-local `SetItem` declaration accepts a numeric rest array because
+  CIWI represents missing integer-label slots as dense `NaN` values.
 
 ## Deferred Cleanup Decisions
 
@@ -327,7 +336,8 @@ These cleanup-review items are intentionally not active targets right now:
 ## Near-Term Next Tasks
 
 - The active macro step is optimizer-backed numeric graph-search parity,
-  continuing with the classifier single-compression-step debug row. Use
+  continuing from the classifier single-compression-step debug row to the
+  classifier single-factor greedy rows. Use
   `optimizer-graph-search-parity.md` as the evidence matrix for
   `test_discrete_optimizer.py`, matrix regression, clustering, and later
   classification rows.
@@ -347,11 +357,9 @@ These cleanup-review items are intentionally not active targets right now:
   Supplied-solution rows use a native structural solution-prefix predicate;
   the without-solution greedy row runs unconstrained over the injected
   `[Dot, Add]` operator set.
-- Next add clustering `try_to_optimize` worker coverage from
-  `test_alice_pipeline.py`, then stage classifier parity as
-  `try_to_optimize`, single compression step, single-factor greedy with
-  solution, single-factor greedy without solution, then full Iris. Treat the
-  brute-force classifier rows as later application evidence.
+- Next stage classifier parity as single-factor greedy with solution,
+  single-factor greedy without solution, then full Iris. Treat the brute-force
+  classifier rows as later application evidence.
 - Keep the `insert_repeat3` performance audit parked unless performance becomes
   the active task again. The attachment-check reduction options are tracked in
   `OPTIMIZATION-BACKLOG.md` and should preserve Python Alice search semantics.

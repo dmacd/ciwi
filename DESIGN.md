@@ -715,9 +715,11 @@ caller needs to inspect or accept a candidate.
 
 Callers can install two generic hooks on materialized summaries.
 `:candidate-predicate` filters summaries before they are yielded, transformed,
-or expanded. It is the native equivalent of Python's provided-solution
-filtering for tests that intentionally constrain the search to a solution
-prefix; it is not a recognizer or shortcut because it only rejects already
+or expanded. In the supplied-solution parity path this predicate must be a
+solution-prefix/subgraph predicate, not only a final-solution predicate. Python
+keeps partial candidates that resemble a supplied-solution subgraph so they can
+expand toward the full solution; CIWI's native predicates must do the same.
+This is not a recognizer or shortcut because it only rejects already
 materialized candidates. `:candidate-transform` can replace a materialized
 summary with another summary before threshold scoring. Alice uses this hook for
 optimizer-backed numeric candidates: the symbolic DAG is still found by
@@ -780,7 +782,12 @@ Task solution hints are native candidate predicates keyed by greedy step index
 in `CompressionTask/:solutions`. They are combined with any caller-provided
 `:candidate-predicate` for that step. This mirrors Python's supplied-solution
 debug path while staying in CIWI's native graph representation instead of
-parsing Python S-expressions.
+parsing Python S-expressions. Because the predicate participates in search
+prefix pruning, it should admit every materialized graph shape that corresponds
+to a subgraph of the intended solution, such as both
+`lessthan(factor, threshold)` and
+`setitem(rest, lessthan(factor, threshold), selection)` in the Iris classifier
+single-step row.
 
 For each leaf-local compression step, the other current task-tree leaves are
 passed to Wunderbaum as dummy free values. This matches Python
