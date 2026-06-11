@@ -17,6 +17,15 @@
   [:map :fix :brange :add :mult :negate :concat :repeat
    :getitem :insert :cumsum :lessthan :equal])
 
+(defn require-rate-fraction
+  [label x]
+  (let [rate (double x)]
+    (when-not (<= 0.0 rate 1.0)
+      (throw (ex-info "Rate values must be fractions in [0, 1]"
+                      {:label label
+                       :rate x})))
+    rate))
+
 (defn compression-task
   [targets {:keys [name threshold-rate free-values solutions metadata]
             :or {name "task"
@@ -28,7 +37,7 @@
                            (value/datum (value/value x)))]
     (->CompressionTask name
                        (mapv coerce-task-data targets)
-                       threshold-rate
+                       (require-rate-fraction :threshold-rate threshold-rate)
                        (mapv coerce-task-data free-values)
                        solutions
                        metadata)))
@@ -42,5 +51,5 @@
 (defn compression-rate
   [initial-dl compressed-dl]
   (if (pos? initial-dl)
-    (* 100.0 (- 1.0 (/ compressed-dl initial-dl)))
+    (- 1.0 (/ compressed-dl initial-dl))
     0.0))

@@ -1,6 +1,6 @@
 # CIWI Plan
 
-Last updated: 2026-06-10.
+Last updated: 2026-06-11.
 
 ## Objective
 
@@ -73,9 +73,9 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   evidence matrix is `alice-test-parity.md`, which now records both default
   vector-backend and opt-in DJL-backend warm timings for the core path.
 - `ciwi.alice.wunderbaum/run-greedy-task` now mirrors Python GreedyAlice's
-  outer loop: compress the largest worthy raw leaf, accept the first candidate
-  above the one-percent step threshold, splice it into the task tree, and
-  repeat until the task threshold is reached. `simple_repeat`,
+  outer loop: choose the current task leaf, accept the first candidate above
+  the `0.01` step threshold, splice it into the task tree, and repeat until
+  the task threshold is reached. `simple_repeat`,
   `insert_repeat`, `insert_repeat2`, and `simply_linear` now reach the same
   Python-shaped solutions.
 - Each greedy compression step now passes other current task-tree leaves as
@@ -203,8 +203,13 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   uses strict two-pass loops, and integer array DL uses the integer
   precision/Elias specialization instead of the generic floating round loop.
   Fresh warm medians are recorded in `alice-test-parity.md`. `increasing_runs`
-  is still materially slower than Python but is parked for now; matrix
-  regression is the active macro step.
+  is still materially slower than Python but is parked for now; clustering
+  `try_to_optimize` parity is the active macro step.
+- CIWI rate values are fractions everywhere. `:threshold-rate`,
+  `:min-compression-rate`, and reported `:compression-rate` all use values in
+  `[0, 1]`; `0.01` is the standard small-step threshold. The constructors
+  reject out-of-range rates instead of preserving Python's mixed whole-number
+  and fraction conventions.
 - Optimizer-backed candidate search is now wired into Alice/Wunderbaum as an
   opt-in candidate transform. A caller can also supply a generic
   `:candidate-predicate` to filter materialized candidate summaries before
@@ -227,11 +232,10 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   Python's residual precision behavior and preventing high-precision optimized
   dot outputs from making the residual artificially expensive.
 - Matrix regression greedy parity now covers both Python
-  `test_greedy_with_solution` and `test_greedy_without_solution`. The greedy
-  task loop now follows Python's leaf order rule: step 0 attempts target roots
-  in task order, while later steps sort current leaves by descending DL. This
-  is required for multi-root tasks such as `[y, x_mat]`, where Python focuses
-  `y` first even though `x_mat` has the larger raw DL.
+  `test_greedy_with_solution` and `test_greedy_without_solution`. The parity
+  runner follows Python's leaf order rule: step 0 attempts target roots in task
+  order, while later steps sort current leaves by descending DL. This is a
+  Python parity behavior, not the preferred future CIWI scheduling design.
 
 ## Deferred Cleanup Decisions
 
@@ -299,7 +303,7 @@ These cleanup-review items are intentionally not active targets right now:
 ## Near-Term Next Tasks
 
 - The active macro step is optimizer-backed numeric graph-search parity,
-  starting with Python `TestMatrixRegressionDebugPipeline` and ultimately the
+  continuing with the clustering `try_to_optimize` worker and ultimately the
   classifier debug rows. Use `optimizer-graph-search-parity.md` as the evidence
   matrix for `test_discrete_optimizer.py`, matrix regression, and later
   clustering/classification rows.

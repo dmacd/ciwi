@@ -113,7 +113,7 @@
                   (value/datum
                    (propagation/value-at (:memory candidate) :target2))))]
     (is candidate)
-    (is (>= (:compression-rate result) 1.0))
+    (is (>= (:compression-rate result) 0.01))
     (is (contains? shapes [:add [:dot :leaf :leaf] :leaf]))
     (is (every? true? (map close? expected-w w-best)))))
 

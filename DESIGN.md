@@ -154,12 +154,18 @@ threshold metadata:
   (alice/compression-task
    [[0 1 2 3 4]]
    {:name "small-range"
-    :threshold-rate 80.0
+    :threshold-rate 0.80
     :free-values []
     :solutions {:python "(Array[int] (cumsum ...))"}}))
 
 (alice/task-domain "alice-core" [small-range-task])
 ```
+
+All CIWI rates are fractions in `[0, 1]`. `:threshold-rate`,
+`:min-compression-rate`, and reported `:compression-rate` use the same unit:
+`0.01` means a one-in-one-hundred DL reduction. CIWI rejects out-of-range rate
+inputs rather than preserving Python WILLIAM's mix of fraction and
+whole-number fields.
 
 Wunderbaum receives an injected registry and explicit operator declarations.
 The declaration table is the near-term Clojure equivalent of Python operator
@@ -719,7 +725,7 @@ still happens after the cached inverse values are returned.
 When `:threshold-dl` is supplied, `wunderbaum/iterate` mirrors Python's
 `threshold_dl` behavior: it still expands materialized graphs that do not meet
 the threshold, but it does not yield them to the caller, and it stops after the
-first yielded graph below the threshold. Alice uses this for one-percent
+first yielded graph below the threshold. Alice uses this for `0.01`
 compression steps so yielded candidate counts correspond to accepted
 compression candidates rather than every explored frontier materialization.
 Once a threshold-accepted graph has been scored, CIWI returns it without
@@ -732,15 +738,18 @@ in `ciwi.alice-legacy`.
 
 `run-greedy-task` mirrors Python `GreedyAlice`: choose the current task leaf,
 accept the first Wunderbaum candidate above `:min-compression-rate` (default
-1%), splice that selected expression into the task tree, and repeat until the
-task threshold is reached or no worthy leaf can improve. `run-compression-step`
-exposes the same mechanism capped at one greedy step for diagnostics.
+`0.01`), splice that selected expression into the task tree, and repeat until
+the task threshold is reached or no worthy leaf can improve.
+`run-compression-step` exposes the same mechanism capped at one greedy step for
+diagnostics.
 
 There is one Python control-flow detail that matters for multi-root tasks:
 step 0 uses the task root order as given, and only later successful steps sort
-the current leaves by descending DL. CIWI preserves that rule. This is why the
-matrix-regression task `[y, x_mat]` focuses `y` first even though the raw
-matrix leaf has a larger description length.
+the current leaves by descending DL. CIWI preserves that rule in the parity
+runner. It is not the preferred general CIWI scheduling policy; future bounded
+local search should make leaf selection an explicit controller choice. This is
+why the matrix-regression task `[y, x_mat]` focuses `y` first even though the
+raw matrix leaf has a larger description length.
 
 `compression-step-candidate` mirrors Python's direct
 `GreedyAlice.compression_step(target, free_values=...)` API: it searches one

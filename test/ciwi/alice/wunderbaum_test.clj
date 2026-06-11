@@ -33,7 +33,7 @@
                                         [-1]
                                         (repeat 400 45)))]
                           {:name "repeat_with_noise"
-                           :threshold-rate 90.0}))
+                           :threshold-rate 0.90}))
 
 (defn- insert-repeat3-task
   []
@@ -41,7 +41,7 @@
                                         (take 500 (cycle [87 62]))
                                         (repeat 610 164)))]
                           {:name "insert_repeat3"
-                           :threshold-rate 93.0}))
+                           :threshold-rate 0.93}))
 
 (defn- sprinkled-target
   []
@@ -77,7 +77,7 @@
 (deftest alice-wunderbaum-compresses-arithmetic-range
   (let [task (alice/compression-task [[0 1 2 3 4 5 6 7]]
                                      {:name "range"
-                                      :threshold-rate 1.0})
+                                      :threshold-rate 0.01})
         result (sut/run-greedy-task task {:registry {:brange op/brange}
                                           :max-popped 16
                                           :max-yields 4
@@ -92,7 +92,7 @@
   (let [target (vec (take 20 (cycle [140 -50])))
         task (alice/compression-task [target]
                                      {:name "repeat"
-                                      :threshold-rate 1.0})
+                                      :threshold-rate 0.01})
         result (sut/run-greedy-task task {:registry {:repeat op/repeat}
                                           :max-popped 32
                                           :max-yields 8
@@ -109,7 +109,7 @@
                        [:cumsum [:insert [0] 0 (vec (repeat 499 2))]]
                        140
                        (vec (repeat 500 -50))]
-            :threshold-rate 94.0
+            :threshold-rate 0.94
             :opts {:max-popped 200
                    :max-yields 20}}
            {:name "insert_repeat"
@@ -119,7 +119,7 @@
                        [:cumsum (vec (concat [0] (repeat 99 1)))]
                        45
                        (vec (repeat 250 87))]
-            :threshold-rate 92.0
+            :threshold-rate 0.92
             :opts {:max-popped 10000
                    :max-yields 1000}}
            {:name "insert_repeat2"
@@ -132,19 +132,19 @@
                         45
                         (vec (repeat 25 87))]
                        (vec (repeat 610 164))]
-            :threshold-rate 92.0
+            :threshold-rate 0.92
             :opts {:max-popped 10000
                    :max-yields 1000}}
            {:name "repeat_with_noise"
             :target (first (:targets (repeat-with-noise-task)))
             :expected [:insert [100] -1 (vec (repeat 500 45))]
-            :threshold-rate 90.0
+            :threshold-rate 0.90
             :opts {:max-popped 5000
                    :max-yields 500}}
            {:name "simply_linear"
             :target (mapv #(- (* 6 %) 18) (range 1000))
             :expected [:cumsum [:insert [0] -18 (vec (repeat 999 6))]]
-            :threshold-rate 97.0
+            :threshold-rate 0.97
             :opts {:max-popped 10000
                    :max-yields 1000}}
            {:name "sprinkled"
@@ -153,13 +153,13 @@
                        python-sprinkled-indices
                        1
                        (vec (repeat 9900 0))]
-            :threshold-rate 75.0
+            :threshold-rate 0.75
             :opts {:max-popped 10000
                    :max-yields 1000}}
            {:name "map_negate"
             :target (vec (map - (range 1000)))
             :expected [:cumsum [:insert [0] 0 (vec (repeat 999 -1))]]
-            :threshold-rate 98.0
+            :threshold-rate 0.98
             :opts {:max-popped 10000
                    :max-yields 1000}}
            {:name "increasing_runs"
@@ -170,7 +170,7 @@
                          (vec (concat [0 2] (repeat 498 1)))]]
                        64
                        (vec (repeat 124750 123))]
-            :threshold-rate 99.9
+            :threshold-rate 0.999
             :opts {:max-popped 10000
                    :max-yields 1000}}]]
     (testing name
@@ -206,7 +206,7 @@
         task (repeat-with-noise-task)
         step (sut/run-compression-step task opts)
         task-result (sut/run-greedy-task task opts)]
-    (is (>= (:compression-rate step) 1.0))
+    (is (>= (:compression-rate step) 0.01))
     (is (:meets-threshold? step))
     (is (:meets-threshold? task-result))
     (is (= (get-in step [:resource :candidates-consumed])
@@ -226,7 +226,7 @@
            (get-in result [:resource :stop-reason])))
     (is (= 4 (count (:steps result))))
     (is (= 4 (get-in result [:resource :candidates-consumed])))
-    (is (close-to? 86.38075946321129
+    (is (close-to? 0.8638075946321129
                    (:compression-rate result)))
     (is (= [0 1 0] (:path fourth-step)))
     (is (close-to? 1161.7371134088858 (:dl fourth-step)))

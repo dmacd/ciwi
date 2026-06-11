@@ -17,7 +17,8 @@ The Python timings below use `GreedyAlice` with `min_rate=0.01`,
 Timings are warm in-process medians: dependencies are loaded and runtime/JIT
 startup effects are excluded. The Python timing column measures wall-clock
 `GreedyAlice.run_task` calls after warmups; Python rates and final DLs come
-from `GreedyAlice.last_run_stats`.
+from `GreedyAlice.last_run_stats`, normalized here to CIWI's fraction rate
+convention.
 
 The core CIWI columns use `ciwi.alice.wunderbaum/run-greedy-task` with the
 injected Python Alice operator basis, `max_dag_dl=35`, and row-specific
@@ -35,15 +36,15 @@ debugging and performance comparison only. They are not Alice parity evidence.
 
 | Python task | Length | Python threshold | Python rate | Python ms | Core CIWI status | Core CIWI rate | Core CIWI vector ms | Core CIWI DJL ms | Core CIWI solution | Recognizer CIWI rate | Recognizer CIWI ms | Recognizer baseline solution | Python solution |
 | --- | ---: | ---: | ---: | ---: | --- | ---: | ---: | ---: | --- | ---: | ---: | --- | --- |
-| `simple_repeat` | 1,000 | 94.0 | 98.056137 | 35.4 | passes greedy core, 3 steps / 3 candidates; matches Python cumsum/insert shape | 98.056137 | 48.6 | 27.3 | `[:insert [:cumsum [:insert [0] 0 C2x499]] 140 C-50x500]` | 99.636156 | 87 | `[:repeat 500 [140 -50]]` | `(Array[int] (insert (Array[int] (cumsum (Array[int] (insert Array[int] int Array[int])))) int Array[int]))` |
-| `insert_repeat` | 350 | 92.0 | 93.075788 | 23.3 | passes greedy core, 2 steps / 2 candidates; matches Python cumsum/insert shape | 93.075788 | 23.5 | 12.7 | `[:insert [:cumsum I0+99x1] 45 C87x250]` | 98.611733 | 18 | `[:insert [:brange 0 100] 45 [:repeat 250 [87]]]` | `(Array[int] (insert (Array[int] (cumsum Array[int])) int Array[int]))` |
-| `insert_repeat2` | 645 | 92.0 | 92.325943 | 43.7 | passes greedy core, 3 steps / 3 candidates; matches Python shared-DAG concat/insert shape | 92.325943 | 15.7 | 31.2 | `[:insert [:concat I0+9 I10+34] [:insert I0+9 45 C87x25] C164x610]` | 98.943455 | 23 | `[:insert [:brange 0 35] [:insert [:brange 0 10] 45 [:repeat 25 [87]]] [:repeat 610 [164]]]` | `((= $ Array[int]) (Array[int] (insert (Array[int] (concat _1 Array[int])) (Array[int] (insert _1 int Array[int])) Array[int])))` |
-| `insert_repeat3` | 1,210 | 93.0 | 93.830537 | 10,677 | passes greedy core, 7 steps / 7 candidates; matches Python nested cumsum/getitem/insert skeleton; default regression covers the hard fourth step | 93.830537 | 3,834.8 | 7,017.1 | `C_insert_repeat3` | 68.028790 | 105 | `[:insert [:brange 0 600] [:insert I3 [:insert [:brange 0 100] 45 [:repeat 250 [87]]] [:repeat 250 [62]]] [:repeat 610 [164]]]` | `P_insert_repeat3` |
-| `repeat_with_noise` | 501 | 90.0 | 96.279777 | 5.2 | passes greedy core, 1 step / 1 candidate; matches Python one-step plain insert under Python DL | 96.279777 | 1.6 | 1.3 | `[:insert [100] -1 C45x500]` | 99.103288 | 16 | `[:insert [100] -1 [:repeat 500 [45]]]` | `(Array[int] (insert Array[int] int Array[int]))` |
-| `simply_linear` | 1,000 | 97.0 | 99.506286 | 12.0 | passes greedy core, 2 steps / 2 candidates; matches Python cumsum/insert shape under Python DL | 99.506286 | 6.6 | 6.2 | `[:cumsum [:insert [0] -18 C6x999]]` | 99.785287 | 122 | `[:add [:mult [:brange 0 1000] 6] -18]` | `(Array[int] (cumsum (Array[int] (insert Array[int] int Array[int]))))` |
-| `sprinkled` | 10,000 | 75.0 | 79.294650 | 6 | passes greedy core, 1 step / 1 candidate; matches Python plain insert shape | 79.294650 | 20.3 | 12.1 | `[:insert S 1 C0x9900]` | 93.074107 | 249 | `[:insert S 1 [:repeat 9900 [0]]]` | `(Array[int] (insert Array[int] int Array[int]))` |
-| `increasing_runs` | 125,250 | 99.9 | 99.905472 | 88 | passes greedy core, 3 steps / 3 candidates; matches Python insert/cumsum/cumsum shape | 99.905472 | 980.3 | 178.3 | `[:insert [:cumsum [:cumsum D_inc]] 64 C123x124750]` | 99.274754 | 2,705 | `[:insert R 64 [:repeat 124750 [123]]]` | `(Array[int] (insert (Array[int] (cumsum (Array[int] (cumsum Array[int])))) int Array[int]))` |
-| `map_negate` | 1,000 | 98.0 | 99.521131 | 12 | passes greedy core, 2 steps / 2 candidates; matches Python cumsum/insert shape | 99.521131 | 6.4 | 6.5 | `[:cumsum [:insert [0] 0 C-1x999]]` | 99.826700 | 66 | `[:mult [:brange 0 1000] -1]` | `(Array[int] (cumsum (Array[int] (insert Array[int] int Array[int]))))` |
+| `simple_repeat` | 1,000 | 0.94 | 0.98056137 | 35.4 | passes greedy core, 3 steps / 3 candidates; matches Python cumsum/insert shape | 0.98056137 | 48.6 | 27.3 | `[:insert [:cumsum [:insert [0] 0 C2x499]] 140 C-50x500]` | 0.99636156 | 87 | `[:repeat 500 [140 -50]]` | `(Array[int] (insert (Array[int] (cumsum (Array[int] (insert Array[int] int Array[int])))) int Array[int]))` |
+| `insert_repeat` | 350 | 0.92 | 0.93075788 | 23.3 | passes greedy core, 2 steps / 2 candidates; matches Python cumsum/insert shape | 0.93075788 | 23.5 | 12.7 | `[:insert [:cumsum I0+99x1] 45 C87x250]` | 0.98611733 | 18 | `[:insert [:brange 0 100] 45 [:repeat 250 [87]]]` | `(Array[int] (insert (Array[int] (cumsum Array[int])) int Array[int]))` |
+| `insert_repeat2` | 645 | 0.92 | 0.92325943 | 43.7 | passes greedy core, 3 steps / 3 candidates; matches Python shared-DAG concat/insert shape | 0.92325943 | 15.7 | 31.2 | `[:insert [:concat I0+9 I10+34] [:insert I0+9 45 C87x25] C164x610]` | 0.98943455 | 23 | `[:insert [:brange 0 35] [:insert [:brange 0 10] 45 [:repeat 25 [87]]] [:repeat 610 [164]]]` | `((= $ Array[int]) (Array[int] (insert (Array[int] (concat _1 Array[int])) (Array[int] (insert _1 int Array[int])) Array[int])))` |
+| `insert_repeat3` | 1,210 | 0.93 | 0.93830537 | 10,677 | passes greedy core, 7 steps / 7 candidates; matches Python nested cumsum/getitem/insert skeleton; default regression covers the hard fourth step | 0.93830537 | 3,834.8 | 7,017.1 | `C_insert_repeat3` | 0.68028790 | 105 | `[:insert [:brange 0 600] [:insert I3 [:insert [:brange 0 100] 45 [:repeat 250 [87]]] [:repeat 250 [62]]] [:repeat 610 [164]]]` | `P_insert_repeat3` |
+| `repeat_with_noise` | 501 | 0.90 | 0.96279777 | 5.2 | passes greedy core, 1 step / 1 candidate; matches Python one-step plain insert under Python DL | 0.96279777 | 1.6 | 1.3 | `[:insert [100] -1 C45x500]` | 0.99103288 | 16 | `[:insert [100] -1 [:repeat 500 [45]]]` | `(Array[int] (insert Array[int] int Array[int]))` |
+| `simply_linear` | 1,000 | 0.97 | 0.99506286 | 12.0 | passes greedy core, 2 steps / 2 candidates; matches Python cumsum/insert shape under Python DL | 0.99506286 | 6.6 | 6.2 | `[:cumsum [:insert [0] -18 C6x999]]` | 0.99785287 | 122 | `[:add [:mult [:brange 0 1000] 6] -18]` | `(Array[int] (cumsum (Array[int] (insert Array[int] int Array[int]))))` |
+| `sprinkled` | 10,000 | 0.75 | 0.79294650 | 6 | passes greedy core, 1 step / 1 candidate; matches Python plain insert shape | 0.79294650 | 20.3 | 12.1 | `[:insert S 1 C0x9900]` | 0.93074107 | 249 | `[:insert S 1 [:repeat 9900 [0]]]` | `(Array[int] (insert Array[int] int Array[int]))` |
+| `increasing_runs` | 125,250 | 0.999 | 0.99905472 | 88 | passes greedy core, 3 steps / 3 candidates; matches Python insert/cumsum/cumsum shape | 0.99905472 | 980.3 | 178.3 | `[:insert [:cumsum [:cumsum D_inc]] 64 C123x124750]` | 0.99274754 | 2,705 | `[:insert R 64 [:repeat 124750 [123]]]` | `(Array[int] (insert (Array[int] (cumsum (Array[int] (cumsum Array[int])))) int Array[int]))` |
+| `map_negate` | 1,000 | 0.98 | 0.99521131 | 12 | passes greedy core, 2 steps / 2 candidates; matches Python cumsum/insert shape | 0.99521131 | 6.4 | 6.5 | `[:cumsum [:insert [0] 0 C-1x999]]` | 0.99826700 | 66 | `[:mult [:brange 0 1000] -1]` | `(Array[int] (cumsum (Array[int] (insert Array[int] int Array[int]))))` |
 
 ## Exact Long Values
 
@@ -154,7 +155,7 @@ Current root-cause notes from the core path:
 - Python-compatible value DL is necessary parity infrastructure. With the old
   prototype codec, `repeat_with_noise` had to discover an explicit nested
   `repeat`; with Python's Gaussian array DL, the same plain raw-array `insert`
-  graph reaches Python's 96.279777% compression rate.
+  graph reaches Python's 0.96279777 compression rate.
 - Alice/Wunderbaum materialization must preserve Python `TaskDomain` operator
   DL. Python assigns all operator classes in a task domain
   `ceil(jelias(number-of-operator-classes))` bits; for the 13-class Alice basis
@@ -170,7 +171,7 @@ Current root-cause notes from the core path:
   inner `[0..9]` index leaf in `insert_repeat2`, producing the shared `_1`
   concat/insert DAG rather than independently rediscovering the outer index
   vector with `cumsum`.
-- Alice passes the one-percent step threshold down to Wunderbaum as
+- Alice passes the `0.01` step threshold down to Wunderbaum as
   `threshold_dl`. CIWI's iterator now mirrors that by continuing frontier
   expansion internally but yielding only the first graph below the threshold.
   This keeps the yielded candidate counts aligned with Python's `graph_nums`

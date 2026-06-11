@@ -63,7 +63,7 @@
                    (render/target-tree-leaves idx (nth ids idx) tree)))
          vec)))
 
-(defn- ordered-leaves
+(defn- python-greedy-leaf-order
   [target-trees sort-by-dl?]
   (let [leaves (task-leaves target-trees)]
     (if sort-by-dl?
@@ -112,7 +112,7 @@
                      (leaf-free-values search-context target-trees leaf))
         candidate-opts (step-candidate-opts opts solution)
         threshold-dl (* (:dl leaf)
-                        (- 1.0 (/ min-compression-rate 100.0)))
+                        (- 1.0 min-compression-rate))
         search (wb-context/first-candidate-at-rate
                 (:dl leaf)
                 min-compression-rate
@@ -139,7 +139,7 @@
 
 (defn- first-successful-compression
   [search-context opts min-compression-rate worthy-dl target-trees step-index]
-  (loop [leaves (ordered-leaves target-trees (pos? step-index))
+  (loop [leaves (python-greedy-leaf-order target-trees (pos? step-index))
          consumed 0
          attempts []]
     (if-let [leaf (first leaves)]
@@ -211,8 +211,10 @@
         search-context (wb-context/task-search-context task opts)
         value-dl-cache (cache/value-dl-cache (:cache-context search-context))
         initial-dl (nonpermeable-dl value-dl-cache values)
-        min-compression-rate (double (or (:min-compression-rate opts) 1.0))
-        threshold-dl (* initial-dl (- 1.0 (/ min-compression-rate 100.0)))
+        min-compression-rate (alice/require-rate-fraction
+                              :min-compression-rate
+                              (or (:min-compression-rate opts) 0.01))
+        threshold-dl (* initial-dl (- 1.0 min-compression-rate))
         search (wb-context/first-candidate-at-rate
                 initial-dl
                 min-compression-rate
@@ -255,7 +257,9 @@
                :solutions (:solutions task))
         value-dl-cache (cache/value-dl-cache cache-context)
         target-trees (mapv #(render/raw-tree value-dl-cache %) targets)
-        min-compression-rate (double (or (:min-compression-rate opts) 1.0))
+        min-compression-rate (alice/require-rate-fraction
+                              :min-compression-rate
+                              (or (:min-compression-rate opts) 0.01))
         worthy-dl (double (or (:worthy-dl opts) 200.0))
         max-steps (or max-steps (:max-steps opts) Long/MAX_VALUE)]
     (loop [target-trees target-trees
@@ -319,10 +323,11 @@
 (defn run-greedy-task
   "Run a Python GreedyAlice-shaped task.
 
-  Each iteration compresses the largest worthy raw leaf, accepts the first
-  Wunderbaum candidate above `:min-compression-rate`, rewrites that local leaf,
-  and repeats until the task threshold is met or no worthy leaf can be improved.
-  The operator registry is always injected by the caller.
+  Each iteration follows Python GreedyAlice's leaf-order policy, accepts the
+  first Wunderbaum candidate above `:min-compression-rate`, rewrites that local
+  leaf, and repeats until the task threshold is met or no worthy leaf can be
+  improved. Rates are fractions, so `0.01` means a one-in-one-hundred DL
+  reduction. The operator registry is always injected by the caller.
   "
   [task opts]
   (run-greedy* task opts {:mode :greedy-task}))
@@ -330,7 +335,7 @@
 (defn run-compression-step
   "Run a Python-style compression step with a minimum compression rate.
 
-  `:min-compression-rate` is a percent. The default `1.0` corresponds to
+  `:min-compression-rate` is a fraction. The default `0.01` corresponds to
   Python GreedyAlice's `min_rate=0.01`.
   "
   [task opts]

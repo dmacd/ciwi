@@ -1,6 +1,6 @@
 # Optimizer And Numeric Graph Search Parity
 
-Last updated: 2026-06-10.
+Last updated: 2026-06-11.
 
 This file tracks Python WILLIAM parity for optimizer-backed graph search:
 standalone discrete optimizers, `try_to_optimize`, and Alice pipeline tests
@@ -41,9 +41,9 @@ Out of scope unless they block compression behavior:
 | `test_alice_pipeline.py::TestMatrixRegressionDebugPipeline::test_single_compression_step` | Covered with supplied solution | `ciwi.alice.matrix-regression-test/matrix-regression-compression-step-finds-python-dot-add-solution` | Uses the exact NumPy `default_rng(123)` fixture, a native structural solution-prefix predicate, symbolic `Dot`/`Add` Wunderbaum search, and optimizer-backed improvement of the permeable `w` leaf. |
 | `test_alice_pipeline.py::TestMatrixRegressionDebugPipeline::test_greedy_with_solution` | Covered | `ciwi.alice.matrix-regression-test/matrix-regression-greedy-with-solution-reaches-threshold` | End-to-end greedy task over `[y, x_mat]` with Python step-0 target ordering, native supplied-solution predicate, symbolic `Dot`/`Add` search, and optimizer-backed `w` improvement. |
 | `test_alice_pipeline.py::TestMatrixRegressionDebugPipeline::test_greedy_without_solution` | Covered | `ciwi.alice.matrix-regression-test/matrix-regression-greedy-without-solution-reaches-threshold` | End-to-end greedy task over the exact NumPy fixture without a solution predicate; the injected operator set is only `[Dot, Add]`. |
-| `test_alice_pipeline.py::test_run_clustering_try_to_optimize_worker` | Not yet covered | Pending after matrix regression | Needs `Sub`, `Mult`, `Sum1`, `LessThan`, `GetItem`, `Union`, and optimizer-backed centroid/radius improvement. |
+| `test_alice_pipeline.py::test_run_clustering_try_to_optimize_worker` | Not yet covered | Active next | Needs `Sub`, `Mult`, `Sum1`, `LessThan`, `GetItem`, `Union`, and optimizer-backed centroid/radius improvement. |
 | skipped clustering Alice pipeline rows | Deferred | Pending after `try_to_optimize` clustering | Python marks these skipped. Treat as optional application evidence, not a near-term core gate. |
-| `test_classification.py::TestIrisClassificationDebugPipeline::test_try_to_optimize` | Deferred | Pending after matrix regression | Python currently skips this row. Useful as the first classifier debug target because it isolates `try_to_optimize` over a scalar threshold leaf. |
+| `test_classification.py::TestIrisClassificationDebugPipeline::test_try_to_optimize` | Deferred | Pending after clustering worker | Python currently skips this row. Useful as the first classifier debug target because it isolates `try_to_optimize` over a scalar threshold leaf. |
 | `test_classification.py::TestIrisClassificationDebugPipeline::test_single_compression_step` | Deferred | Pending after classifier `try_to_optimize` | Python currently skips this row. Uses only `SetItem` and `LessThan` over the single-factor Iris fixture. |
 | `test_classification.py::TestIrisClassificationDebugPipeline::test_greedy_single_factor_with_solution` | Deferred | Pending after classifier compression step | Python currently skips this row. End-to-end Alice run with the supplied single-factor solution. |
 | `test_classification.py::TestIrisClassificationDebugPipeline::test_greedy_single_factor_without_solution` | Deferred | Pending after with-solution single-factor run | Python currently skips this row. Same operator basis, but requires search to find the structure. |
@@ -52,7 +52,8 @@ Out of scope unless they block compression behavior:
 
 ## Matrix Regression Fixture
 
-Python's `TestMatrixRegressionDebugPipeline` is the active next tranche. The
+Python's `TestMatrixRegressionDebugPipeline` is now covered through its direct
+optimizer, graph optimizer, single compression-step, and greedy rows. The
 fixture is deliberately small in operator vocabulary but large enough to stress
 dense numeric scoring:
 

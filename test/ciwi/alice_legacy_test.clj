@@ -72,8 +72,8 @@
     :status :legacy-local-baseline
     :length 1000
     :target-fn simple-repeat-target
-    :python-threshold-rate 94.0
-    :ciwi-threshold-rate 1.0
+    :python-threshold-rate 0.94
+    :ciwi-threshold-rate 0.01
     :python-serial-ms 1061
     :recognizer-ciwi-ms 87
     :required #{:repeat}
@@ -82,8 +82,8 @@
     :status :legacy-local-baseline
     :length 350
     :target-fn insert-repeat-target
-    :python-threshold-rate 92.0
-    :ciwi-threshold-rate 1.0
+    :python-threshold-rate 0.92
+    :ciwi-threshold-rate 0.01
     :python-serial-ms 51
     :recognizer-ciwi-ms 18
     :required #{:insert :repeat}
@@ -92,8 +92,8 @@
     :status :legacy-local-baseline
     :length 645
     :target-fn insert-repeat2-target
-    :python-threshold-rate 92.0
-    :ciwi-threshold-rate 1.0
+    :python-threshold-rate 0.92
+    :ciwi-threshold-rate 0.01
     :python-serial-ms 44
     :recognizer-ciwi-ms 23
     :required #{:insert :repeat}
@@ -105,8 +105,8 @@
     :status :legacy-local-baseline
     :length 1210
     :target-fn insert-repeat3-target
-    :python-threshold-rate 93.0
-    :ciwi-threshold-rate 1.0
+    :python-threshold-rate 0.93
+    :ciwi-threshold-rate 0.01
     :python-serial-ms 10677
     :recognizer-ciwi-ms 105
     :required #{:insert :repeat}
@@ -115,8 +115,8 @@
     :status :legacy-local-baseline
     :length 501
     :target-fn repeat-with-noise-target
-    :python-threshold-rate 90.0
-    :ciwi-threshold-rate 1.0
+    :python-threshold-rate 0.90
+    :ciwi-threshold-rate 0.01
     :python-serial-ms 6
     :recognizer-ciwi-ms 16
     :required #{:insert :repeat}
@@ -125,8 +125,8 @@
     :status :legacy-local-baseline
     :length 1000
     :target-fn simply-linear-target
-    :python-threshold-rate 97.0
-    :ciwi-threshold-rate 1.0
+    :python-threshold-rate 0.97
+    :ciwi-threshold-rate 0.01
     :python-serial-ms 12
     :recognizer-ciwi-ms 122
     :required #{:brange :mult :add}
@@ -135,8 +135,8 @@
     :status :legacy-local-baseline
     :length 10000
     :target-fn sprinkled-target
-    :python-threshold-rate 75.0
-    :ciwi-threshold-rate 1.0
+    :python-threshold-rate 0.75
+    :ciwi-threshold-rate 0.01
     :python-serial-ms 6
     :recognizer-ciwi-ms 249
     :required #{:insert :repeat}
@@ -145,7 +145,7 @@
     :status :legacy-local-baseline
     :length 125250
     :target-fn increasing-runs-target
-    :python-threshold-rate 99.9
+    :python-threshold-rate 0.999
     :python-serial-ms 88
     :recognizer-ciwi-ms 2705
     :required #{:insert :repeat}
@@ -154,8 +154,8 @@
     :status :legacy-local-baseline
     :length 1000
     :target-fn map-negate-target
-    :python-threshold-rate 98.0
-    :ciwi-threshold-rate 1.0
+    :python-threshold-rate 0.98
+    :ciwi-threshold-rate 0.01
     :python-serial-ms 12
     :recognizer-ciwi-ms 66
     :required #{:brange :mult}
@@ -165,7 +165,7 @@
   [{:keys [name target-fn ciwi-threshold-rate python-threshold-rate]}]
   (alice/compression-task [(target-fn)]
                           {:name name
-                           :threshold-rate (or ciwi-threshold-rate 1.0)
+                           :threshold-rate (or ciwi-threshold-rate 0.01)
                            :metadata {:python-threshold-rate python-threshold-rate}}))
 
 (deftest alice-basic-operator-basis-matches-python-test-alice
