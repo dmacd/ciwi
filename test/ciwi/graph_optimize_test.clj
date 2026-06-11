@@ -1,6 +1,5 @@
 (ns ciwi.graph-optimize-test
   (:require [ciwi.dense.core :as dense]
-            [ciwi.fixtures.iris-debug :as iris-debug]
             [ciwi.graph :as graph]
             [ciwi.graph-optimize :as sut]
             [ciwi.operator :as op]
@@ -160,35 +159,6 @@
    :c (mem-entry c-init {:permeable? true})
    :s (mem-entry s-init {:permeable? true})})
 
-(defn- iris-classification-graph
-  []
-  (-> (graph/empty-graph)
-      (graph/add-value :root nil)
-      (graph/add-value :rest nil)
-      (graph/add-value :mask nil)
-      (graph/add-value :factor nil)
-      (graph/add-value :threshold nil)
-      (graph/add-value :selection nil)
-      (graph/set-roots [:root])
-      (graph/add-operator :lessthan op/lessthan :mask [:factor :threshold])
-      (graph/add-operator :setitem op/setitem :root [:rest :mask :selection])))
-
-(defn- iris-classification-memory
-  [{:keys [target factor threshold]}]
-  {:root (mem-entry target {:name "target"
-                            :permeable? false})
-   :factor (mem-entry factor {:name "factor"
-                              :permeable? false})
-   :threshold (mem-entry threshold {:name "threshold"
-                                    :permeable? true})})
-
-(defn- initial-iris-classification-memory
-  [g fixture]
-  (first (propagation/propagate g
-                                (iris-classification-memory fixture)
-                                {:partial? false
-                                 :unique? true})))
-
 (defn- initial-clustering-memory
   [g fixture]
   (first (propagation/propagate g
@@ -237,17 +207,3 @@
     (is (< (:dl result) (* 0.99 org-dl)))
     (is (or (not (dense/same-content? c-opt (:c-init fixture)))
             (not= s-opt (:s-init fixture))))))
-
-(deftest try-to-optimize-scores-iris-threshold-classifier
-  (let [fixture (iris-debug/fixture)
-        g (iris-classification-graph)
-        mem (initial-iris-classification-memory g fixture)
-        result (sut/try-to-optimize g
-                                    mem
-                                    {:section-ids [:root :factor :threshold]})
-        threshold-opt (value/datum
-                       (propagation/value-at (:memory result) :threshold))]
-    (is (some? (value/datum (propagation/value-at mem :rest))))
-    (is (some? (value/datum (propagation/value-at mem :selection))))
-    (is (optimize/finite? (:dl result)))
-    (is (number? threshold-opt))))

@@ -37,7 +37,9 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   clustering `try_to_optimize` worker shape, the first Iris classifier
   `try_to_optimize` debug row, the Iris classifier direct
   single-compression-step row, and the Iris classifier single-factor greedy
-  rows with and without a solution hint at Python scale.
+  rows with and without a solution hint at Python scale. Iris-specific rows
+  now live together in `ciwi.iris-classification-test` because they are
+  experimental application/debug evidence, not core Alice proof rows.
   Tests pass locally with 163 tests and 853 assertions on the default vector
   backend, plus 8 tests and 43 assertions on the opt-in DJL backend.
 
@@ -261,7 +263,9 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   sepal-length/label fixture with Python `RandomState(0)` permutation. The
   native graph mirrors Python's `setitem(rest, lessthan(factor, threshold),
   selection)` shape, infers `rest` and `selection`, and verifies finite
-  optimized DL with scalar threshold movement.
+  optimized DL with scalar threshold movement. The Iris rows are grouped in
+  `ciwi.iris-classification-test` rather than the generic graph optimizer or
+  Alice namespaces because they are still experimental application/debug cases.
 - Iris classifier direct single-compression-step behavior is now covered with
   the same shared fixture and the injected `[SetItem, LessThan]` operator
   basis. The native solution hint is a solution-prefix predicate: it admits
