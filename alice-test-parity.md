@@ -151,9 +151,11 @@ Current root-cause notes from the core path:
   inverses, matching Python's `exec_errors` behavior. Without this, impossible
   probes such as unconditioned `getitem` on a scalar can abort enumeration.
 - Parallel Alice/Wunderbaum is now opt-in through `:parallelism` or
-  `:num-workers`. The current evidence is a small Alice compression smoke test
-  plus the standalone Python Wunderbaum bounded-drain shape; it is not yet a
-  timing claim for all Python-scale `test_single_task_parallel` rows.
+  `:num-workers`. The current evidence is a small Alice compression smoke test,
+  the standalone Python Wunderbaum bounded-drain shape, and Python-scale
+  sequence-task completion through `:num-workers 8`. This is completion and
+  sanity coverage, not an exact serial-solution or timing claim for all Python
+  `test_single_task_parallel` task domains.
 - Numeric inverse shape mismatches must yield no inverse. Returning `nil`
   produced bogus zero-DL children such as `[:add [100] nil]`.
 - Python-compatible value DL is necessary parity infrastructure. With the old

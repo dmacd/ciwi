@@ -165,10 +165,18 @@
   (or (nil? max-popped)
       (< popped max-popped)))
 
+(defn- halt-requested?
+  [opts]
+  (if-let [halted? (:halted? opts)]
+    @halted?
+    false))
+
 (defn- frontier-active?
   [queue popped yielded {:keys [max-popped max-yields]
-                         :or {max-yields Long/MAX_VALUE}}]
+                         :or {max-yields Long/MAX_VALUE}
+                         :as opts}]
   (and (seq queue)
+       (not (halt-requested? opts))
        (< yielded max-yields)
        (under-pop-limit? popped max-popped)))
 
@@ -176,6 +184,11 @@
   [threshold-dl]
   (and (some? threshold-dl)
        (< (double threshold-dl) Double/POSITIVE_INFINITY)))
+
+(defn- request-halt!
+  [opts]
+  (when-let [halted? (:halted? opts)]
+    (reset! halted? true)))
 
 (defn- initial-frontier
   [wb targets opts]
@@ -221,7 +234,9 @@
                         (< (:dl summary) (double threshold-dl)))]
           (cond
             (and threshold? emit?)
-            (reduced [queue order (inc yielded) (conj emitted summary) true])
+            (do
+              (request-halt! opts)
+              (reduced [queue order (inc yielded) (conj emitted summary) true]))
 
             :else
             (let [[queue order] (expand-graph wb queue graph memory build-dl opts order)]
@@ -316,6 +331,35 @@
     (take max-yields results)
     results))
 
+(defn- worker-result
+  [wb opts target-ids cache-context order items]
+  (reify java.util.concurrent.Callable
+    (call [_]
+      (search-frontier-partition wb
+                                 opts
+                                 target-ids
+                                 cache-context
+                                 order
+                                 items))))
+
+(defn- search-frontier-partitions
+  [wb opts target-ids cache-context order partitions]
+  (let [executor (java.util.concurrent.Executors/newFixedThreadPool
+                  (count partitions))]
+    (try
+      (let [futures (mapv #(.submit executor
+                                    (worker-result wb
+                                                   opts
+                                                   target-ids
+                                                   cache-context
+                                                   order
+                                                   %))
+                          partitions)
+            results (mapcat #(.get %) futures)]
+        (vec (cap-yields results opts)))
+      (finally
+        (.shutdownNow executor)))))
+
 (defn iterate
   "Yield materialized Wunderbaum candidate graphs in frontier order.
 
@@ -354,17 +398,15 @@
        (iterate wb targets opts)
        (let [{:keys [queue order target-ids cache-context opts]}
              (initial-frontier wb targets opts)
+             opts (if (threshold-active? (:threshold-dl opts))
+                    (assoc opts :halted? (atom false))
+                    opts)
              partitions (partition-frontier n-workers queue)]
          (if (empty? partitions)
            '()
-           (let [workers (mapv (fn [items]
-                                  (future
-                                    (search-frontier-partition wb
-                                                               opts
-                                                               target-ids
-                                                               cache-context
-                                                               order
-                                                               items)))
-                                partitions)
-                 results (mapcat deref workers)]
-             (cap-yields results opts))))))))
+           (search-frontier-partitions wb
+                                       opts
+                                       target-ids
+                                       cache-context
+                                       order
+                                       partitions)))))))
