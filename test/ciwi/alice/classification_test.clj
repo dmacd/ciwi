@@ -114,3 +114,18 @@
            (expr-shape (get-in result [:selected :target0]))))
     (is (= :leaf
            (expr-shape (get-in result [:selected :target1]))))))
+
+(deftest iris-classifier-greedy-single-factor-without-solution-reaches-threshold
+  (let [fixture (iris-debug/fixture)
+        result (alice-wb/run-greedy-task
+                (classifier-task fixture false)
+                (classifier-opts))]
+    (is (:meets-threshold? result))
+    (is (>= (:compression-rate result) 0.01))
+    (is (= 1 (count (:steps result))))
+    (is (= :python-test-parity
+           (get-in result [:resource :leaf-selection-policy])))
+    (is (= [:setitem :leaf [:lessthan :leaf :leaf] :leaf]
+           (expr-shape (get-in result [:selected :target0]))))
+    (is (= :leaf
+           (expr-shape (get-in result [:selected :target1]))))))
