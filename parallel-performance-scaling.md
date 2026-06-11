@@ -131,9 +131,22 @@ Each cell is `milliseconds / threshold?`.
   scoring and search-order sensitivity. CIWI is slower than Python serially on
   the large row, but moderate 2-worker parallelism helps. Higher worker counts
   can push both implementations into longer multi-step paths.
-- Rows below the task threshold are not solution timings. They are still useful
-  because they show how worker-local ordering changes search outcomes under the
-  same threshold.
+- Rows below the task threshold are not solution timings and do not mean the
+  solution is absent from the search space. They mean the greedy run accepted
+  one or more local candidates above the per-step threshold, then stopped
+  before the aggregate task compression rate reached the task threshold.
+  Partitioned parallel runs are especially order-sensitive because each worker
+  owns a local frontier and the first above-step-threshold candidate can differ
+  by worker count and scheduler timing.
+- A focused medium `insert_repeat3` trace showed this directly. Serial and
+  coordinated global-best-first search reached `0.962651994` via the
+  insert/cumsum/getitem decomposition. Partitioned `w2` and `w4` alternated
+  between successful rates (`0.962651994` or `0.948612960`) and the failing
+  `0.921616734` path. The failing path starts with a locally compressive
+  `cumsum` rewrite, continues compressing its nested leaves, then stops with
+  `:leaf-below-worthy`: the remaining total DL is still above the task target,
+  but no individual remaining leaf is large enough for Alice's default
+  `worthy-dl` gate.
 
 ## Coordinated Global Queue Prototype
 
@@ -176,8 +189,11 @@ Each cell is again `milliseconds / threshold?`.
 | `reg_only_y` | large | 62.963 / true | 68.028 / true | 80.761 / true |
 
 The coordinated queue improves outcome stability on medium `insert_repeat3`:
-the partitioned path failed threshold at 2/4/8 workers, while the global queue
-reached it. It does not automatically improve throughput. On large
+the single-run partitioned table above happened to miss the threshold at
+2/4/8 workers, while the global queue reached it. Follow-up traces showed that
+partitioned `w2` and `w4` can also succeed; the important point is that their
+first accepted greedy path is not stable. It does not automatically improve
+throughput. On large
 `insert_repeat3`, the partitioned 2-worker result was faster (`439.539 ms`)
 than global 2-worker (`2928.537 ms`) because the partitioned strategy happened
 to find a good above-threshold path quickly. On `increasing_runs`, the global

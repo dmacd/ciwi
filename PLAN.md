@@ -192,6 +192,11 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   measurements show that it improves threshold stability on medium
   `insert_repeat3` but is not a blanket speedup; strict result ordering,
   frontier-level coordination, and hard cancellation remain open design work.
+  Medium `insert_repeat3` partitioned threshold failures are now understood as
+  greedy path/order sensitivity, not absence of a solution: worker-local
+  frontiers can accept a cumsum-first local compression that later stops below
+  the task threshold with `:leaf-below-worthy`, while serial/global-best-first
+  reach the insert/cumsum/getitem path.
 - Native condition extraction now covers Python `test_conditions.py` fixture
   shapes `co0`-`co21` and `dag0`-`dag7`, including the `co15` order-only
   fixture. These are expressed as native graph/composite specs instead of DOT
