@@ -1,5 +1,6 @@
 (ns ciwi.alice.classification-test
-  (:require [ciwi.alice.wunderbaum :as alice-wb]
+  (:require [ciwi.alice :as alice]
+            [ciwi.alice.wunderbaum :as alice-wb]
             [ciwi.fixtures.iris-debug :as iris-debug]
             [ciwi.graph :as graph]
             [ciwi.operator :as op]
@@ -64,8 +65,18 @@
    :max-dag-dl 20
    :max-popped 2000
    :max-yields 20
-   :optimize-candidates? true
-   :candidate-predicate solution-prefix?})
+   :optimize-candidates? true})
+
+(defn- classifier-task
+  [{:keys [target factor threshold]} with-solution?]
+  (alice/compression-task
+   [target factor]
+   {:name "iris_debug_case"
+    :threshold-rate 0.01
+    :free-values [threshold]
+    :solutions (if with-solution?
+                 {0 solution-prefix?}
+                 {})}))
 
 (deftest iris-classifier-compression-step-finds-python-setitem-lessthan-solution
   (let [{:keys [target factor threshold]} (iris-debug/fixture)
@@ -73,7 +84,8 @@
                 target
                 [(value/value factor {:permeable? false})
                  (value/value threshold {:permeable? true})]
-                (classifier-opts))
+                (assoc (classifier-opts)
+                       :candidate-predicate solution-prefix?))
         candidate (:candidate result)
         shapes (when candidate
                  (set (map #(op-shape (:graph candidate) %)
@@ -87,3 +99,18 @@
     (is (number? threshold-best))
     (is (= [:setitem :leaf [:lessthan :leaf :leaf] :leaf]
            (expr-shape (:selected result))))))
+
+(deftest iris-classifier-greedy-single-factor-with-solution-reaches-threshold
+  (let [fixture (iris-debug/fixture)
+        result (alice-wb/run-greedy-task
+                (classifier-task fixture true)
+                (classifier-opts))]
+    (is (:meets-threshold? result))
+    (is (>= (:compression-rate result) 0.01))
+    (is (= 1 (count (:steps result))))
+    (is (= :python-test-parity
+           (get-in result [:resource :leaf-selection-policy])))
+    (is (= [:setitem :leaf [:lessthan :leaf :leaf] :leaf]
+           (expr-shape (get-in result [:selected :target0]))))
+    (is (= :leaf
+           (expr-shape (get-in result [:selected :target1]))))))

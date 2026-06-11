@@ -45,7 +45,7 @@ Out of scope unless they block compression behavior:
 | skipped clustering Alice pipeline rows | Deferred | Pending after classifier `try_to_optimize` unless clustering Alice search becomes the next application target | Python marks these skipped. Treat as optional application evidence, not a near-term core gate. |
 | `test_classification.py::TestIrisClassificationDebugPipeline::test_try_to_optimize` | Behavior covered | `ciwi.graph-optimize-test/try-to-optimize-scores-iris-threshold-classifier` | Uses the canonical Iris sepal-length/label fixture with Python `RandomState(0)` permutation, native graph shape `setitem(rest, lessthan(factor, threshold), selection)`, inferred rest/selection leaves, and optimizer-backed scalar threshold movement. Python currently only asserts finite DL; CIWI also asserts the optimized threshold remains numeric. |
 | `test_classification.py::TestIrisClassificationDebugPipeline::test_single_compression_step` | Covered with supplied solution | `ciwi.alice.classification-test/iris-classifier-compression-step-finds-python-setitem-lessthan-solution` | Python currently skips this row, but CIWI covers the same direct compression-step shape. Uses only `SetItem` and `LessThan`, the canonical Iris single-factor fixture, a native solution-prefix predicate, and optimizer-backed scalar threshold movement. The classifier-local `SetItem` declaration accepts a numeric rest array because CIWI represents integer-label missing slots as dense `NaN`. |
-| `test_classification.py::TestIrisClassificationDebugPipeline::test_greedy_single_factor_with_solution` | Deferred | Pending after classifier compression step | Python currently skips this row. End-to-end Alice run with the supplied single-factor solution. |
+| `test_classification.py::TestIrisClassificationDebugPipeline::test_greedy_single_factor_with_solution` | Covered | `ciwi.alice.classification-test/iris-classifier-greedy-single-factor-with-solution-reaches-threshold` | Python currently skips this row, but CIWI covers the same end-to-end single-factor Alice run with the supplied solution predicate, task targets `[target, factor]`, free threshold, and injected `[SetItem, LessThan]` basis. |
 | `test_classification.py::TestIrisClassificationDebugPipeline::test_greedy_single_factor_without_solution` | Deferred | Pending after with-solution single-factor run | Python currently skips this row. Same operator basis, but requires search to find the structure. |
 | `test_classification.py::TestIrisClassificationDebugPipeline::test_greedy_full` | Deferred | Pending after single-factor rows | Python currently skips this row. Uses the full four-feature Iris task and residual-DL classification evaluation. |
 | skipped brute-force Iris classifier rows | Deferred | Application demo, not core parity | Python marks these skipped. Treat as later application evidence once optimizer-backed Alice is stable. |
@@ -161,14 +161,15 @@ brute-force compression classifier rows. CIWI should stage these as application
 evidence after optimizer-backed graph search is already proven on matrix
 regression.
 
-Current CIWI status: graph-level classifier `try_to_optimize` behavior and the
-direct single-compression-step row are covered. CIWI embeds the canonical Iris
-sepal-length vector and Python `RandomState(0)` permutation directly in a
-shared Clojure test fixture to avoid a runtime sklearn dependency. The fixed
-graph test mirrors Python's `setitem(rest, lessthan(factor, threshold),
-selection)` graph, propagates `rest` and `selection` from the
-target/factor/threshold interface, and verifies finite optimized DL. Under
-CIWI's current optimizer the threshold moves from `4.8` to `5.4375`.
+Current CIWI status: graph-level classifier `try_to_optimize`, direct
+single-compression-step, and greedy single-factor with-solution behavior are
+covered. CIWI embeds the canonical Iris sepal-length vector and Python
+`RandomState(0)` permutation directly in a shared Clojure test fixture to
+avoid a runtime sklearn dependency. The fixed graph test mirrors Python's
+`setitem(rest, lessthan(factor, threshold), selection)` graph, propagates
+`rest` and `selection` from the target/factor/threshold interface, and verifies
+finite optimized DL. Under CIWI's current optimizer the threshold moves from
+`4.8` to `5.4375`.
 
 The direct compression-step test searches only the injected `[SetItem,
 LessThan]` operator basis. Its native supplied-solution predicate admits both
@@ -179,6 +180,12 @@ missing-value representation means the inferred classifier rest array promotes
 from integer labels to a numeric dense array with `NaN` holes; the search
 declaration therefore uses an `:array-number` rest input while keeping the
 target output and selected label array integer-valued.
+
+The greedy single-factor with-solution row runs the Python-shaped task
+`[target, factor]` with `free_values=[threshold]` through
+`run-greedy-task`. It reaches the `0.01` task threshold in one step with the
+selected target shape
+`setitem(rest, lessthan(factor, threshold), selection)`.
 
 ## Dense Numerics Decision
 

@@ -35,9 +35,10 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   matrix-regression single-compression-step and greedy task shapes with an
   exact NumPy fixture. Graph-level optimizer parity now also covers the
   clustering `try_to_optimize` worker shape, the first Iris classifier
-  `try_to_optimize` debug row, and the Iris classifier direct
-  single-compression-step row at Python scale.
-  Tests pass locally with 161 tests and 841 assertions on the default vector
+  `try_to_optimize` debug row, the Iris classifier direct
+  single-compression-step row, and the Iris classifier single-factor greedy
+  with-solution row at Python scale.
+  Tests pass locally with 162 tests and 847 assertions on the default vector
   backend, plus 8 tests and 43 assertions on the opt-in DJL backend.
 
 ## Current State
@@ -269,6 +270,12 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   structure, matching Python's supplied-solution subgraph filter. The
   classifier-local `SetItem` declaration accepts a numeric rest array because
   CIWI represents missing integer-label slots as dense `NaN` values.
+- Iris classifier single-factor greedy with-solution behavior is now covered.
+  The task shape mirrors Python's `[target, factor]` targets,
+  `free_values=[threshold]`, `threshold_rate=0.01`, and injected
+  `[SetItem, LessThan]` domain. It reaches the task threshold in one greedy
+  step and selects the native
+  `setitem(rest, lessthan(factor, threshold), selection)` target expression.
 
 ## Deferred Cleanup Decisions
 
@@ -336,8 +343,8 @@ These cleanup-review items are intentionally not active targets right now:
 ## Near-Term Next Tasks
 
 - The active macro step is optimizer-backed numeric graph-search parity,
-  continuing from the classifier single-compression-step debug row to the
-  classifier single-factor greedy rows. Use
+  continuing from the classifier single-factor greedy with-solution row to the
+  single-factor greedy without-solution row. Use
   `optimizer-graph-search-parity.md` as the evidence matrix for
   `test_discrete_optimizer.py`, matrix regression, clustering, and later
   classification rows.
@@ -357,9 +364,9 @@ These cleanup-review items are intentionally not active targets right now:
   Supplied-solution rows use a native structural solution-prefix predicate;
   the without-solution greedy row runs unconstrained over the injected
   `[Dot, Add]` operator set.
-- Next stage classifier parity as single-factor greedy with solution,
-  single-factor greedy without solution, then full Iris. Treat the brute-force
-  classifier rows as later application evidence.
+- Next stage classifier parity as single-factor greedy without solution, then
+  full Iris. Treat the brute-force classifier rows as later application
+  evidence.
 - Keep the `insert_repeat3` performance audit parked unless performance becomes
   the active task again. The attachment-check reduction options are tracked in
   `OPTIMIZATION-BACKLOG.md` and should preserve Python Alice search semantics.
