@@ -173,6 +173,94 @@
                  (value/desc-len (propagation/value-at mem id)))
                ids)))
 
+(defn- optimizer-helper-graph
+  []
+  (-> (graph/empty-graph)
+      (graph/add-value :root nil)
+      (graph/add-value :xs nil)
+      (graph/add-value :offset nil)
+      (graph/set-roots [:root])
+      (graph/add-operator :add op/add :root [:xs :offset])))
+
+(defn- optimizer-helper-memory
+  [{:keys [root xs offset]}]
+  {:root (mem-entry root {:permeable? false})
+   :xs (mem-entry xs {:permeable? true})
+   :offset (mem-entry offset {:permeable? true})})
+
+(deftest extracts-optimizable-scalars-and-small-float-arrays-like-python
+  (let [g (optimizer-helper-graph)
+        mem (optimizer-helper-memory
+             {:root (dense/array [2.0 3.0])
+              :xs (dense/array [1.0 2.0])
+              :offset 1.5})
+        result (#'sut/extract-optimizables g mem :root)]
+    (is (= [{:node-id :xs
+             :start 0
+             :end 2
+             :kind :array
+             :int? false}
+            {:node-id :offset
+             :start 2
+             :end 3
+             :kind :scalar
+             :int? false}]
+           (mapv #(dissoc % :template) (:slots result))))
+    (is (= [1.0 2.0 1.5] (:x0 result)))
+    (is (= [false false false] (:int-mask result)))))
+
+(deftest extract-optimizables-skips-large-arrays-like-python
+  (let [g (optimizer-helper-graph)
+        mem (optimizer-helper-memory
+             {:root (dense/array (vec (repeat 101 0.0)))
+              :xs (dense/array (vec (repeat 101 1.0)))
+              :offset 2.0})
+        result (#'sut/extract-optimizables g mem :root)]
+    (is (= [{:node-id :offset
+             :start 0
+             :end 1
+             :kind :scalar
+             :int? false}]
+           (mapv #(dissoc % :template) (:slots result))))
+    (is (= [2.0] (:x0 result)))
+    (is (= [false] (:int-mask result)))))
+
+(deftest apply-opt-values-rounds-integer-array-slots-like-python
+  (let [mem {:scalar (mem-entry 0.0 {:permeable? true})
+             :float-arr (mem-entry (dense/array [0.0 0.0])
+                                   {:permeable? true})
+             :int-arr (mem-entry (dense/array [0 0 0])
+                                 {:permeable? true})}
+        float-template (value/datum (propagation/value-at mem :float-arr))
+        int-template (value/datum (propagation/value-at mem :int-arr))
+        slots [{:node-id :scalar
+                :start 0
+                :end 1
+                :kind :scalar
+                :int? false}
+               {:node-id :float-arr
+                :start 1
+                :end 3
+                :kind :array
+                :int? false
+                :template float-template}
+               {:node-id :int-arr
+                :start 3
+                :end 6
+                :kind :array
+                :int? true
+                :template int-template}]
+        result (#'sut/apply-opt-values mem
+                                       slots
+                                       [3.25 1.1 -2.2 1.2 2.8 -3.7])
+        scalar (value/datum (propagation/value-at result :scalar))
+        float-arr (value/datum (propagation/value-at result :float-arr))
+        int-arr (value/datum (propagation/value-at result :int-arr))]
+    (is (= 3.25 scalar))
+    (is (dense/same-content? (dense/array [1.1 -2.2]) float-arr))
+    (is (= :int64 (dense/dtype int-arr)))
+    (is (= [1 3 -4] (dense/tolist int-arr)))))
+
 (deftest try-to-optimize-improves-matrix-regression-weight-leaf
   (let [fixture (matrix-regression-fixture)
         g (matrix-regression-graph)

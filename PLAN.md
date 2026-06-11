@@ -39,8 +39,11 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   single-compression-step row, and the Iris classifier single-factor greedy
   rows with and without a solution hint at Python scale. Iris-specific rows
   now live together in `ciwi.iris-classification-test` because they are
-  experimental application/debug evidence, not core Alice proof rows.
-  Tests pass locally with 163 tests and 853 assertions on the default vector
+  experimental application/debug evidence, not core Alice proof rows. CIWI
+  also covers Python `test_wunderbaum.py` optimizer helper behavior for
+  extracting scalar/small-array leaves, skipping large arrays, and applying
+  mixed scalar/float-array/integer-array optimizer coordinates.
+  Tests pass locally with 166 tests and 863 assertions on the default vector
   backend, plus 8 tests and 43 assertions on the opt-in DJL backend.
 
 ## Current State
@@ -364,6 +367,11 @@ These cleanup-review items are intentionally not active targets right now:
 - Graph-level `try-to-optimize` behavior is now covered for the matrix
   regression weight leaf with explicit cross-section `section-ids`, precision
   preserving `dot`/`add` propagation, and a deterministic `1000 x 10` fixture.
+- Python `test_wunderbaum.py` optimizer helper behavior is now covered in
+  `ciwi.graph-optimize-test`: optimizer extraction includes permeable scalars
+  and short dense float arrays, skips large dense arrays, and applies mixed
+  scalar/float-array/integer-array trial coordinates with Python-style
+  integer-array rounding.
 - Matrix regression `test_single_compression_step`, `test_greedy_with_solution`,
   and `test_greedy_without_solution` are now covered on the exact NumPy fixture.
   Supplied-solution rows use a native structural solution-prefix predicate;

@@ -36,6 +36,9 @@ Out of scope unless they block compression behavior:
 | `test_discrete_optimizer.py::test_adaptive_optimizer_sampling_finds_joint_improvement` | Covered | `ciwi.optimize-test/adaptive-grid-joint-sampling-finds-non-coordinate-improvement` | Confirms joint sampling finds an improvement when coordinate-only moves do not. |
 | `test_discrete_optimizer.py::test_adaptive_optimizer_example` | Behavior covered | `ciwi.optimize-test/adaptive-grid-optimizes-python-scale-residual-dl-slope` | Uses a deterministic 1000-point CIWI fixture, signal-only Elias residual DL, and the Python assertion shape against a brute grid optimum. Exact NumPy fixture capture remains pending before calling this full fixture parity. |
 | `test_discrete_optimizer.py::test_adaptive_grid_mixed_float_int` | Behavior covered | `ciwi.optimize-test/adaptive-grid-optimizes-python-scale-mixed-residual-dl` | Uses a deterministic 1000-point CIWI fixture, mixed float/int dimensions, joint sampling, and Python-style slope/bias tolerances. Exact NumPy fixture capture remains pending. |
+| `test_wunderbaum.py::test_extract_optimizables_scalar_and_small_arrays` | Covered | `ciwi.graph-optimize-test/extracts-optimizable-scalars-and-small-float-arrays-like-python` | Confirms graph optimizer extraction packs permeable scalar leaves and short dense float arrays into a flat optimizer vector with the expected integer mask. |
+| `test_wunderbaum.py::test_extract_optimizables_skips_large_arrays` | Covered | `ciwi.graph-optimize-test/extract-optimizables-skips-large-arrays-like-python` | Confirms Python's `MAX_OPT_ARRAY_LEN` behavior: large dense arrays are not expanded into optimizer coordinates while scalar leaves still are. |
+| `test_wunderbaum.py::test_apply_opt_values_mixed_scalar_float_and_int_array` | Covered | `ciwi.graph-optimize-test/apply-opt-values-rounds-integer-array-slots-like-python` | Confirms optimizer trial coordinates are written back into scalar, float-array, and integer-array memory slots, rounding integer-array coordinates before rebuilding the dense array. |
 | `test_alice_pipeline.py::TestMatrixRegressionDebugPipeline::test_optimizer` | Behavior covered | `ciwi.optimize-test/adaptive-grid-optimizes-python-scale-matrix-regression` | Exercises dense `dot`, rounded predictions, signal-only residual DL, rounded weight `Value.desc_len`, and Python-style improvement/closer-to-true-weight assertions on a deterministic `1000 x 10` fixture. Exact NumPy fixture capture remains pending. |
 | `test_alice_pipeline.py::TestMatrixRegressionDebugPipeline::test_try_to_optimize` | Behavior covered | `ciwi.graph-optimize-test/try-to-optimize-improves-matrix-regression-weight-leaf` | Uses graph-level `try-to-optimize` over a permeable dense weight leaf with explicit matrix-regression section ids. It verifies finite DL, improvement, fixed matrix preservation, re-inferred residual precision, and movement toward true weights on a deterministic `1000 x 10` fixture. Exact NumPy fixture capture remains pending. |
 | `test_alice_pipeline.py::TestMatrixRegressionDebugPipeline::test_single_compression_step` | Covered with supplied solution | `ciwi.alice.matrix-regression-test/matrix-regression-compression-step-finds-python-dot-add-solution` | Uses the exact NumPy `default_rng(123)` fixture, a native structural solution-prefix predicate, symbolic `Dot`/`Add` Wunderbaum search, and optimizer-backed improvement of the permeable `w` leaf. |
@@ -295,11 +298,15 @@ JAX-like backend should move up the priority list.
    exact NumPy fixture.
 9. Done at behavior level: add clustering `try_to_optimize` worker coverage
    from `test_alice_pipeline.py`. Exact NumPy fixture capture remains pending.
-10. Active next: continue classifier debug parity with the full Iris row. The
+10. Done: add helper parity for Python `test_wunderbaum.py`
+   `_extract_optimizables`/`_apply_opt_values` behavior: permeable scalars,
+   short float arrays, large-array skipping, and integer-array writeback
+   rounding.
+11. Active next: continue classifier debug parity with the full Iris row. The
    `try_to_optimize`, single compression-step, and single-factor greedy rows
    are grouped in `ciwi.iris-classification-test`. Keep brute-force classifier
    rows as later application evidence.
-11. Only after behavior is green decide whether DJL should become the default
+12. Only after behavior is green decide whether DJL should become the default
     backend, whether to add a Neanderthal backend for BLAS/LAPACK performance,
     or whether matrix/classifier work exposes protocol gaps.
 

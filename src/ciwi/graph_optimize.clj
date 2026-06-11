@@ -123,7 +123,14 @@
         (double v)))
 
     :array
-    (dense/array-like (:template slot) (slot-values slot x))))
+    (let [template (:template slot)
+          values (slot-values slot x)
+          values (if (:int? slot)
+                   (mapv #(long (Math/rint (double %))) values)
+                   values)]
+      (dense/array-like template
+                        values
+                        {:dtype (dense/dtype template)}))))
 
 (defn- apply-opt-values
   [mem slots x]
