@@ -736,20 +736,27 @@ an explicit declaration table for the Python `test_alice.py` operator basis. It
 requires an injected registry and does not depend on the legacy local baseline
 in `ciwi.alice-legacy`.
 
-`run-greedy-task` mirrors Python `GreedyAlice`: choose the current task leaf,
-accept the first Wunderbaum candidate above `:min-compression-rate` (default
-`0.01`), splice that selected expression into the task tree, and repeat until
-the task threshold is reached or no worthy leaf can improve.
-`run-compression-step` exposes the same mechanism capped at one greedy step for
-diagnostics.
+`run-greedy-task` is the Python GreedyAlice parity runner. It chooses the
+current task leaf with an explicit `:leaf-selection-policy`, accepts the first
+Wunderbaum candidate above `:min-compression-rate` (default `0.01`), splices
+that selected expression into the task tree, and repeats until the task
+threshold is reached or no worthy leaf can improve. `run-compression-step`
+exposes the same mechanism capped at one greedy step for diagnostics.
 
-There is one Python control-flow detail that matters for multi-root tasks:
-step 0 uses the task root order as given, and only later successful steps sort
-the current leaves by descending DL. CIWI preserves that rule in the parity
-runner. It is not the preferred general CIWI scheduling policy; future bounded
-local search should make leaf selection an explicit controller choice. This is
-why the matrix-regression task `[y, x_mat]` focuses `y` first even though the
-raw matrix leaf has a larger description length.
+`:python-test-parity` is the default leaf-selection policy for
+`run-greedy-task`. It means exactly this: on greedy step 0, leaves are tried in
+the order of the task's target vector; after a successful step, current leaves
+are sorted by descending DL. For the matrix task `[y, x_mat]`, target order
+means `target0 = y` and `target1 = x_mat`, so step 0 focuses `y` even though
+`x_mat` has a larger raw DL. Python behaves this way because `run_task` builds
+graph roots from `task.targets` and only sorts `leaves` after the first
+successful compression step. It is therefore parity behavior, not a clean
+scheduler design.
+
+For non-parity callers, `:largest-dl` is available and always sorts candidate
+leaves by descending DL. Future bounded local search should make leaf and
+neighborhood choice an explicit outer-controller policy, not something hidden
+inside Wunderbaum or inferred from position in a target vector.
 
 `compression-step-candidate` mirrors Python's direct
 `GreedyAlice.compression_step(target, free_values=...)` API: it searches one

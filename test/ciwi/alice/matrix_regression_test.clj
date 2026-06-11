@@ -125,6 +125,8 @@
     (is (:meets-threshold? result))
     (is (>= (:compression-rate result) 0.01))
     (is (= 1 (count (:steps result))))
+    (is (= :python-test-parity
+           (get-in result [:resource :leaf-selection-policy])))
     (is (= [:add [:dot :leaf :leaf] :leaf]
            (expr-shape (get-in result [:selected :target0]))))))
 
@@ -136,5 +138,7 @@
     (is (:meets-threshold? result))
     (is (>= (:compression-rate result) 0.01))
     (is (= 1 (count (:steps result))))
+    (is (= :python-test-parity
+           (get-in result [:resource :leaf-selection-policy])))
     (is (= [:add [:dot :leaf :leaf] :leaf]
            (expr-shape (get-in result [:selected :target0]))))))

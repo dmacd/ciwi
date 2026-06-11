@@ -101,13 +101,14 @@ DL. The optimized `w` vector matches Python's `try_to_optimize` result within
 the test tolerance.
 
 The greedy matrix rows use the same exact fixture. CIWI now preserves Python's
-task leaf control flow for multi-root tasks: step 0 attempts target roots in
+task leaf control flow through explicit
+`:leaf-selection-policy :python-test-parity`: step 0 attempts target roots in
 task order, then later steps sort current leaves by descending DL. With the
 fixture task `[y, x_mat]`, that means the first greedy step focuses `y`, as in
-Python. The with-solution row supplies the same native solution-prefix
-predicate as the direct compression-step row; the without-solution row runs
-unconstrained over `[Dot, Add]` and still reaches the task threshold in one
-step.
+Python. This is test parity policy, not the preferred future scheduler. The
+with-solution row supplies the same native solution-prefix predicate as the
+direct compression-step row; the without-solution row runs unconstrained over
+`[Dot, Add]` and still reaches the task threshold in one step.
 
 ## Classification Fixture
 

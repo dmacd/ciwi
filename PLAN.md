@@ -34,7 +34,7 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   public results. Optimizer-backed Wunderbaum candidates now cover the Python
   matrix-regression single-compression-step and greedy task shapes with an
   exact NumPy fixture.
-  Tests pass locally with 156 tests and 819 assertions on the default vector
+  Tests pass locally with 158 tests and 825 assertions on the default vector
   backend, plus 8 tests and 40 assertions on the opt-in DJL backend.
 
 ## Current State
@@ -233,9 +233,12 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   dot outputs from making the residual artificially expensive.
 - Matrix regression greedy parity now covers both Python
   `test_greedy_with_solution` and `test_greedy_without_solution`. The parity
-  runner follows Python's leaf order rule: step 0 attempts target roots in task
-  order, while later steps sort current leaves by descending DL. This is a
-  Python parity behavior, not the preferred future CIWI scheduling design.
+  runner explicitly uses `:leaf-selection-policy :python-test-parity`: step 0
+  attempts target roots in task order, while later steps sort current leaves by
+  descending DL. This is Python parity behavior, not the preferred future CIWI
+  scheduling design. Non-parity callers can use `:largest-dl`, and future
+  bounded local search should make leaf/neighborhood choice an outer-controller
+  decision.
 
 ## Deferred Cleanup Decisions
 

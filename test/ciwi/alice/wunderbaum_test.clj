@@ -74,6 +74,34 @@
     (is (= #{:repeat}
            (set (map :op declarations))))))
 
+(deftest alice-rate-values-are-fractions
+  (is (thrown-with-msg?
+       clojure.lang.ExceptionInfo
+       #"Rate values must be fractions"
+       (alice/compression-task [[0 1 2]]
+                               {:threshold-rate 90.0})))
+  (let [task (alice/compression-task [[0 1 2 3]]
+                                     {:threshold-rate 0.01})]
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo
+         #"Rate values must be fractions"
+         (sut/run-greedy-task task {:registry {:brange op/brange}
+                                    :min-compression-rate 1.5
+                                    :max-popped 8})))))
+
+(deftest alice-leaf-selection-policy-is-explicit
+  (is (= #{:python-test-parity :largest-dl}
+         sut/leaf-selection-policies))
+  (let [task (alice/compression-task [[0 1 2 3]]
+                                     {:threshold-rate 0.01})
+        result (sut/run-greedy-task task {:registry {:brange op/brange}
+                                          :leaf-selection-policy :largest-dl
+                                          :max-popped 16
+                                          :max-yields 4
+                                          :worthy-dl 0})]
+    (is (= :largest-dl
+           (get-in result [:resource :leaf-selection-policy])))))
+
 (deftest alice-wunderbaum-compresses-arithmetic-range
   (let [task (alice/compression-task [[0 1 2 3 4 5 6 7]]
                                      {:name "range"

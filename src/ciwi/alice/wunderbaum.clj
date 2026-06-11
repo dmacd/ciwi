@@ -12,6 +12,9 @@
 (def declarations-for-registry
   context/declarations-for-registry)
 
+(def leaf-selection-policies
+  greedy/leaf-selection-policies)
+
 (def run-greedy-task
   greedy/run-greedy-task)
 

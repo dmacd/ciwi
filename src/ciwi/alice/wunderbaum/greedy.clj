@@ -63,12 +63,39 @@
                    (render/target-tree-leaves idx (nth ids idx) tree)))
          vec)))
 
-(defn- python-greedy-leaf-order
-  [target-trees sort-by-dl?]
+(def leaf-selection-policies
+  "Greedy task leaf-selection policies.
+
+  `:python-test-parity` mirrors Python GreedyAlice: step 0 uses task target
+  order, later steps sort leaves by descending DL. `:largest-dl` always sorts
+  by descending DL and is the less surprising policy for non-parity callers.
+  "
+  #{:python-test-parity
+    :largest-dl})
+
+(defn- require-leaf-selection-policy
+  [policy]
+  (when-not (contains? leaf-selection-policies policy)
+    (throw (ex-info "Unknown Alice leaf-selection policy"
+                    {:policy policy
+                     :allowed leaf-selection-policies})))
+  policy)
+
+(defn- sorted-by-dl
+  [leaves]
+  (vec (sort-by (juxt #(- (:dl %)) :target-index :path) leaves)))
+
+(defn- task-leaf-order
+  [target-trees policy step-index]
   (let [leaves (task-leaves target-trees)]
-    (if sort-by-dl?
-      (vec (sort-by (juxt #(- (:dl %)) :target-index :path) leaves))
-      leaves)))
+    (case policy
+      :python-test-parity
+      (if (pos? step-index)
+        (sorted-by-dl leaves)
+        leaves)
+
+      :largest-dl
+      (sorted-by-dl leaves))))
 
 (defn- native-solution-predicate
   [solution]
@@ -138,8 +165,9 @@
        :stop-reason (:stop-reason search)})))
 
 (defn- first-successful-compression
-  [search-context opts min-compression-rate worthy-dl target-trees step-index]
-  (loop [leaves (python-greedy-leaf-order target-trees (pos? step-index))
+  [search-context opts min-compression-rate worthy-dl leaf-selection-policy
+   target-trees step-index]
+  (loop [leaves (task-leaf-order target-trees leaf-selection-policy step-index)
          consumed 0
          attempts []]
     (if-let [leaf (first leaves)]
@@ -260,6 +288,9 @@
         min-compression-rate (alice/require-rate-fraction
                               :min-compression-rate
                               (or (:min-compression-rate opts) 0.01))
+        leaf-selection-policy (require-leaf-selection-policy
+                               (or (:leaf-selection-policy opts)
+                                   :python-test-parity))
         worthy-dl (double (or (:worthy-dl opts) 200.0))
         max-steps (or max-steps (:max-steps opts) Long/MAX_VALUE)]
     (loop [target-trees target-trees
@@ -280,6 +311,7 @@
                           :steps (count steps)
                           :candidates-consumed consumed
                           :min-compression-rate min-compression-rate
+                          :leaf-selection-policy leaf-selection-policy
                           :worthy-dl worthy-dl})
 
           (>= (count steps) max-steps)
@@ -293,6 +325,7 @@
                           :steps (count steps)
                           :candidates-consumed consumed
                           :min-compression-rate min-compression-rate
+                          :leaf-selection-policy leaf-selection-policy
                           :worthy-dl worthy-dl})
 
           :else
@@ -300,6 +333,7 @@
                                                    opts
                                                    min-compression-rate
                                                    worthy-dl
+                                                   leaf-selection-policy
                                                    target-trees
                                                    (count steps))
                 consumed (+ consumed (:candidates-consumed step))]
@@ -318,16 +352,19 @@
                               :candidates-consumed consumed
                               :attempts (:attempts step)
                               :min-compression-rate min-compression-rate
+                              :leaf-selection-policy leaf-selection-policy
                               :worthy-dl worthy-dl}))))))))
 
 (defn run-greedy-task
   "Run a Python GreedyAlice-shaped task.
 
-  Each iteration follows Python GreedyAlice's leaf-order policy, accepts the
-  first Wunderbaum candidate above `:min-compression-rate`, rewrites that local
-  leaf, and repeats until the task threshold is met or no worthy leaf can be
-  improved. Rates are fractions, so `0.01` means a one-in-one-hundred DL
-  reduction. The operator registry is always injected by the caller.
+  Each iteration uses `:leaf-selection-policy` and accepts the first Wunderbaum
+  candidate above `:min-compression-rate`, rewrites that local leaf, and
+  repeats until the task threshold is met or no worthy leaf can be improved.
+  The default policy is `:python-test-parity`; use `:largest-dl` when not
+  matching Python tests. Rates are fractions, so `0.01` means a
+  one-in-one-hundred DL reduction. The operator registry is always injected by
+  the caller.
   "
   [task opts]
   (run-greedy* task opts {:mode :greedy-task}))
