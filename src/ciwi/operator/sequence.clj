@@ -2,7 +2,8 @@
   (:refer-clojure :exclude [concat repeat])
   (:require [ciwi.dense.core :as dense]
             [ciwi.operator.core :as core]
-            [ciwi.operator.util :as u]))
+            [ciwi.operator.util :as u]
+            [clojure.set :as set]))
 
 (defn- repeat-call
   [n motif]
@@ -204,23 +205,45 @@
               [[(dense/from-flat (vec indices) [(count indices)] {:dtype :int64})
                 (if (string? output) (apply str rest) (u/maybe-array (vec rest) output))]])))))))
 
+(defn- axis0-count
+  [x]
+  (if (dense/ndarray? x)
+    (first (dense/shape x))
+    (u/seq-count x)))
+
+(defn- valid-axis0-index?
+  [x idx]
+  (and (integer? idx) (<= 0 idx) (< idx (axis0-count x))))
+
+(defn- valid-axis0-indices?
+  [x idxs]
+  (every? #(valid-axis0-index? x %) idxs))
+
 (defn- getitem-call
   [xs idx]
   (let [xs-values (u/seq-values xs)]
     (cond
       (integer? idx)
-      (when (u/valid-index? xs-values idx)
-        (nth xs-values idx))
+      (when (valid-axis0-index? xs idx)
+        (if (and (dense/ndarray? xs)
+                 (> (dense/ndim xs) 1))
+          (let [row (dense/take-indices xs [idx])
+                row-shape (subvec (dense/shape xs) 1)]
+            (dense/from-flat (dense/ravel row)
+                             row-shape
+                             {:backend (dense/backend xs)
+                              :dtype (dense/dtype xs)}))
+          (nth xs-values idx)))
 
       (u/bool-mask? idx)
-      (when (= (count xs-values) (u/seq-count idx))
+      (when (= (axis0-count xs) (u/seq-count idx))
         (if (dense/ndarray? xs)
           (dense/take-indices xs (vec (u/mask-indices idx)))
           (u/maybe-array (mapv #(nth xs-values %) (u/mask-indices idx)) xs)))
 
       (u/index-vector? idx)
       (let [idxs (u/seq-values idx)]
-        (when (u/valid-indices? xs-values idxs)
+        (when (valid-axis0-indices? xs idxs)
           (if (dense/ndarray? xs)
             (dense/take-indices xs idxs)
             (u/maybe-array (mapv #(nth xs-values %) idxs) xs))))
@@ -494,6 +517,89 @@
                                (u/maybe-array (subvec (u/seq-values output) 0 split)
                                               output))]]))
                      ()))))}))
+
+(defn- row-values
+  [x row]
+  (let [shape (dense/shape x)
+        row-size (reduce * 1 (subvec shape 1))
+        start (* row row-size)]
+    (subvec (dense/ravel x) start (+ start row-size))))
+
+(defn- same-row?
+  [left right]
+  (and (= (count left) (count right))
+       (every? (fn [[x y]]
+                 (if (and (dense/nan? x) (dense/nan? y))
+                   true
+                   (= x y)))
+               (map vector left right))))
+
+(defn- remove-known-rows
+  [output known]
+  (when (and (dense/ndarray? output)
+             (dense/ndarray? known)
+             (>= (dense/ndim output) 2)
+             (= (dense/ndim output) (dense/ndim known))
+             (= (subvec (dense/shape output) 1)
+                (subvec (dense/shape known) 1))
+             (<= (first (dense/shape known))
+                 (first (dense/shape output))))
+    (let [known-rows (mapv #(row-values known %) (range (first (dense/shape known))))]
+      (loop [row 0
+             known-rows known-rows
+             remaining-rows []]
+        (if (= row (first (dense/shape output)))
+          (when (empty? known-rows)
+            (dense/from-flat (mapcat identity remaining-rows)
+                             (into [(count remaining-rows)]
+                                   (subvec (dense/shape output) 1))
+                             {:backend (dense/backend output)
+                              :dtype (dense/dtype output)}))
+          (let [output-row (row-values output row)
+                match-index (first (keep-indexed (fn [idx known-row]
+                                                   (when (same-row? output-row known-row)
+                                                     idx))
+                                                 known-rows))]
+            (if match-index
+              (recur (inc row)
+                     (vec (clojure.core/concat
+                           (subvec known-rows 0 match-index)
+                           (subvec known-rows (inc match-index))))
+                     remaining-rows)
+              (recur (inc row)
+                     known-rows
+                     (conj remaining-rows output-row)))))))))
+
+(def union
+  (core/operator
+   {:id :union
+    :conditions [[0] [1]]
+    :commutative? true
+    :call (fn [xs]
+            (cond
+              (every? #(and (dense/ndarray? %)
+                            (>= (dense/ndim %) 2))
+                      xs)
+              (dense/concatenate-axis0 xs)
+
+              (every? set? xs)
+              (apply set/union xs)
+
+              :else
+              (apply set/union (map set xs))))
+    :inverse (fn [output cond-inputs cond]
+               (when (= 1 (count cond))
+                 (let [known (first cond-inputs)]
+                   (clojure.core/cond
+                     (dense/ndarray? output)
+                     (when-let [remaining (remove-known-rows output known)]
+                       [[remaining]])
+
+                     (and (set? output) (coll? known))
+                     (when (every? #(contains? output %) known)
+                       [[(set/difference output (set known))]])
+
+                     :else nil))))}))
 
 (def getitem
   (core/operator

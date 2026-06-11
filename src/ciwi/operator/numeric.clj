@@ -96,7 +96,7 @@
    {:id :sub
     :conditions [[0] [1]]
     :call (fn [[x y]]
-            (dense/subtract x y))
+            (dense/subtract-broadcast x y))
     :inverse (fn [output cond-inputs cond]
                (when (= 1 (count cond))
                  (let [known (first cond-inputs)]
@@ -241,6 +241,12 @@
             (or (mean-call xs)
                 (throw (ex-info "mean expects a non-empty numeric sequence"
                                 {:xs xs}))))}))
+
+(def sum1
+  (core/operator
+   {:id :sum1
+    :call (fn [[xs]]
+            (dense/sum xs 1))}))
 
 (def cumsum
   (core/operator

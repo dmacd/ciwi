@@ -41,9 +41,9 @@ Out of scope unless they block compression behavior:
 | `test_alice_pipeline.py::TestMatrixRegressionDebugPipeline::test_single_compression_step` | Covered with supplied solution | `ciwi.alice.matrix-regression-test/matrix-regression-compression-step-finds-python-dot-add-solution` | Uses the exact NumPy `default_rng(123)` fixture, a native structural solution-prefix predicate, symbolic `Dot`/`Add` Wunderbaum search, and optimizer-backed improvement of the permeable `w` leaf. |
 | `test_alice_pipeline.py::TestMatrixRegressionDebugPipeline::test_greedy_with_solution` | Covered | `ciwi.alice.matrix-regression-test/matrix-regression-greedy-with-solution-reaches-threshold` | End-to-end greedy task over `[y, x_mat]` with Python step-0 target ordering, native supplied-solution predicate, symbolic `Dot`/`Add` search, and optimizer-backed `w` improvement. |
 | `test_alice_pipeline.py::TestMatrixRegressionDebugPipeline::test_greedy_without_solution` | Covered | `ciwi.alice.matrix-regression-test/matrix-regression-greedy-without-solution-reaches-threshold` | End-to-end greedy task over the exact NumPy fixture without a solution predicate; the injected operator set is only `[Dot, Add]`. |
-| `test_alice_pipeline.py::test_run_clustering_try_to_optimize_worker` | Not yet covered | Active next | Needs `Sub`, `Mult`, `Sum1`, `LessThan`, `GetItem`, `Union`, and optimizer-backed centroid/radius improvement. |
-| skipped clustering Alice pipeline rows | Deferred | Pending after `try_to_optimize` clustering | Python marks these skipped. Treat as optional application evidence, not a near-term core gate. |
-| `test_classification.py::TestIrisClassificationDebugPipeline::test_try_to_optimize` | Deferred | Pending after clustering worker | Python currently skips this row. Useful as the first classifier debug target because it isolates `try_to_optimize` over a scalar threshold leaf. |
+| `test_alice_pipeline.py::test_run_clustering_try_to_optimize_worker` | Behavior covered | `ciwi.graph-optimize-test/try-to-optimize-improves-clustering-centroid-and-radius` | Uses a deterministic Python-scale `1000 x 2` five-cluster fixture and the native graph shape `union(getitem(x, lessthan(sum1(mult(sub(x, c), sub(x, c))), s)), rest)`. It verifies finite DL, at least 1% DL improvement against the Python-style original section DL, inferred residual/rest rows, and movement of centroid or radius. Exact NumPy fixture capture remains pending. |
+| skipped clustering Alice pipeline rows | Deferred | Pending after classifier `try_to_optimize` unless clustering Alice search becomes the next application target | Python marks these skipped. Treat as optional application evidence, not a near-term core gate. |
+| `test_classification.py::TestIrisClassificationDebugPipeline::test_try_to_optimize` | Active next | Pending after clustering worker | Python currently skips this row. Useful as the first classifier debug target because it isolates `try_to_optimize` over a scalar threshold leaf. |
 | `test_classification.py::TestIrisClassificationDebugPipeline::test_single_compression_step` | Deferred | Pending after classifier `try_to_optimize` | Python currently skips this row. Uses only `SetItem` and `LessThan` over the single-factor Iris fixture. |
 | `test_classification.py::TestIrisClassificationDebugPipeline::test_greedy_single_factor_with_solution` | Deferred | Pending after classifier compression step | Python currently skips this row. End-to-end Alice run with the supplied single-factor solution. |
 | `test_classification.py::TestIrisClassificationDebugPipeline::test_greedy_single_factor_without_solution` | Deferred | Pending after with-solution single-factor run | Python currently skips this row. Same operator basis, but requires search to find the structure. |
@@ -109,6 +109,40 @@ Python. This is test parity policy, not the preferred future scheduler. The
 with-solution row supplies the same native solution-prefix predicate as the
 direct compression-step row; the without-solution row runs unconstrained over
 `[Dot, Add]` and still reaches the task threshold in one step.
+
+## Clustering Fixture
+
+Python's clustering debug worker builds a fixed graph and only tests
+graph-level optimization, not Alice enumeration. CIWI mirrors that row with a
+native graph fixture instead of Python S-expression parsing:
+
+```text
+union(getitem(x, lessthan(sum1(mult(sub(x, c), sub(x, c))), s)), rest)
+```
+
+The fixture shape matches Python's scale and operator semantics:
+
+- five clearly separated 2D Gaussian clusters
+- `n = 1000`, rounded to 3 decimals
+- permeable centroid `c`, a short length-2 dense float array
+- permeable radius/threshold `s`, a scalar float
+- immutable target/root matrix `x`
+- `Sub` supports the Python broadcast case `1000 x 2` minus length-2 centroid
+- `Mult`, `Add`, and other Alice-basis elementwise ops still reject
+  mismatched dense array shapes, matching Python WILLIAM rather than general
+  NumPy broadcasting
+- `GetItem` selects rows for a 2D matrix when given a first-axis boolean mask
+- `Union` concatenates 2D dense arrays along axis 0 and its inverse removes
+  known rows from the output to infer the residual/rest rows
+
+Current CIWI status: behavior covered on a deterministic Python-scale CIWI
+fixture. Exact NumPy `default_rng(2026)` fixture capture remains pending before
+claiming exact fixture parity. The runtime primitives `sum1` and `union` are
+available for optimizer/classifier graph fixtures, but they are not part of the
+Alice `test_alice.py` parity basis. Because the clustering graph reuses `x` as
+both the root target value and a leaf below the root, CIWI's graph optimizer now
+uses the Python-style cross-section bottleneck scoring path for this row rather
+than the simpler matrix-regression leaf-sum path.
 
 ## Classification Fixture
 
@@ -230,9 +264,9 @@ JAX-like backend should move up the priority list.
    matrix regression `test_single_compression_step`,
    `test_greedy_with_solution`, and `test_greedy_without_solution` with the
    exact NumPy fixture.
-9. Active next: add clustering `try_to_optimize` worker coverage from
-   `test_alice_pipeline.py`.
-10. Stage classifier debug parity: classifier `try_to_optimize`, single
+9. Done at behavior level: add clustering `try_to_optimize` worker coverage
+   from `test_alice_pipeline.py`. Exact NumPy fixture capture remains pending.
+10. Active next: stage classifier debug parity: classifier `try_to_optimize`, single
    compression step, single-factor greedy with solution, single-factor greedy
    without solution, then full Iris. Keep brute-force classifier rows as later
    application evidence.

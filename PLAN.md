@@ -33,9 +33,10 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   tree keeps dense data internally and renders plain expressions only for
   public results. Optimizer-backed Wunderbaum candidates now cover the Python
   matrix-regression single-compression-step and greedy task shapes with an
-  exact NumPy fixture.
-  Tests pass locally with 158 tests and 825 assertions on the default vector
-  backend, plus 8 tests and 40 assertions on the opt-in DJL backend.
+  exact NumPy fixture. Graph-level optimizer parity now also covers the
+  clustering `try_to_optimize` worker shape at Python scale.
+  Tests pass locally with 159 tests and 832 assertions on the default vector
+  backend, plus 8 tests and 43 assertions on the opt-in DJL backend.
 
 ## Current State
 
@@ -174,10 +175,11 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   `insert`, and `dec` `getitem`/`setitem` composite rows. Native spec
   synchronization now enumerates concrete CIWI keyword signatures over
   graph-backed composites from injected operator declarations. The broader
-  `zip2d`, `union`, `abs`, `toint`, `tofloat`, `urange`, `listwrap`, `bmap`,
-  `cumop`, `div`, `table`, `dec`, and related non-Alice operators used by
-  these cases remain test-local fixture operators; they are not added to the
-  Alice operator basis.
+  `zip2d`, `abs`, `toint`, `tofloat`, `urange`, `listwrap`, `bmap`, `cumop`,
+  `div`, `table`, `dec`, and related non-Alice operators used by these cases
+  remain test-local fixture operators. `union` and `sum1` now also exist as
+  runtime primitives for optimizer-backed numeric graph fixtures. They are not
+  added to the Alice `test_alice.py` parity basis.
 - `map` inversion now mirrors Python WILLIAM's elementwise fallback more
   closely: when a callable cannot invert the whole output directly, CIWI groups
   scalar inverse branches by type, takes Cartesian products per type, and drops
@@ -194,7 +196,11 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   Wunderbaum inspection are dense-aware while symbolic vectors/lists, graph ids,
   search state, and optimizer coordinate machinery remain native Clojure data.
   Dense numeric missing values use `NaN`, and tests normalize dense outputs
-  only at assertion boundaries.
+  only at assertion boundaries. Dense first-axis selection and axis-0
+  concatenation support clustering-style graph fixtures. General dense
+  elementwise ops still reject mismatched array shapes; Python `Sub` gets an
+  explicit broadcast helper for the centroid case without changing `Mult` or
+  other Alice operator semantics.
 - The current performance pass fixed several Python-vs-CIWI execution-layer
   mismatches without adding recognizers: task targets/free values are
   pre-coerced once per `CompressionTask`, DJL concat promotes dtype from dense
@@ -203,8 +209,7 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   uses strict two-pass loops, and integer array DL uses the integer
   precision/Elias specialization instead of the generic floating round loop.
   Fresh warm medians are recorded in `alice-test-parity.md`. `increasing_runs`
-  is still materially slower than Python but is parked for now; clustering
-  `try_to_optimize` parity is the active macro step.
+  is still materially slower than Python but is parked for now.
 - CIWI rate values are fractions everywhere. `:threshold-rate`,
   `:min-compression-rate`, and reported `:compression-rate` all use values in
   `[0, 1]`; `0.01` is the standard small-step threshold. The constructors
@@ -216,7 +221,10 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   transformation and expansion. This is used by the matrix-regression parity
   test as a native structural solution-prefix filter, matching Python's
   provided-solution test setup without introducing a matrix-specific
-  recognizer.
+  recognizer. Graph-level `try-to-optimize` now also mirrors Python's
+  cross-section bottleneck scoring path when a section leaf below the root
+  reuses the root target value, which is required by the clustering worker
+  shape.
 - `ciwi.alice.wunderbaum/compression-step-candidate` mirrors Python's direct
   `GreedyAlice.compression_step(target, free_values=...)` call for one target
   and explicit free values. This is deliberately distinct from
@@ -239,6 +247,13 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   scheduling design. Non-parity callers can use `:largest-dl`, and future
   bounded local search should make leaf/neighborhood choice an outer-controller
   decision.
+- Clustering `try_to_optimize` worker behavior is now covered on a
+  deterministic Python-scale CIWI fixture. The native graph mirrors Python's
+  `union(getitem(x, lessthan(sum1(mult(sub(x, c), sub(x, c))), s)), rest)`
+  shape and verifies finite DL, at least 1% improvement, inferred residual/rest
+  rows, and movement of the permeable centroid or radius. Exact NumPy
+  `default_rng(2026)` fixture capture remains pending before claiming exact
+  fixture parity.
 
 ## Deferred Cleanup Decisions
 
@@ -306,10 +321,10 @@ These cleanup-review items are intentionally not active targets right now:
 ## Near-Term Next Tasks
 
 - The active macro step is optimizer-backed numeric graph-search parity,
-  continuing with the clustering `try_to_optimize` worker and ultimately the
-  classifier debug rows. Use `optimizer-graph-search-parity.md` as the evidence
-  matrix for `test_discrete_optimizer.py`, matrix regression, and later
-  clustering/classification rows.
+  continuing with the classifier `try_to_optimize` debug row. Use
+  `optimizer-graph-search-parity.md` as the evidence matrix for
+  `test_discrete_optimizer.py`, matrix regression, clustering, and later
+  classification rows.
 - Residual-DL adaptive optimizer behavior is now covered on Python-scale
   deterministic CIWI fixtures, using signal-only Elias residual DL and the
   Python assertion shapes from `test_discrete_optimizer.py`. Exact NumPy

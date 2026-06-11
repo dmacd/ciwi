@@ -27,6 +27,7 @@
 (def brange numeric/brange)
 (def trange numeric/trange)
 (def mean numeric/mean)
+(def sum1 numeric/sum1)
 (def cumsum numeric/cumsum)
 
 (declare registry)
@@ -47,6 +48,7 @@
 (def concat sequence/concat)
 (def getitem sequence/getitem)
 (def setitem sequence/setitem)
+(def union sequence/union)
 
 (def registry
   {:add add
@@ -63,10 +65,12 @@
    :brange brange
    :trange trange
    :mean mean
+   :sum1 sum1
    :repeat repeat
    :map map-op
    :insert insert
    :cumsum cumsum
    :concat concat
    :getitem getitem
-   :setitem setitem})
+   :setitem setitem
+   :union union})

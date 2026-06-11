@@ -304,10 +304,15 @@ array construction, metadata, arithmetic, comparisons, `isnan`, `arange`,
 `tile`, `concat`, `cumsum`, vector `dot`, matrix `matMul`-backed `dot`, and
 axis `sum`. DJL concat promotes dtype from dense operand metadata when
 possible, rather than flattening existing tensors just to inspect values.
-Index gather/scatter and first-difference preserve CIWI semantics through
-native flat-data fallbacks for now; those can move down into backend
-operations after optimizer/matrix regression parity gives us the right pressure
-to optimize them.
+Generic elementwise array-array operations reject mismatched shapes even when
+the underlying dense backend could broadcast them; this matches Python WILLIAM
+operator semantics for `Add` and `Mult`. Operators that need Python's narrower
+broadcast behavior, such as clustering `Sub(x, c)` where `x` is `n x 2` and
+`c` is length 2, call the explicit broadcast helper. Index gather/scatter,
+axis-0 concatenation, and first-difference preserve CIWI semantics through
+native flat-data fallbacks for now; those can move down into backend operations
+after optimizer/matrix regression parity gives us the right pressure to
+optimize them.
 
 The dense API should stay close to NumPy where that is not painful:
 
@@ -325,6 +330,7 @@ The dense API should stay close to NumPy where that is not painful:
 (dense/arange 4)
 (dense/tile 3 x)
 (dense/concatenate [x y])
+(dense/concatenate-axis0 [x y])
 (dense/take-indices x [2 0])
 (dense/put x [1] [9])
 (dense/cumsum x)
@@ -332,6 +338,7 @@ The dense API should stay close to NumPy where that is not painful:
 (dense/isnan x)
 (dense/add x y)
 (dense/subtract x y)
+(dense/subtract-broadcast x y)
 (dense/multiply x y)
 (dense/divide x y)
 (dense/dot x y)
@@ -885,9 +892,15 @@ adding those constants.
 Python Wunderbaum's `try_to_optimize`. It extracts permeable scalar leaves and
 short dense float-array leaves, runs an injected optimizer, rebuilds a trial
 memory from explicit `section-ids`, propagates the graph, and scores the
-propagated leaf frontier. The explicit `section-ids` are important: Python's
-`Graph([root, x, w])` matrix-regression fixture copies only the cross-section
-nodes into each trial and re-infers the residual leaf.
+propagated graph. When no section leaf equals the root target, scoring is the
+sum of propagated leaf DLs, matching Python's simple path. When a section leaf
+below the root has the same value as the root target, CIWI mirrors Python's
+`cross_sections` / `trace_comb_bottleneck` path: it enumerates cross-sections
+through that reused target leaf, charges operator distance through the section,
+and adds non-permeable section values below the bottleneck. The explicit
+`section-ids` are important: Python's `Graph([root, x, w])`
+matrix-regression fixture copies only the cross-section nodes into each trial
+and re-infers the residual leaf.
 
 Numeric propagation has a small precision hook for this path: `dot` outputs and
 `add` inverse outputs are rounded through `ciwi.value/round-to-precision` while
@@ -902,6 +915,19 @@ back into the candidate graph with `ciwi.graph-optimize/apply-memory-values`.
 The graph shape is unchanged: optimized value nodes receive updated `Value`
 records, propagation re-infers dependent leaves, and the candidate is rescored
 by the same graph DL machinery as non-optimized candidates.
+
+The clustering `try_to_optimize` worker uses the same graph optimizer adapter
+over a richer numeric graph:
+
+```text
+union(getitem(x, lessthan(sum1(mult(sub(x, c), sub(x, c))), s)), rest)
+```
+
+This path adds runtime primitive support for row-wise `sum1`, first-axis
+`getitem` over 2D dense arrays, dense axis-0 `union`, and `Sub` broadcasting.
+Those primitives are available for optimizer-backed graph fixtures and later
+classifier work, but they are not part of the Alice `test_alice.py` parity
+basis unless explicitly injected by a caller.
 
 ## Structural Graph Operations
 

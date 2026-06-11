@@ -15,6 +15,7 @@
 (def sub primitives/sub)
 (def mult primitives/mult)
 (def dot primitives/dot)
+(def sum1 primitives/sum1)
 (def negate primitives/negate)
 (def lessthan primitives/lessthan)
 (def equal primitives/equal)
@@ -32,5 +33,6 @@
 (def concat primitives/concat)
 (def getitem primitives/getitem)
 (def setitem primitives/setitem)
+(def union primitives/union)
 
 (def registry primitives/registry)

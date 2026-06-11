@@ -54,13 +54,14 @@ compression is not conflated with numeric parameter search.
 | --- | --- | --- |
 | `william/tests/test_discrete_optimizer.py` | Behavior covered for the optimizer rows needed by matrix regression. CIWI now covers Newton, mixed int/float, adaptive grid, joint sampling, and Python-scale residual-DL adaptive optimizer behavior. Exact NumPy fixture capture remains pending for those standalone rows before full fixture parity claims. | Keep this as optimizer protocol evidence, not Alice evidence. |
 | `william/tests/test_alice_pipeline.py::TestMatrixRegressionDebugPipeline` | Covered through the greedy rows. Direct optimizer and graph-level `try_to_optimize` behavior are covered on deterministic `1000 x 10` fixtures. Single compression step, greedy with solution, and greedy without solution are covered on the exact NumPy fixture through symbolic `Dot`/`Add` Wunderbaum search plus optimizer-backed `w` improvement. | This is the first major post-core end-to-end demonstration. It proves graph search can produce a symbolic structure whose permeable numeric leaves are optimized under the same DL objective Python uses. |
-| `william/tests/test_alice_pipeline.py::test_run_clustering_try_to_optimize_worker` | Active next. Add the clustering optimization worker with `Sub`, `Mult`, `Sum1`, `LessThan`, `GetItem`, and `Union`. | This is useful, but it pulls in more complex array operators and should follow the now-green matrix regression tranche. |
+| `william/tests/test_alice_pipeline.py::test_run_clustering_try_to_optimize_worker` | Behavior covered on a deterministic Python-scale CIWI fixture. Exact NumPy `default_rng(2026)` fixture capture remains pending before full fixture parity claims. | This pulled in first-axis dense selection, axis-0 dense `Union`, row-wise `Sum1`, and explicit `Sub` broadcasting while keeping those operators outside the Alice `test_alice.py` parity basis. |
 
 ## Priority 3: Classification Demonstrations
 
 `william/tests/test_classification.py` is better treated as an optimizer-backed
-application/debug suite than as a core Alice proof. It becomes relevant after
-matrix regression demonstrates the numeric graph-search loop.
+application/debug suite than as a core Alice proof. It is the active next
+numeric graph-search tranche after matrix regression and clustering worker
+behavior.
 
 Candidate CIWI milestones:
 

@@ -1,6 +1,7 @@
 (ns ciwi.graph-optimize
   (:require [ciwi.dense.core :as dense]
             [ciwi.graph :as graph]
+            [ciwi.hashing :as hashing]
             [ciwi.optimize :as optimize]
             [ciwi.propagation :as propagation]
             [ciwi.value :as value]))
@@ -141,6 +142,153 @@
   [value-dl-cache mem leaves]
   (reduce + 0.0 (map #(leaf-dl value-dl-cache mem %) leaves)))
 
+(defn- upward-value-traces
+  [g start-id]
+  (letfn [(walk-value [id trace]
+            (if (some #{id} trace)
+              []
+              (let [trace (conj trace id)
+                    parents (:parents (graph/node g id))]
+                (if (empty? parents)
+                  [trace]
+                  (mapcat #(walk-operator % trace) parents)))))
+          (walk-operator [id trace]
+            (let [parent (:parent (graph/node g id))]
+              (walk-value parent trace)))]
+    (walk-value start-id [])))
+
+(defn- selected-leaves
+  [g start-id blocked]
+  (let [seen (atom (set blocked))]
+    (letfn [(walk [id]
+              (if (contains? @seen id)
+                []
+                (do
+                  (swap! seen conj id)
+                  (let [n (graph/node g id)]
+                    (cond
+                      (graph/value-node? n)
+                      (if-let [option-id (first (:options n))]
+                        (walk option-id)
+                        [id])
+
+                      (graph/operator-node? n)
+                      (mapcat walk (:children n))
+
+                      :else [])))))]
+      (vec (walk start-id)))))
+
+(defn- product
+  [xss]
+  (if (empty? xss)
+    [[]]
+    (for [x (first xss)
+          tail (product (rest xss))]
+      (into [x] tail))))
+
+(defn- cross-sections
+  [g root-id target-leaves]
+  (let [traces (mapcat #(upward-value-traces g %) target-leaves)
+        traces-with-indices (mapv #(map-indexed vector %) traces)]
+    (loop [remaining (product traces-with-indices)
+           seen #{}
+           result []]
+      (if-let [trace-comb (first remaining)]
+        (let [trace-comb (vec trace-comb)
+              section (reduce-kv
+                       (fn [{:keys [bn num-op-nodes]} index [trace-index value-id]]
+                         (let [nodes-above (subvec (vec (nth traces index)) trace-index)]
+                           (if (some (fn [[other-index _ other-id]]
+                                       (and (not= index other-index)
+                                            (some #{other-id} nodes-above)))
+                                     (map-indexed (fn [idx [_ value-id]]
+                                                    [idx nil value-id])
+                                                  trace-comb))
+                             {:bn bn
+                              :num-op-nodes num-op-nodes}
+                             {:bn (conj bn value-id)
+                              :num-op-nodes (+ num-op-nodes
+                                               (dec (count nodes-above)))})))
+                       {:bn []
+                        :num-op-nodes 0}
+                       trace-comb)
+              leaves (selected-leaves g root-id (:bn section))
+              bn (into (:bn section) leaves)
+              key (set bn)]
+          (if (contains? seen key)
+            (recur (rest remaining) seen result)
+            (recur (rest remaining)
+                   (conj seen key)
+                   (conj result {:bottleneck bn
+                                 :num-op-nodes (:num-op-nodes section)}))))
+        result))))
+
+(defn- value-content-equal?
+  [left right]
+  (hashing/content-equal? (value/datum left) (value/datum right)))
+
+(defn- target-leaves
+  [g mem root-id section-ids leaves]
+  (let [target (entry-value mem root-id)
+        section-leaves (set (rest section-ids))]
+    (vec (filter (fn [id]
+                   (and (contains? section-leaves id)
+                        (some #{id} leaves)
+                        (value-content-equal? (entry-value mem id) target)))
+                 leaves))))
+
+(defn- below-any?
+  [g id bottleneck]
+  (boolean
+   (some (set bottleneck)
+         (graph/walk g id {:above? true
+                           :below? false
+                           :values? true
+                           :operators? true
+                           :include-self? false}))))
+
+(defn- section-extra-dl
+  [g mem value-dl-cache section-ids bottleneck]
+  (reduce (fn [total id]
+            (let [v (entry-value mem id)]
+              (if (and v
+                       (not (:permeable? v))
+                       (below-any? g id bottleneck))
+                (+ total (leaf-dl value-dl-cache mem id))
+                total)))
+          0.0
+          section-ids))
+
+(defn- cross-section-score
+  [g mem value-dl-cache section-ids cross-section]
+  (let [bottleneck (:bottleneck cross-section)]
+    {:dl (+ (leaves-dl value-dl-cache mem bottleneck)
+            (:num-op-nodes cross-section)
+            (section-extra-dl g mem value-dl-cache section-ids bottleneck))
+     :bottleneck bottleneck}))
+
+(defn- best-cross-section-score
+  [g mem value-dl-cache section-ids cross-sections]
+  (reduce (fn [best cross-section]
+            (let [score (cross-section-score g
+                                             mem
+                                             value-dl-cache
+                                             section-ids
+                                             cross-section)]
+              (if (< (:dl score) (:dl best))
+                score
+                best)))
+          {:dl Double/POSITIVE_INFINITY
+           :bottleneck []}
+          cross-sections))
+
+(defn- scoring-context
+  [g mem root-id section-ids leaves]
+  (let [target-leaves (target-leaves g mem root-id section-ids leaves)]
+    (when (seq target-leaves)
+      {:section-ids section-ids
+       :cross-sections (cross-sections g root-id target-leaves)})))
+
 (defn- propagation-results
   [g mem propagation-options]
   (propagation/propagate g mem (merge {:partial? false
@@ -148,13 +296,21 @@
                                       propagation-options)))
 
 (defn- score-propagated-leaves
-  [g mem leaves value-dl-cache propagation-options]
+  [g mem leaves value-dl-cache propagation-options scoring-context]
   (reduce (fn [best prop-mem]
-            (let [dl (leaves-dl value-dl-cache prop-mem leaves)]
+            (let [{:keys [dl bottleneck]}
+                  (if scoring-context
+                    (best-cross-section-score g
+                                              prop-mem
+                                              value-dl-cache
+                                              (:section-ids scoring-context)
+                                              (:cross-sections scoring-context))
+                    {:dl (leaves-dl value-dl-cache prop-mem leaves)
+                     :bottleneck leaves})]
               (if (< dl (:dl best))
                 {:dl dl
                  :memory prop-mem
-                 :bottleneck leaves}
+                 :bottleneck bottleneck}
                 best)))
           {:dl Double/POSITIVE_INFINITY
            :memory nil
@@ -180,7 +336,8 @@
   (let [root-id (root-id g opts)
         section-ids (vec (or section-ids (keys mem)))
         {:keys [slots x0 int-mask leaves]} (extract-optimizables g mem root-id)
-        initial-dl (leaves-dl value-dl-cache mem leaves)]
+        initial-dl (leaves-dl value-dl-cache mem leaves)
+        scoring-context (scoring-context g mem root-id section-ids leaves)]
     (if (empty? slots)
       {:dl initial-dl
        :initial-dl initial-dl
@@ -199,7 +356,8 @@
                                                               trial-mem
                                                               leaves
                                                               value-dl-cache
-                                                              propagation-options)]
+                                                              propagation-options
+                                                              scoring-context)]
                           {:score (:dl result)
                            :params result}))
             result (optimize/optimize optimizer objective x0 initial-dl nil)

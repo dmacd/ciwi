@@ -25,6 +25,18 @@
           (gaussian-vector rng cols scale))
         (range rows)))
 
+(defn- shuffle-vector
+  [^Random rng xs]
+  (loop [idx (dec (count xs))
+         result (vec xs)]
+    (if (pos? idx)
+      (let [swap-idx (.nextInt rng (inc idx))
+            left (nth result idx)
+            right (nth result swap-idx)]
+        (recur (dec idx)
+               (assoc result idx right swap-idx left)))
+      result)))
+
 (defn- l2-distance
   [left right]
   (Math/sqrt (reduce + 0.0
@@ -97,6 +109,70 @@
    :w (mem-entry w-init {:permeable? true})
    :residual (mem-entry (residual-init fixture) {:permeable? false})})
 
+(defn- clustering-fixture
+  []
+  (let [rng (Random. 2026)
+        n 1000
+        centers [[-6.0 0.0]
+                 [6.0 0.0]
+                 [0.0 6.0]
+                 [0.0 -6.0]
+                 [0.0 0.0]]
+        rows (mapcat (fn [[cx cy]]
+                       (repeatedly (/ n 5)
+                                   (fn []
+                                     [(round3 (+ cx (.nextGaussian rng)))
+                                      (round3 (+ cy (.nextGaussian rng)))])))
+                     centers)
+        x-mat (dense/array (shuffle-vector rng rows))
+        s-init (round3 (+ 0.1 (* 9.9 (.nextDouble rng))))
+        c-init (dense/array (gaussian-vector rng 2 0.1))]
+    {:x-mat x-mat
+     :c-init c-init
+     :s-init s-init}))
+
+(defn- clustering-graph
+  []
+  (-> (graph/empty-graph)
+      (graph/add-value :root nil)
+      (graph/add-value :selected nil)
+      (graph/add-value :rest nil)
+      (graph/add-value :x nil)
+      (graph/add-value :mask nil)
+      (graph/add-value :dist2 nil)
+      (graph/add-value :squared nil)
+      (graph/add-value :delta nil)
+      (graph/add-value :c nil)
+      (graph/add-value :s nil)
+      (graph/set-roots [:root])
+      (graph/add-operator :sub op/sub :delta [:x :c])
+      (graph/add-operator :mult op/mult :squared [:delta :delta])
+      (graph/add-operator :sum1 op/sum1 :dist2 [:squared])
+      (graph/add-operator :lessthan op/lessthan :mask [:dist2 :s])
+      (graph/add-operator :getitem op/getitem :selected [:x :mask])
+      (graph/add-operator :union op/union :root [:selected :rest])))
+
+(defn- clustering-memory
+  [{:keys [x-mat c-init s-init]}]
+  {:root (mem-entry x-mat {:permeable? false})
+   :x (mem-entry x-mat {:permeable? false})
+   :c (mem-entry c-init {:permeable? true})
+   :s (mem-entry s-init {:permeable? true})})
+
+(defn- initial-clustering-memory
+  [g fixture]
+  (first (propagation/propagate g
+                                (clustering-memory fixture)
+                                {:partial? true
+                                 :unique? true})))
+
+(defn- memory-dl
+  [mem ids]
+  (reduce + 0.0
+          (map (fn [id]
+                 (value/desc-len (propagation/value-at mem id)))
+               ids)))
+
 (deftest try-to-optimize-improves-matrix-regression-weight-leaf
   (let [fixture (matrix-regression-fixture)
         g (matrix-regression-graph)
@@ -115,3 +191,19 @@
          residual-after))
     (is (< (l2-distance w-best (:w-true fixture))
            (l2-distance (:w-init fixture) (:w-true fixture))))))
+
+(deftest try-to-optimize-improves-clustering-centroid-and-radius
+  (let [fixture (clustering-fixture)
+        g (clustering-graph)
+        mem (initial-clustering-memory g fixture)
+        org-dl (memory-dl mem [:root :x :c :s])
+        result (sut/try-to-optimize g
+                                    mem
+                                    {:section-ids [:root :x :c :s]})
+        c-opt (value/datum (propagation/value-at (:memory result) :c))
+        s-opt (value/datum (propagation/value-at (:memory result) :s))]
+    (is (some? (value/datum (propagation/value-at mem :rest))))
+    (is (optimize/finite? (:dl result)))
+    (is (< (:dl result) (* 0.99 org-dl)))
+    (is (or (not (dense/same-content? c-opt (:c-init fixture)))
+            (not= s-opt (:s-init fixture))))))

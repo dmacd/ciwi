@@ -376,12 +376,28 @@
 (defn take-indices
   [backend x indices opts]
   (let [x (p/-array backend x {})
+        shape (p/-shape x)
         values (p/-ravel x)
         indices (if (dense-array? indices) (p/-ravel indices) (vec indices))]
-    (from-flat backend
-               (mapv #(nth values %) indices)
-               [(count indices)]
-               opts)))
+    (if (= 1 (count shape))
+      (from-flat backend
+                 (mapv #(nth values %) indices)
+                 [(count indices)]
+                 opts)
+      (let [row-count (first shape)
+            row-shape (subvec shape 1)
+            row-size (product row-shape)]
+        (when-not (every? #(and (integer? %) (<= 0 %) (< % row-count)) indices)
+          (throw (ex-info "dense row index out of bounds"
+                          {:shape shape
+                           :indices indices})))
+        (from-flat backend
+                   (mapcat (fn [row]
+                             (let [start (* row row-size)]
+                               (subvec values start (+ start row-size))))
+                           indices)
+                   (into [(count indices)] row-shape)
+                   opts)))))
 
 (defn put
   [backend x indices values opts]

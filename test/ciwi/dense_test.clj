@@ -38,7 +38,11 @@
     (is (= [2 4 6] (dense/tolist (dense/multiply x 2))))
     (is (= [-1 -2 -3] (dense/tolist (dense/negative x))))
     (is (= [true true false] (dense/tolist (dense/less x 3))))
-    (is (= [true false false] (dense/tolist (dense/equal x 1))))))
+    (is (= [true false false] (dense/tolist (dense/equal x 1)))))
+  (is (= [[9 18] [29 38]]
+         (dense/tolist
+          (dense/subtract-broadcast (dense/array [[10 20] [30 40]])
+                                    (dense/array [1 2]))))))
 
 (deftest dense-dot-covers-vector-and-matrix-regression-shapes
   (is (approx= 32.0
@@ -73,7 +77,13 @@
     (is (= [6 1] (dense/tolist (dense/take-indices x [2 0]))))
     (is (= [1 9 6] (dense/tolist (dense/put x [1] [9]))))
     (is (= [1 4 10] (dense/tolist (dense/cumsum x))))
-    (is (= [1 2 3] (dense/tolist (dense/diff x))))))
+    (is (= [1 2 3] (dense/tolist (dense/diff x)))))
+  (let [x (dense/array [[1 2] [3 4] [5 6]])]
+    (is (= [[5 6] [1 2]]
+           (dense/tolist (dense/take-indices x [2 0]))))
+    (is (= [[1 2] [3 4] [5 6] [7 8]]
+           (dense/tolist
+            (dense/concatenate-axis0 [x (dense/array [[7 8]])]))))))
 
 (deftest dense-content-fingerprint-is-fast-key-with-exact-fallback
   (let [x (dense/array [1 nil 3])
