@@ -153,9 +153,12 @@ Current root-cause notes from the core path:
 - Parallel Alice/Wunderbaum is now opt-in through `:parallelism` or
   `:num-workers`. The current evidence is a small Alice compression smoke test,
   the standalone Python Wunderbaum bounded-drain shape, and Python-scale
-  sequence-task completion through `:num-workers 8`. This is completion and
-  sanity coverage, not an exact serial-solution or timing claim for all Python
-  `test_single_task_parallel` task domains.
+  sequence-task completion through `:num-workers 8`. The deterministic
+  non-sequence `reg_only_y` row is also covered through the same basic Alice
+  operator basis. This is completion and sanity coverage, not an exact
+  serial-solution or timing claim for all Python `test_single_task_parallel`
+  task domains. The first timing sweep lives in
+  `parallel-performance-scaling.md`.
 - Numeric inverse shape mismatches must yield no inverse. Returning `nil`
   produced bogus zero-DL children such as `[:add [100] nil]`.
 - Python-compatible value DL is necessary parity infrastructure. With the old

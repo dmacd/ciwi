@@ -23,10 +23,14 @@ CIWI currently has compression behavior evidence for all Python
 The live evidence matrix is `alice-test-parity.md`.
 
 The sequence rows also have parallel Alice completion coverage through
-CIWI's opt-in `:num-workers 8` path. This mirrors the completion-only intent
-of Python `test_single_task_parallel` for the sequence task domain. CIWI does
-not yet claim full Python `all_tasks` parallel coverage for the non-sequence
-regression/classification task domains in `test_alice.py`.
+CIWI's opt-in `:num-workers 8` path. CIWI now also covers Python's
+deterministic `reg_only_y` regression row through the same basic Alice basis,
+and the exact matrix regression row through the optimizer-backed `[Dot, Add]`
+path. This mirrors the completion-only intent of Python
+`test_single_task_parallel` for the rows CIWI can currently express without
+adding new mechanisms. CIWI does not yet claim full Python `all_tasks`
+parallel coverage for the stochastic non-sequence regression rows in
+`test_alice.py`.
 
 ## Priority 1: Core Graph/Search Semantics
 

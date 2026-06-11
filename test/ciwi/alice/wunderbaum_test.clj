@@ -18,7 +18,7 @@
    7933 8041 8168 8224 8313 8314 8329 8411 8505 8528 8821 8884 8976
    9025 9189 9197 9385 9640 9654 9670])
 
-(defn- run-python-scale-sequence-task
+(defn- run-python-scale-alice-task
   [task opts]
   (sut/run-greedy-task
    task
@@ -54,6 +54,10 @@
   (vec (mapcat (fn [x]
                  (concat (repeat x 123) [64]))
                (range 500))))
+
+(defn- reg-only-y-target
+  [n]
+  (mapv #(- (* 3 %) 5) (range n)))
 
 (defn- close-to?
   [expected actual]
@@ -231,7 +235,7 @@
       (let [task (alice/compression-task [target]
                                          {:name name
                                           :threshold-rate threshold-rate})
-            result (run-python-scale-sequence-task task opts)]
+            result (run-python-scale-alice-task task opts)]
         (is (:meets-threshold? result))
         (is (>= (:compression-rate result) threshold-rate))
         (is (= expected
@@ -250,9 +254,9 @@
       (let [task (alice/compression-task [target]
                                          {:name name
                                           :threshold-rate threshold-rate})
-            result (run-python-scale-sequence-task task
-                                                   (assoc opts
-                                                          :num-workers 8))]
+            result (run-python-scale-alice-task task
+                                                (assoc opts
+                                                       :num-workers 8))]
         (is (= :greedy-task
                (get-in result [:resource :mode])))
         (is (contains? #{:threshold-reached
@@ -264,6 +268,21 @@
         (is (<= 0.0 (:compression-rate result)))
         (is (<= (:dl result) (:initial-dl result)))
         (is (pos? (count (:steps result))))))))
+
+(deftest alice-wunderbaum-parallel-completes-python-regression-only-y
+  (let [task (alice/compression-task [(reg-only-y-target 1000)]
+                                     {:name "reg_only_y"
+                                      :threshold-rate 0.98})
+        result (run-python-scale-alice-task
+                task
+                {:num-workers 8
+                 :max-popped 10000
+                 :max-yields 1000})]
+    (is (:meets-threshold? result))
+    (is (>= (:compression-rate result) 0.98))
+    (is (= :threshold-reached
+           (get-in result [:resource :stop-reason])))
+    (is (pos? (count (:steps result))))))
 
 (deftest alice-wunderbaum-repeat-with-noise-step-reaches-task-threshold
   (let [opts {:registry alice/basic-operator-registry
@@ -283,7 +302,7 @@
            (:selected task-result)))))
 
 (deftest alice-wunderbaum-insert-repeat3-reaches-python-fourth-step
-  (let [result (run-python-scale-sequence-task
+  (let [result (run-python-scale-alice-task
                 (insert-repeat3-task)
                 {:max-popped 10000
                  :max-yields 1000

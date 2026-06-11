@@ -47,8 +47,11 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   JVM-threaded `wunderbaum/iterate-parallel` path is opt-in through
   `:parallelism` or `:num-workers`, is wired through Alice's candidate
   context without changing serial defaults, and now covers Python-scale
-  sequence-task completion through the parallel Alice path.
-  Tests pass locally with 170 tests and 916 assertions on the default vector
+  sequence-task completion, Python `reg_only_y` regression completion, and the
+  exact matrix-regression greedy row through the parallel Alice path.
+  A first CIWI-vs-Python parallel scaling sweep is recorded in
+  `parallel-performance-scaling.md`.
+  Tests pass locally with 172 tests and 925 assertions on the default vector
   backend, plus 8 tests and 43 assertions on the opt-in DJL backend.
 
 ## Current State
@@ -177,6 +180,11 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   not assert serial selected expressions because worker-local parallel search
   can accept a different first candidate above the step threshold, matching the
   spirit of Python's completion-only `test_single_task_parallel`.
+- Non-sequence parallel Alice coverage now includes Python's deterministic
+  `reg_only_y` regression row through the basic Alice operator basis and the
+  exact matrix regression greedy row through the optimizer-backed `[Dot, Add]`
+  path. The other stochastic Python regression rows still need exact NumPy
+  fixture capture before CIWI should claim direct fixture parity.
 - Native condition extraction now covers Python `test_conditions.py` fixture
   shapes `co0`-`co21` and `dag0`-`dag7`, including the `co15` order-only
   fixture. These are expressed as native graph/composite specs instead of DOT
@@ -366,14 +374,16 @@ These cleanup-review items are intentionally not active targets right now:
 ## Near-Term Next Tasks
 
 - The active non-Iris cleanup step was parallel Wunderbaum/Alice parity. The
-  first two slices are implemented: `wunderbaum/iterate-parallel` partitions
-  the delayed frontier across worker-local searches, the Alice context opts
-  into it through `:parallelism` or Python-shaped `:num-workers`, tests cover a
-  direct compression result plus the Python standalone bounded-drain shape, and
-  Python-scale sequence rows now complete through `:num-workers 8`. The next
-  parallel deepening option is non-sequence Python `test_alice.py` task-domain
-  coverage, but that should be treated separately from the core sequence
-  parity matrix.
+  current slices are implemented: `wunderbaum/iterate-parallel` partitions the
+  delayed frontier across worker-local searches, the Alice context opts into it
+  through `:parallelism` or Python-shaped `:num-workers`, tests cover a direct
+  compression result plus the Python standalone bounded-drain shape,
+  Python-scale sequence rows complete through `:num-workers 8`, and
+  non-sequence `reg_only_y` plus matrix-regression rows now have parallel
+  completion coverage. `parallel-performance-scaling.md` records the first
+  diagnostic timing sweep. The next parallel deepening option is to improve the
+  shared stopping/search-order story before expanding stochastic regression
+  fixture coverage.
 - Optimizer-backed numeric graph-search parity remains the next application
   tranche after this non-Iris cleanup. Continue from the classifier
   single-factor greedy rows to the full Iris row when classification becomes

@@ -142,3 +142,16 @@
            (get-in result [:resource :leaf-selection-policy])))
     (is (= [:add [:dot :leaf :leaf] :leaf]
            (expr-shape (get-in result [:selected :target0]))))))
+
+(deftest matrix-regression-parallel-greedy-without-solution-reaches-threshold
+  (let [fixture (matrix-fixture)
+        result (alice-wb/run-greedy-task
+                (matrix-regression-task fixture false)
+                (assoc (matrix-regression-opts) :num-workers 8))]
+    (is (:meets-threshold? result))
+    (is (>= (:compression-rate result) 0.01))
+    (is (= 1 (count (:steps result))))
+    (is (= :threshold-reached
+           (get-in result [:resource :stop-reason])))
+    (is (= [:add [:dot :leaf :leaf] :leaf]
+           (expr-shape (get-in result [:selected :target0]))))))
