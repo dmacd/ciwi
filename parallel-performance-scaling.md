@@ -267,6 +267,82 @@ but the trend shows real wasted speculative work. The next scaling step should
 therefore focus on throttling speculation and cancellation, not on adding more
 workers.
 
+## Per-Step Ordered Global Diagnostics
+
+Per-step rows can be collected with:
+
+```bash
+./bin/clojure -M:dev -m ciwi.bench.parallel-scaling \
+  --tasks insert_repeat3,increasing_runs,reg_only_y \
+  --scales large \
+  --workers 2,4,8 \
+  --strategy global-best-first \
+  --warmups 1 \
+  --runs 1 \
+  --report steps
+```
+
+Representative large-scale rows show that every accepted compression step
+consumed exactly one yielded candidate. The useful parallel work is therefore
+not "compare many yielded candidates"; it is proving enough earlier-ranked
+frontier work that the first threshold candidate can commit.
+
+| Task | Workers | Dominant Step Pattern |
+| --- | ---: | --- |
+| `insert_repeat3` large | 2 | Step 3 took `526 ms` after `2,972` pops; step 5 took `3,032 ms` after `4,200` pops and `128,185` enqueues. |
+| `insert_repeat3` large | 4 | Step 5 improved to `2,392 ms`, but summed expansion work rose to `6,479 ms`. |
+| `insert_repeat3` large | 8 | Step 5 improved only to `2,225 ms`, while summed expansion work rose to `11,529 ms`. |
+| `increasing_runs` large | 2 | Three narrow steps took `130/399/265 ms` with only `12/48/48` pops. |
+| `increasing_runs` large | 8 | The same three steps worsened to `1088/1862/1871 ms`; the scheduler popped more work, but not useful work. |
+| `reg_only_y` large | 2 | Two tiny steps took `41/11 ms`; there is not enough search work to amortize threads. |
+| `reg_only_y` large | 8 | The same steps took `83/78 ms`; this is scheduler overhead and speculation. |
+
+`insert_repeat3` is the only one of these tasks with plausibly parallel slow
+compression steps. Even there, the speedup is bounded because the slow steps
+are ordered-prefix proof problems: workers must clear thousands of
+earlier-ranked frontier items before the first threshold candidate can be
+accepted. `increasing_runs` and `reg_only_y` mostly have narrow early winners,
+so extra workers create redundant materialization and expansion.
+
+The first speculation knob, `:frontier-batch-size`, is exposed through:
+
+```bash
+./bin/clojure -M:dev -m ciwi.bench.parallel-scaling \
+  --tasks insert_repeat3 \
+  --scales large \
+  --workers 2,4,8 \
+  --strategy global-best-first \
+  --warmups 1 \
+  --runs 1 \
+  --stats true \
+  --frontier-batch-size 1
+```
+
+For `insert_repeat3` large this produced `3721/2902/2728 ms` at `w2/w4/w8`.
+It caps `max_active_frontier_items` to `2/4/8`, but it does not materially
+reduce the total frontier proof: the run still popped about `7,500` items and
+enqueued about `156k` descendants. This means batch throttling is useful but
+insufficient. The bigger waste is active work that keeps materializing or
+expanding after a pending threshold candidate has already made later-ranked
+work unlikely to matter.
+
+The next implementation work should reduce wasted speculation in four ways:
+
+- Candidate-sensitive dispatch: keep small batches in threshold mode until the
+  scheduler has evidence that no candidate is near. This prevents simple tasks
+  from turning one early winner into many active frontier items.
+- Active-work cancellation: once a pending candidate exists, active workers
+  whose item rank is not earlier than that candidate should stop at
+  materialization, scoring, and expansion boundaries.
+- Lazy descendant expansion: do not eagerly expand descendants of a
+  non-emitting materialized graph when a pending candidate may commit before
+  those descendants can be relevant. This directly targets the huge expansion
+  counters on `insert_repeat3` step 5.
+- Adaptive useful-width control: use per-step stats such as popped/emitted
+  ratio, commit wait, and duplicate rate to reduce worker width on narrow
+  steps and open it only on steps like `insert_repeat3` step 5 where thousands
+  of earlier-ranked items really must be processed.
+
 ## Follow-Up
 
 - Continue tuning the ordered global queue before treating 4/8-worker results

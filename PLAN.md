@@ -198,6 +198,13 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   `parallel-performance-scaling.md`. It confirms threshold stability but weak
   scaling: 2 workers sometimes helps, while 4/8 workers often add speculative
   materialization and commit-wait overhead.
+  Per-step diagnostics show that every accepted large-case step consumes one
+  yielded candidate; the slow work is clearing earlier-ranked frontier prefixes
+  before that candidate can commit. `insert_repeat3` has the only plausibly
+  parallel slow steps, especially step 5, but even there batch throttling alone
+  is insufficient. The next scheduler work should add candidate-sensitive
+  dispatch, active-work cancellation, lazy descendant expansion, and adaptive
+  useful-width control.
   Medium `insert_repeat3` partitioned threshold failures are now understood as
   greedy path/order sensitivity, not absence of a solution: worker-local
   frontiers can accept a cumsum-first local compression that later stops below

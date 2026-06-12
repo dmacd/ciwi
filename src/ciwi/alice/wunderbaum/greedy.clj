@@ -148,6 +148,7 @@
         (with-step-stats opts (step-candidate-opts opts solution))
         threshold-dl (* (:dl leaf)
                         (- 1.0 min-compression-rate))
+        t0 (System/nanoTime)
         search (wb-context/first-candidate-at-rate
                 (:dl leaf)
                 min-compression-rate
@@ -155,7 +156,8 @@
                                           values
                                           (assoc candidate-opts
                                                  :threshold-dl threshold-dl
-                                                 :score-target-count 1)))]
+                                                 :score-target-count 1)))
+        elapsed-ms (/ (double (- (System/nanoTime) t0)) 1000000.0)]
     (if-let [candidate (:candidate search)]
       (let [replacement (render/candidate-tree search-context candidate :target0)]
         (cond-> {:leaf leaf
@@ -167,10 +169,12 @@
                  :compression-rate (alice/compression-rate (:dl leaf)
                                                            (:dl replacement))
                  :candidates-consumed (:candidates-consumed search)
+                 :search-elapsed-ms elapsed-ms
                  :stop-reason (:stop-reason search)}
           stats (assoc :wunderbaum-stats @stats)))
       (cond-> {:leaf leaf
                :candidates-consumed (:candidates-consumed search)
+               :search-elapsed-ms elapsed-ms
                :stop-reason (:stop-reason search)}
         stats (assoc :wunderbaum-stats @stats)))))
 
@@ -218,7 +222,7 @@
 
 (defn- record-step
   [{:keys [leaf selected initial-dl dl compression-rate candidates-consumed
-           stop-reason wunderbaum-stats]}]
+           search-elapsed-ms stop-reason wunderbaum-stats]}]
   (cond-> {:target-id (:target-id leaf)
            :path (:path leaf)
            :initial-dl initial-dl
@@ -226,6 +230,7 @@
            :compression-rate compression-rate
            :selected selected
            :candidates-consumed candidates-consumed
+           :search-elapsed-ms search-elapsed-ms
            :stop-reason stop-reason}
     wunderbaum-stats (assoc :wunderbaum-stats wunderbaum-stats)))
 

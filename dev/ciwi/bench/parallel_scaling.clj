@@ -26,6 +26,9 @@
 (def ^:private strategies
   #{"partitioned" "global-best-first"})
 
+(def ^:private reports
+  #{"summary" "steps"})
+
 (def ^:private stat-sum-keys
   [:frontier-popped
    :frontier-enqueued
@@ -131,12 +134,15 @@
   (/ (double (or n 0)) 1000000.0))
 
 (defn- timed-run
-  [task scale workers strategy collect-stats?]
+  [task scale workers strategy collect-stats? {:keys [frontier-batch-size]}]
   (let [{:keys [target threshold-rate]} (task-case task scale)
         compression-task (alice/compression-task [target]
                                                  {:name task
                                                   :threshold-rate threshold-rate})
         opts (cond-> base-opts
+               frontier-batch-size
+               (assoc :frontier-batch-size frontier-batch-size)
+
                collect-stats?
                (assoc :collect-wunderbaum-stats? true)
 
@@ -157,17 +163,19 @@
      :meets-threshold? (:meets-threshold? result)
      :steps (count (:steps result))
      :stop-reason (name (get-in result [:resource :stop-reason]))
+     :step-results (:steps result)
      :stats stats}))
 
 (defn- summarize
-  [task scale workers strategy warmups runs collect-stats?]
+  [task scale workers strategy warmups runs collect-stats? bench-opts]
   (dotimes [_ warmups]
-    (timed-run task scale workers strategy collect-stats?))
+    (timed-run task scale workers strategy collect-stats? bench-opts))
   (let [samples (repeatedly runs #(timed-run task
                                              scale
                                              workers
                                              strategy
-                                             collect-stats?))
+                                             collect-stats?
+                                             bench-opts))
         times (mapv :elapsed-ms samples)
         last-result (last samples)]
     (merge last-result
@@ -227,6 +235,61 @@
          (str/join "," (stats-csv-columns row)))
     (base-csv-row row)))
 
+(defn- step-csv-row
+  [row run-index step-index step]
+  (let [stats (:wunderbaum-stats step)]
+    (str/join ","
+              [(:impl row)
+               (:task row)
+               (:scale row)
+               (:workers row)
+               (:length row)
+               run-index
+               step-index
+               (pr-str (:path step))
+               (format "%.6f" (:initial-dl step))
+               (format "%.6f" (:dl step))
+               (format "%.9f" (:compression-rate step))
+               (:candidates-consumed step)
+               (:stop-reason step)
+               (format "%.3f" (double (or (:search-elapsed-ms step) 0.0)))
+               (long (or (:frontier-popped stats) 0))
+               (long (or (:frontier-enqueued stats) 0))
+               (long (or (:materialized-results stats) 0))
+               (long (or (:duplicate-results stats) 0))
+               (long (or (:emitted stats) 0))
+               (long (or (:max-active-frontier-items stats) 0))
+               (format "%.3f" (ns->ms (:queue-wait-ns stats)))
+               (format "%.3f" (ns->ms (:materialization-ns stats)))
+               (format "%.3f" (ns->ms (:dedupe-ns stats)))
+               (format "%.3f" (ns->ms (:scoring-ns stats)))
+               (format "%.3f" (ns->ms (:candidate-transform-ns stats)))
+               (format "%.3f" (ns->ms (:expansion-ns stats)))
+               (format "%.3f" (ns->ms (:commit-wait-ns stats)))])))
+
+(defn- print-step-rows!
+  [task scale workers strategy warmups runs bench-opts]
+  (dotimes [_ warmups]
+    (timed-run task scale workers strategy true bench-opts))
+  (doseq [run-index (range runs)
+          :let [row (merge (timed-run task
+                                       scale
+                                       workers
+                                       strategy
+                                       true
+                                       bench-opts)
+                           {:impl (if (= "global-best-first" strategy)
+                                    "ciwi-global"
+                                    "ciwi")
+                            :task task
+                            :scale scale
+                            :workers workers
+                            :strategy strategy
+                            :warmups warmups
+                            :runs runs})]
+          [step-index step] (map-indexed vector (:step-results row))]
+    (println (step-csv-row row run-index step-index step))))
+
 (defn- parse-list
   [s]
   (when s
@@ -274,26 +337,60 @@
           "--stats"
           (recur (nnext args) (assoc opts :collect-stats? (= "true" value)))
 
+          "--frontier-batch-size"
+          (recur (nnext args) (assoc opts :frontier-batch-size
+                                     (parse-long value)))
+
+          "--report"
+          (do
+            (when-not (contains? reports value)
+              (throw (ex-info "Unknown benchmark report"
+                              {:report value
+                               :allowed reports})))
+            (recur (nnext args) (assoc opts :report value)))
+
           (throw (ex-info "Unknown benchmark option" {:flag flag}))))
       opts)))
 
 (defn -main
   [& args]
-  (let [{:keys [tasks scales workers strategy warmups runs collect-stats?]}
+  (let [{:keys [tasks scales workers strategy warmups runs collect-stats?
+                report frontier-batch-size]}
         (cli-opts args)
+        report (or report "summary")
+        bench-opts {:frontier-batch-size frontier-batch-size}
         header "impl,task,scale,workers,length,warmups,runs,median_ms,min_ms,max_ms,compression_rate,meets_threshold,steps,stop_reason"
-        stats-header "frontier_popped,frontier_enqueued,materialized_results,duplicate_results,emitted,max_active_frontier_items,queue_wait_ms,materialization_ms,dedupe_ms,scoring_ms,candidate_transform_ms,expansion_ms,commit_wait_ms"]
-    (println (if collect-stats?
-               (str header "," stats-header)
-               header))
-    (doseq [task tasks
-            scale scales
-            worker-count workers]
-      (println (csv-row (summarize task
-                                    scale
-                                    worker-count
-                                    strategy
-                                    warmups
-                                    runs
-                                    collect-stats?)
-                        collect-stats?)))))
+        stats-header "frontier_popped,frontier_enqueued,materialized_results,duplicate_results,emitted,max_active_frontier_items,queue_wait_ms,materialization_ms,dedupe_ms,scoring_ms,candidate_transform_ms,expansion_ms,commit_wait_ms"
+        step-header "impl,task,scale,workers,length,run,step,path,initial_dl,step_dl,step_compression_rate,candidates_consumed,stop_reason,search_ms,frontier_popped,frontier_enqueued,materialized_results,duplicate_results,emitted,max_active_frontier_items,queue_wait_ms,materialization_ms,dedupe_ms,scoring_ms,candidate_transform_ms,expansion_ms,commit_wait_ms"]
+    (case report
+      "summary"
+      (do
+        (println (if collect-stats?
+                   (str header "," stats-header)
+                   header))
+        (doseq [task tasks
+                scale scales
+                worker-count workers]
+          (println (csv-row (summarize task
+                                       scale
+                                       worker-count
+                                       strategy
+                                       warmups
+                                       runs
+                                       collect-stats?
+                                       bench-opts)
+                            collect-stats?))))
+
+      "steps"
+      (do
+        (println step-header)
+        (doseq [task tasks
+                scale scales
+                worker-count workers]
+          (print-step-rows! task
+                            scale
+                            worker-count
+                            strategy
+                            warmups
+                            runs
+                            bench-opts))))))
