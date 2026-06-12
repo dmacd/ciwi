@@ -202,14 +202,44 @@ still create a longer path. The right next optimization is therefore not just
 "use a shared queue"; it is coordinated stopping and better control over how
 many workers are allowed to race past the current best frontier level.
 
+## Ordered Global Queue Update
+
+The coordinated strategy now uses ordered commit rather than first-worker-wins
+emission. Workers may speculate on later frontier items, but a threshold
+candidate is emitted only after earlier-ranked queued or active frontier work
+has cleared. The scheduler also uses concurrent delayed-result admission and
+opt-in stats:
+
+```bash
+./bin/clojure -M:dev -m ciwi.bench.parallel-scaling \
+  --tasks insert_repeat3 \
+  --scales medium \
+  --workers 2,4,8 \
+  --strategy global-best-first \
+  --warmups 0 \
+  --runs 1 \
+  --stats true
+```
+
+Smoke results after the ordered-commit implementation:
+
+| Task | Scale | w2 | w4 | w8 |
+| --- | --- | ---: | ---: | ---: |
+| `insert_repeat3` | medium | 249.022 / true | 107.708 / true | 116.162 / true |
+
+All three rows reached the same `0.962651994` compression rate in five greedy
+steps. The stats columns showed increasing speculation with worker count
+(`frontier_popped` 280/300/331 and `max_active_frontier_items` 8/16/32), so the
+next measurement pass should use warm medians and inspect useful work per
+committed step, not only wall time.
+
 ## Follow-Up
 
 - Rerun the solved rows with `--runs 3` or `--runs 5` and report medians once
   the next parallel implementation change lands.
-- Improve the coordinated global queue before treating 4/8-worker results as
-  expected wins. The current prototype has a shared frontier and counters, but
-  not level barriers, strict serial result ordering, or hard cancellation of
-  in-flight materializations.
+- Continue tuning the ordered global queue before treating 4/8-worker results
+  as expected wins. It now has ordered commit and concurrent result admission,
+  but not hard cancellation inside already-running materializations.
 - Keep `reg_only_y` in the suite as overhead calibration; do not use it as
   evidence that parallel search improves useful work.
 - Revisit `increasing_runs` after the planned dense primitive backend cleanup,

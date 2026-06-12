@@ -1,5 +1,6 @@
 (ns ciwi.value
-  (:require [ciwi.dense.core :as dense]
+  (:require [ciwi.cache :as cache]
+            [ciwi.dense.core :as dense]
             [ciwi.hashing :as hashing]))
 
 (defrecord Value [data name spec permeable? dummy?])
@@ -1114,7 +1115,7 @@
      (desc-len-data (:data v) opts))))
 
 (defn desc-len-cached
-  "Return `desc-len` using a caller-owned cache atom.
+  "Return `desc-len` using a caller-owned cache store.
 
   Python WILLIAM memoizes `Value.desc_len()` on each Value instance. CIWI keeps
   values immutable, so callers that score many related candidate graphs pass an
@@ -1133,8 +1134,4 @@
            k (if value-input?
                (IdentityValueCacheKey. v opts (:dummy? v))
                [opts (:dummy? v) (:data v)])]
-       (if-let [entry (find @cache k)]
-         (val entry)
-         (let [dl (desc-len v opts)]
-           (swap! cache assoc k dl)
-           dl))))))
+       (cache/get-or-compute! cache k #(desc-len v opts))))))

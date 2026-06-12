@@ -3,9 +3,9 @@
             [ciwi.cache :as sut]))
 
 (deftest search-context-groups-shared-and-search-scoped-caches
-  (let [value-dl-cache (atom {})
-        value-content-cache (atom {})
-        inverse-cache (atom {})
+  (let [value-dl-cache (sut/cache-store)
+        value-content-cache (sut/cache-store)
+        inverse-cache (sut/cache-store)
         context (sut/search-context {:shared {:value-dl-cache value-dl-cache}
                                      :search {:value-content-cache value-content-cache
                                               :inverse-cache inverse-cache}})]
@@ -29,6 +29,16 @@
                            (sut/node-dl-cache right)))))))
 
 (deftest scoring-context-preserves-explicit-node-cache
-  (let [node-dl-cache (atom {})
+  (let [node-dl-cache (sut/cache-store)
         context (sut/scoring-context {:graph {:node-dl-cache node-dl-cache}})]
     (is (identical? node-dl-cache (sut/node-dl-cache context)))))
+
+(deftest cache-store-computes-values-once-per-key
+  (let [store (sut/cache-store)
+        calls (atom 0)]
+    (is (= :value
+           (sut/get-or-compute! store :k #(do (swap! calls inc) :value))))
+    (is (= :value
+           (sut/get-or-compute! store :k #(do (swap! calls inc) :other))))
+    (is (= 1 @calls))
+    (is (= 1 (sut/size store)))))

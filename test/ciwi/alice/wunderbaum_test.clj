@@ -243,6 +243,24 @@
     (is (= [:repeat 10 [140 -50]]
            (get-in result [:selected :target0])))))
 
+(deftest alice-wunderbaum-global-best-first-can-collect-step-stats
+  (let [target (vec (take 20 (cycle [140 -50])))
+        task (alice/compression-task [target]
+                                     {:name "repeat"
+                                      :threshold-rate 0.01})
+        result (sut/run-greedy-task task {:registry {:repeat op/repeat}
+                                          :parallelism 2
+                                          :parallel-strategy :global-best-first
+                                          :collect-wunderbaum-stats? true
+                                          :max-popped 32
+                                          :max-yields 8
+                                          :worthy-dl 0})
+        stats (get-in result [:steps 0 :wunderbaum-stats])]
+    (is (:meets-threshold? result))
+    (is (= :global-best-first (:strategy stats)))
+    (is (pos? (:frontier-popped stats)))
+    (is (pos? (:materialized-results stats)))))
+
 (deftest alice-wunderbaum-compresses-python-scale-sequence-rows
   (doseq [{:keys [name target expected expected-steps threshold-rate opts]}
           (python-scale-sequence-cases)]

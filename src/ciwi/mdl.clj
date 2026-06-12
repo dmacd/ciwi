@@ -29,7 +29,7 @@
    (let [context (scoring-context context)
          node-dl-cache (cache/node-dl-cache context)]
      (letfn [(best-value [value-id trace]
-               (if-let [cached (get @node-dl-cache value-id)]
+               (if-let [cached (cache/get node-dl-cache value-id)]
                  cached
                  (let [n (graph/node g value-id)]
                    (when-not (graph/value-node? n)
@@ -55,8 +55,7 @@
                                        :child-choices (mapv :choice child-results)}}))
                          best (first (sort-by (juxt :dl #(str (:choice %)))
                                               (cons raw option-choices)))]
-                     (swap! node-dl-cache assoc value-id best)
-                     best))))]
+                     (cache/put! node-dl-cache value-id best)))))]
        (best-value id #{})))))
 
 (defn- raw-choice

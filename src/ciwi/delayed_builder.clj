@@ -143,11 +143,7 @@
   ([cache x]
    (if (and cache (value/value? x))
      (let [k (IdentityKey. x :delayed-value-fingerprint)]
-       (if-let [entry (find @cache k)]
-         (val entry)
-         (let [fingerprint (raw-value-fingerprint x)]
-           (swap! cache assoc k fingerprint)
-           fingerprint)))
+       (cache/get-or-compute! cache k #(raw-value-fingerprint x)))
      (raw-value-fingerprint x))))
 
 (defn- compare-structural-keys
@@ -183,7 +179,8 @@
                   :else [:missing id]))))]
     (key* root-id #{})))
 
-(defn- result-key
+(defn result-key
+  "Return the structural key used to de-duplicate materialized delayed builds."
   [{:keys [graph memory]}]
   [(->> (graph/roots graph)
         (sort-by pr-str)
@@ -263,14 +260,13 @@
                                  output
                                  known-inputs
                                  known-positions)]
-        (if-let [entry (find @inverse-cache k)]
-          (val entry)
-          (let [result (raw-invert-op operator
-                                      output
-                                      known-inputs
-                                      known-positions)]
-            (swap! inverse-cache assoc k result)
-            result)))
+        (cache/get-or-compute!
+         inverse-cache
+         k
+         #(raw-invert-op operator
+                         output
+                         known-inputs
+                         known-positions)))
       (raw-invert-op operator output known-inputs known-positions))))
 
 (defn- costed-operator
@@ -358,7 +354,7 @@
                :root output-id
                :operator-id op-id})))))))
 
-(defn- raw-delayed-dag-build
+(defn raw-delayed-dag-build
   [build-info elements-by-key {:keys [registry]
                                :or {registry op/registry}
                                :as opts}]

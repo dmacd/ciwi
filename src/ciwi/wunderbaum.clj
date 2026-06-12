@@ -339,17 +339,57 @@
     (take max-yields results)
     results))
 
+(defn- now-ns
+  []
+  (System/nanoTime))
+
+(defn- add-stat!
+  [state k delta]
+  (when-let [stats (:stats state)]
+    (swap! stats update k (fnil + 0) delta)))
+
+(defn- max-stat!
+  [state k value]
+  (when-let [stats (:stats state)]
+    (swap! stats update k (fnil max 0) value)))
+
+(defn- item-rank
+  [item]
+  (build-rank item))
+
+(defn- rank-before?
+  [left right]
+  (neg? (compare left right)))
+
+(defn- pending-candidate-queue
+  []
+  (sorted-set-by (fn [left right]
+                   (compare (:candidate-rank left)
+                            (:candidate-rank right)))))
+
+(defn- frontier-batch-size
+  [opts]
+  (long (max 1 (or (:frontier-batch-size opts) 4))))
+
 (defn- global-search-state
-  [queue order]
-  {:lock (Object.)
-   :queue (atom queue)
-   :order-counter (java.util.concurrent.atomic.AtomicLong. (long order))
-   :seen (atom #{})
-   :popped (atom 0)
-   :yielded (atom 0)
-   :active (atom 0)
-   :done? (atom false)
-   :results (atom [])})
+  [queue order opts]
+  (let [stats (:wunderbaum-stats-atom opts)]
+    (when stats
+      (swap! stats merge {:strategy :global-best-first
+                          :worker-count (:worker-count opts)
+                          :initial-frontier-count (count queue)}))
+    {:lock (Object.)
+     :queue (atom queue)
+     :order-counter (java.util.concurrent.atomic.AtomicLong. (long order))
+     :candidate-counter (java.util.concurrent.atomic.AtomicLong. 0)
+     :seen (cache/cache-store)
+     :popped (atom 0)
+     :yielded (atom 0)
+     :active-ranks (atom (sorted-set))
+     :pending-candidates (atom (pending-candidate-queue))
+     :done? (atom false)
+     :results (atom [])
+     :stats stats}))
 
 (defn- global-done?
   [state]
@@ -361,151 +401,284 @@
     (reset! done? true)
     (.notifyAll lock)))
 
-(defn- take-global-frontier-item!
-  [{:keys [lock queue popped active done?]} opts]
+(defn- earlier-frontier-work?
+  [{:keys [queue active-ranks]} frontier-rank]
+  (boolean
+   (or (when-let [item (first @queue)]
+         (rank-before? (item-rank item) frontier-rank))
+       (when-let [active-rank (first @active-ranks)]
+         (rank-before? active-rank frontier-rank)))))
+
+(defn- commit-ready-candidates!
+  [{:keys [pending-candidates results yielded done?] :as state} opts]
+  (loop [committed? false]
+    (if (or @done? (empty? @pending-candidates))
+      committed?
+      (let [candidate (first @pending-candidates)
+            max-yields (long (or (:max-yields opts) Long/MAX_VALUE))]
+        (if (earlier-frontier-work? state (:frontier-rank candidate))
+          committed?
+          (do
+            (swap! pending-candidates disj candidate)
+            (swap! results conj (:summary candidate))
+            (add-stat! state :emitted 1)
+            (add-stat! state
+                       :commit-wait-ns
+                       (- (now-ns) (:found-ns candidate)))
+            (let [yielded-count (swap! yielded inc)]
+              (when (or (:threshold? candidate)
+                        (<= max-yields yielded-count))
+                (reset! done? true)))
+            (recur true)))))))
+
+(defn- min-pending-frontier-rank
+  [{:keys [pending-candidates]}]
+  (some-> (first @pending-candidates) :frontier-rank))
+
+(defn- dispatchable-item?
+  [state item]
+  (if-let [cutoff (min-pending-frontier-rank state)]
+    (rank-before? (item-rank item) cutoff)
+    true))
+
+(defn- pop-dispatch-batch
+  [queue n cutoff]
+  (loop [queue queue
+         n n
+         items []]
+    (if (or (zero? n)
+            (empty? queue)
+            (and cutoff
+                 (not (rank-before? (item-rank (first queue)) cutoff))))
+      [queue items]
+      (let [[item queue] (pop-queue queue)]
+        (recur queue (dec n) (conj items item))))))
+
+(defn- take-global-frontier-batch!
+  [{:keys [lock queue popped active-ranks done?] :as state} opts]
   (locking lock
-    (loop []
-      (cond
-        @done?
-        nil
+    (let [wait-start (now-ns)]
+      (loop []
+        (commit-ready-candidates! state opts)
+        (cond
+          @done?
+          (do
+            (add-stat! state :cancelled-takes 1)
+            nil)
 
-        (not (under-pop-limit? @popped (:max-popped opts)))
-        (do
-          (reset! done? true)
-          (.notifyAll lock)
-          nil)
+          (and (seq @queue)
+               (under-pop-limit? @popped (:max-popped opts))
+               (dispatchable-item? state (first @queue)))
+          (let [remaining-pop-budget (if-let [max-popped (:max-popped opts)]
+                                       (- (long max-popped) @popped)
+                                       Long/MAX_VALUE)
+                n (min (frontier-batch-size opts) remaining-pop-budget)
+                [next-queue items] (pop-dispatch-batch
+                                    @queue
+                                    n
+                                    (min-pending-frontier-rank state))
+                ranks (map item-rank items)]
+            (reset! queue next-queue)
+            (swap! popped + (count items))
+            (swap! active-ranks into ranks)
+            (add-stat! state :queue-wait-ns (- (now-ns) wait-start))
+            (add-stat! state :frontier-popped (count items))
+            (max-stat! state :max-active-frontier-items (count @active-ranks))
+            items)
 
-        (seq @queue)
-        (let [[item remaining] (pop-queue @queue)]
-          (reset! queue remaining)
-          (swap! popped inc)
-          (swap! active inc)
-          item)
+          (and (or (empty? @queue)
+                   (not (under-pop-limit? @popped (:max-popped opts))))
+               (empty? @active-ranks))
+          (do
+            (commit-ready-candidates! state opts)
+            (when (and (empty? @(:pending-candidates state))
+                       (not @done?))
+              (reset! done? true))
+            (.notifyAll lock)
+            nil)
 
-        (zero? @active)
-        (do
-          (reset! done? true)
-          (.notifyAll lock)
-          nil)
+          :else
+          (do
+            (.wait lock 10)
+            (recur)))))))
 
-        :else
-        (do
-          (.wait lock 10)
-          (recur))))))
+(defn- enqueue-global-frontier*!
+  [state items]
+  (when (seq items)
+    (swap! (:queue state) into items)
+    (add-stat! state :frontier-enqueued (count items))))
+
+(defn- enqueue-pending-candidates*!
+  [{:keys [pending-candidates]} candidates]
+  (when (seq candidates)
+    (swap! pending-candidates into candidates)))
 
 (defn- finish-global-frontier-item!
-  [{:keys [lock queue active done?]}]
+  [{:keys [lock active-ranks done?] :as state} opts item expansions candidates]
   (locking lock
-    (swap! active dec)
-    (when (and (zero? @active)
-               (empty? @queue))
+    (swap! active-ranks disj (item-rank item))
+    (when-not @done?
+      (enqueue-global-frontier*! state expansions)
+      (enqueue-pending-candidates*! state candidates))
+    (commit-ready-candidates! state opts)
+    (when (and (empty? @active-ranks)
+               (empty? @(:queue state))
+               (empty? @(:pending-candidates state))
+               (not @done?))
       (reset! done? true))
     (.notifyAll lock)))
 
-(defn- enqueue-global-frontier!
-  [{:keys [lock queue done?]} items]
-  (when (seq items)
-    (locking lock
-      (when-not @done?
-        (swap! queue into items)
-        (.notifyAll lock)))))
+(defn- admit-materialized-result!
+  [state result]
+  (let [k (delayed/result-key result)]
+    (nil? (cache/put-if-absent! (:seen state) k true))))
 
-(defn- emit-global-result!
-  [{:keys [lock yielded done? results]} opts summary threshold?]
-  (locking lock
-    (when-not @done?
-      (swap! results conj summary)
-      (let [yielded (swap! yielded inc)]
-        (when (or threshold?
-                  (<= (long (or (:max-yields opts) Long/MAX_VALUE))
-                      yielded))
-          (reset! done? true)))
-      (.notifyAll lock))))
+(defn- materialize-build-concurrent
+  [state wb build-info cache-context]
+  (let [t0 (now-ns)
+        raw-results (delayed/raw-delayed-dag-build
+                     build-info
+                     (:elements-by-condition-key wb)
+                     {:registry (:registry wb)
+                      :cache-context cache-context})
+        t1 (now-ns)
+        [duplicate-count admitted]
+        (reduce (fn [[duplicates admitted] result]
+                  (let [d0 (now-ns)
+                        admitted? (admit-materialized-result! state result)]
+                    (add-stat! state :dedupe-ns (- (now-ns) d0))
+                    (if admitted?
+                      [duplicates (conj! admitted result)]
+                      [(inc duplicates) admitted])))
+                [0 (transient [])]
+                raw-results)]
+    (add-stat! state :materialization-ns (- t1 t0))
+    (add-stat! state :materialized-results (count raw-results))
+    (add-stat! state :duplicate-results duplicate-count)
+    (persistent! admitted)))
 
-(defn- materialize-build-shared
-  [wb seen-state build-info cache-context]
-  (locking seen-state
-    (let [{:keys [seen results]} (materialize-build wb
-                                                    @seen-state
-                                                    build-info
-                                                    cache-context)]
-      (reset! seen-state seen)
-      {:seen seen
-       :results results})))
-
-(defn- expand-global-result!
+(defn- expand-global-result
   [state wb opts graph memory build-dl]
-  (let [[items _order] (expand-graph wb
+  (let [t0 (now-ns)
+        [items _order] (expand-graph wb
                                      (empty-queue)
                                      graph
                                      memory
                                      build-dl
                                      opts
                                      0)]
-    (enqueue-global-frontier! state items)))
+    (add-stat! state :expansion-ns (- (now-ns) t0))
+    (add-stat! state :expanded-results 1)
+    items))
 
-(defn- process-global-materialized-result!
-  [state wb opts target-ids cache-context build-dl {:keys [graph memory]}]
+(defn- candidate-record
+  [state item summary threshold?]
+  (let [result-order (.incrementAndGet (:candidate-counter state))
+        frontier-rank (item-rank item)]
+    {:frontier-rank frontier-rank
+     :candidate-rank (conj frontier-rank result-order)
+     :summary summary
+     :threshold? threshold?
+     :found-ns (now-ns)}))
+
+(defn- process-global-materialized-result
+  [state wb opts target-ids cache-context item {:keys [graph memory]}]
   (when-not (global-done? state)
     (let [{:keys [threshold-dl]} opts
           threshold? (threshold-active? threshold-dl)
+          score-start (now-ns)
           summary (result-summary graph
                                   memory
-                                  build-dl
+                                  (:dl item)
                                   target-ids
                                   cache-context
-                                  opts)]
-      (when (keep-result-summary? summary opts)
-        (let [summary (transform-result-summary summary opts)
+                                  opts)
+          score-end (now-ns)]
+      (add-stat! state :scoring-ns (- score-end score-start))
+      (if-not (keep-result-summary? summary opts)
+        {:expansions []
+         :candidates []}
+        (let [transform-start (now-ns)
+              summary (transform-result-summary summary opts)
+              transform-end (now-ns)
               emit? (or (not threshold?)
-                        (< (:dl summary) (double threshold-dl)))]
-          (cond
-            (and threshold? emit?)
-            (emit-global-result! state opts summary true)
+                        (< (:dl summary) (double threshold-dl)))
+              expansions (if (and threshold? emit?)
+                           []
+                           (expand-global-result state
+                                                 wb
+                                                 opts
+                                                 graph
+                                                 memory
+                                                 (:dl item)))
+              candidates (if emit?
+                           [(candidate-record state item summary threshold?)]
+                           [])]
+          (add-stat! state :candidate-transform-ns
+                     (- transform-end transform-start))
+          {:expansions expansions
+           :candidates candidates})))))
 
-            :else
-            (do
-              (expand-global-result! state wb opts graph memory build-dl)
-              (when emit?
-                (emit-global-result! state opts summary false)))))))))
+(defn- combine-global-work
+  [left right]
+  {:expansions (into (:expansions left) (:expansions right))
+   :candidates (into (:candidates left) (:candidates right))})
 
-(defn- process-global-frontier-item!
+(defn- process-global-frontier-item
   [state wb opts target-ids cache-context item]
-  (let [{:keys [results]} (materialize-build-shared wb
-                                                    (:seen state)
-                                                    (:build-info item)
-                                                    cache-context)]
-    (doseq [result results
-            :while (not (global-done? state))]
-      (process-global-materialized-result! state
-                                           wb
-                                           opts
-                                           target-ids
-                                           cache-context
-                                           (:dl item)
-                                           result))))
+  (let [results (materialize-build-concurrent state
+                                              wb
+                                              (:build-info item)
+                                              cache-context)]
+    (reduce (fn [work result]
+              (if (global-done? state)
+                (reduced work)
+                (combine-global-work
+                 work
+                 (process-global-materialized-result state
+                                                     wb
+                                                     opts
+                                                     target-ids
+                                                     cache-context
+                                                     item
+                                                     result))))
+            {:expansions []
+             :candidates []}
+            results)))
 
 (defn- global-worker
   [state wb opts target-ids cache-context]
   (reify java.util.concurrent.Callable
     (call [_]
       (loop []
-        (when-let [item (take-global-frontier-item! state opts)]
-          (try
-            (process-global-frontier-item! state
-                                           wb
-                                           opts
-                                           target-ids
-                                           cache-context
-                                           item)
-            (finally
-              (finish-global-frontier-item! state)))
+        (when-let [items (seq (take-global-frontier-batch! state opts))]
+          (doseq [item items]
+            (let [{:keys [expansions candidates]}
+                  (if (global-done? state)
+                    {:expansions []
+                     :candidates []}
+                    (try
+                      (process-global-frontier-item state
+                                                    wb
+                                                    opts
+                                                    target-ids
+                                                    cache-context
+                                                    item)
+                      (catch Throwable t
+                        (mark-global-done! state)
+                        (throw t))))]
+              (finish-global-frontier-item! state
+                                            opts
+                                            item
+                                            expansions
+                                            candidates)))
           (recur)))
       nil)))
 
 (defn- search-global-frontier
   [wb opts target-ids cache-context queue order n-workers]
-  (let [state (global-search-state queue order)
+  (let [opts (assoc opts :worker-count n-workers)
+        state (global-search-state queue order opts)
         opts (assoc opts
                     :next-order! #(.incrementAndGet (:order-counter state)))
         executor (java.util.concurrent.Executors/newFixedThreadPool n-workers)]

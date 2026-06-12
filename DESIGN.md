@@ -429,7 +429,8 @@ section across several roots.
 
 Description-length caching is caller-owned rather than record-mutable. Python
 WILLIAM caches `Value.desc_len()` on the `Value` object; CIWI keeps values
-immutable and passes explicit cache atoms through scoring contexts instead.
+immutable and passes explicit concurrent cache stores through scoring contexts
+instead.
 `ciwi.value/desc-len-cached` memoizes existing `Value` records by identity,
 matching Python's per-instance memoization and avoiding repeated large-vector
 hash work on cache hits. Raw non-`Value` inputs keep value-based cache keys.
@@ -437,17 +438,18 @@ hash work on cache hits. Raw non-`Value` inputs keep value-based cache keys.
 shares the value-DL cache across a candidate stream but creates fresh node
 caches per graph.
 
-These caches are explicit, caller-owned atoms rather than globals. Atomic
-updates make them safe to share across threads, and duplicate races are
-semantically harmless because cached values are deterministic. For parallel
-Wunderbaum this gives two valid modes: each search can own a private cache to
-avoid contention, or several searches can share a read-through value cache when
-they operate over the same immutable `Value` objects. Node-DL caches remain
-graph-local and should not be shared across graph versions. Future bounded
-local Wunderbaum runs on a large graph should preserve `Value` object identity
-for unchanged leaves, use per-search local caches by default, and optionally
-layer a shared value-analysis/value-DL cache above them if recomputation
-dominates contention.
+These caches are explicit, caller-owned `ConcurrentMap` instances rather than
+globals. `ciwi.cache` owns cache construction and get-or-compute operations so
+hot paths do not repeatedly dereference and CAS-update persistent map atoms.
+Duplicate races are semantically harmless because cached values are
+deterministic. For parallel Wunderbaum this gives two valid modes: each search
+can own a private cache to avoid contention, or several searches can share a
+read-through value cache when they operate over the same immutable `Value`
+objects. Node-DL caches remain graph-local and should not be shared across
+graph versions. Future bounded local Wunderbaum runs on a large graph should
+preserve `Value` object identity for unchanged leaves, use per-search local
+caches by default, and optionally layer a shared value-analysis/value-DL cache
+above them if recomputation dominates contention.
 
 CIWI's value description length is a direct port of Python WILLIAM's
 `Value.desc_len(mode="use_gaussian")` model. Clojure vectors that are
@@ -761,13 +763,22 @@ after initial seeding.
 `wunderbaum/iterate-global-best-first` is a separate experimental parallel
 strategy selected by Alice callers with
 `:parallel-strategy :global-best-first`. It uses one coordinated best-first
-frontier, shared pop/yield counters, and shared delayed-builder `seen` state.
-This makes worker counts less likely to diverge into unrelated local heaps, and
-it is the right place to explore shared stopping and work coordination. It is
-not the Python-parity implementation. Because workers can materialize popped
-items at different speeds, it still does not guarantee exact serial result
-order, work stealing beyond the shared queue, hard cancellation inside an
-already-running materialization, or the future bounded local rewrite semantics.
+frontier, dynamic worker batches, global pop/yield counters, concurrent
+result-key admission, and an ordered commit rule. Workers may speculate on
+later frontier items, but a threshold candidate is emitted only when no queued
+or active frontier item has an earlier `[build-dl order]` rank. This keeps the
+first accepted candidate stable relative to the best-first frontier while still
+allowing materialization, scoring, and expansion to run concurrently. It is not
+the Python-parity implementation and it still does not provide hard
+cancellation inside an already-running operator inversion/materialization or
+the future bounded local rewrite semantics.
+
+Scheduler diagnostics are opt-in. Passing `:wunderbaum-stats-atom` to
+Wunderbaum records frontier pops/enqueues, materialized and duplicate results,
+emissions, active frontier width, queue wait, materialization, de-duplication,
+scoring, candidate transform, expansion, and commit-wait time. Passing
+`:collect-wunderbaum-stats? true` to the Alice runner attaches one such stats
+map to each accepted greedy step.
 
 `ciwi.alice.wunderbaum` is the Alice-facing greedy runner over that core with
 an explicit declaration table for the Python `test_alice.py` operator basis. It

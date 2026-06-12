@@ -1,5 +1,6 @@
 (ns ciwi.graph-optimize
-  (:require [ciwi.dense.core :as dense]
+  (:require [ciwi.cache :as cache]
+            [ciwi.dense.core :as dense]
             [ciwi.graph :as graph]
             [ciwi.hashing :as hashing]
             [ciwi.optimize :as optimize]
@@ -338,7 +339,7 @@
   "
   [g mem {:keys [section-ids optimizer-fn propagation-options value-dl-cache]
           :or {propagation-options {}
-               value-dl-cache (atom {})}
+               value-dl-cache (cache/cache-store)}
           :as opts}]
   (let [root-id (root-id g opts)
         section-ids (vec (or section-ids (keys mem)))

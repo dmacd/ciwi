@@ -133,11 +133,19 @@
       predicate
       (assoc :candidate-predicate predicate))))
 
+(defn- with-step-stats
+  [opts candidate-opts]
+  (if (:collect-wunderbaum-stats? opts)
+    (let [stats (atom {})]
+      [(assoc candidate-opts :wunderbaum-stats-atom stats) stats])
+    [candidate-opts nil]))
+
 (defn- compress-leaf
   [search-context opts min-compression-rate target-trees leaf solution]
   (let [values (into [(wb-context/target-value (:data leaf))]
                      (leaf-free-values search-context target-trees leaf))
-        candidate-opts (step-candidate-opts opts solution)
+        [candidate-opts stats]
+        (with-step-stats opts (step-candidate-opts opts solution))
         threshold-dl (* (:dl leaf)
                         (- 1.0 min-compression-rate))
         search (wb-context/first-candidate-at-rate
@@ -150,19 +158,21 @@
                                                  :score-target-count 1)))]
     (if-let [candidate (:candidate search)]
       (let [replacement (render/candidate-tree search-context candidate :target0)]
-        {:leaf leaf
-         :candidate candidate
-         :replacement-tree replacement
-         :selected (render/tree-expr replacement)
-         :initial-dl (:dl leaf)
-         :dl (:dl replacement)
-         :compression-rate (alice/compression-rate (:dl leaf)
-                                                   (:dl replacement))
-         :candidates-consumed (:candidates-consumed search)
-         :stop-reason (:stop-reason search)})
-      {:leaf leaf
-       :candidates-consumed (:candidates-consumed search)
-       :stop-reason (:stop-reason search)})))
+        (cond-> {:leaf leaf
+                 :candidate candidate
+                 :replacement-tree replacement
+                 :selected (render/tree-expr replacement)
+                 :initial-dl (:dl leaf)
+                 :dl (:dl replacement)
+                 :compression-rate (alice/compression-rate (:dl leaf)
+                                                           (:dl replacement))
+                 :candidates-consumed (:candidates-consumed search)
+                 :stop-reason (:stop-reason search)}
+          stats (assoc :wunderbaum-stats @stats)))
+      (cond-> {:leaf leaf
+               :candidates-consumed (:candidates-consumed search)
+               :stop-reason (:stop-reason search)}
+        stats (assoc :wunderbaum-stats @stats)))))
 
 (defn- first-successful-compression
   [search-context opts min-compression-rate worthy-dl leaf-selection-policy
@@ -207,15 +217,17 @@
           replacement-tree))
 
 (defn- record-step
-  [{:keys [leaf selected initial-dl dl compression-rate candidates-consumed stop-reason]}]
-  {:target-id (:target-id leaf)
-   :path (:path leaf)
-   :initial-dl initial-dl
-   :dl dl
-   :compression-rate compression-rate
-   :selected selected
-   :candidates-consumed candidates-consumed
-   :stop-reason stop-reason})
+  [{:keys [leaf selected initial-dl dl compression-rate candidates-consumed
+           stop-reason wunderbaum-stats]}]
+  (cond-> {:target-id (:target-id leaf)
+           :path (:path leaf)
+           :initial-dl initial-dl
+           :dl dl
+           :compression-rate compression-rate
+           :selected selected
+           :candidates-consumed candidates-consumed
+           :stop-reason stop-reason}
+    wunderbaum-stats (assoc :wunderbaum-stats wunderbaum-stats)))
 
 (defn- nonpermeable-dl
   [value-dl-cache values]

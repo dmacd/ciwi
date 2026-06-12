@@ -26,6 +26,21 @@
 (def ^:private strategies
   #{"partitioned" "global-best-first"})
 
+(def ^:private stat-sum-keys
+  [:frontier-popped
+   :frontier-enqueued
+   :materialized-results
+   :duplicate-results
+   :emitted
+   :queue-wait-ns
+   :materialization-ns
+   :dedupe-ns
+   :scoring-ns
+   :candidate-transform-ns
+   :expansion-ns
+   :commit-wait-ns
+   :cancelled-takes])
+
 (defn- insert-repeat3-target
   [{:keys [head pairs tail]}]
   (let [head (long head)
@@ -98,13 +113,33 @@
             (nth xs (quot n 2)))
          2.0))))
 
+(defn- aggregate-stats
+  [result]
+  (let [step-stats (keep :wunderbaum-stats (:steps result))
+        summed (reduce (fn [acc stats]
+                         (merge-with + acc (select-keys stats stat-sum-keys)))
+                       {}
+                       step-stats)
+        max-active (reduce max
+                           0
+                           (map #(long (or (:max-active-frontier-items %) 0))
+                                step-stats))]
+    (assoc summed :max-active-frontier-items max-active)))
+
+(defn- ns->ms
+  [n]
+  (/ (double (or n 0)) 1000000.0))
+
 (defn- timed-run
-  [task scale workers strategy]
+  [task scale workers strategy collect-stats?]
   (let [{:keys [target threshold-rate]} (task-case task scale)
         compression-task (alice/compression-task [target]
                                                  {:name task
                                                   :threshold-rate threshold-rate})
         opts (cond-> base-opts
+               collect-stats?
+               (assoc :collect-wunderbaum-stats? true)
+
                (> workers 1)
                (assoc :num-workers workers)
 
@@ -113,19 +148,26 @@
                (assoc :parallel-strategy :global-best-first))
         t0 (now-ms)
         result (alice-wb/run-greedy-task compression-task opts)
-        elapsed (- (now-ms) t0)]
+        elapsed (- (now-ms) t0)
+        stats (when collect-stats?
+                (aggregate-stats result))]
     {:elapsed-ms elapsed
      :length (count target)
      :compression-rate (:compression-rate result)
      :meets-threshold? (:meets-threshold? result)
      :steps (count (:steps result))
-     :stop-reason (name (get-in result [:resource :stop-reason]))}))
+     :stop-reason (name (get-in result [:resource :stop-reason]))
+     :stats stats}))
 
 (defn- summarize
-  [task scale workers strategy warmups runs]
+  [task scale workers strategy warmups runs collect-stats?]
   (dotimes [_ warmups]
-    (timed-run task scale workers strategy))
-  (let [samples (repeatedly runs #(timed-run task scale workers strategy))
+    (timed-run task scale workers strategy collect-stats?))
+  (let [samples (repeatedly runs #(timed-run task
+                                             scale
+                                             workers
+                                             strategy
+                                             collect-stats?))
         times (mapv :elapsed-ms samples)
         last-result (last samples)]
     (merge last-result
@@ -142,7 +184,7 @@
             :min-ms (apply min times)
             :max-ms (apply max times)})))
 
-(defn- csv-row
+(defn- base-csv-row
   [row]
   (str/join ","
             [(:impl row)
@@ -159,6 +201,31 @@
              (:meets-threshold? row)
              (:steps row)
              (:stop-reason row)]))
+
+(defn- stats-csv-columns
+  [row]
+  (let [stats (:stats row)]
+    [(long (or (:frontier-popped stats) 0))
+     (long (or (:frontier-enqueued stats) 0))
+     (long (or (:materialized-results stats) 0))
+     (long (or (:duplicate-results stats) 0))
+     (long (or (:emitted stats) 0))
+     (long (or (:max-active-frontier-items stats) 0))
+     (format "%.3f" (ns->ms (:queue-wait-ns stats)))
+     (format "%.3f" (ns->ms (:materialization-ns stats)))
+     (format "%.3f" (ns->ms (:dedupe-ns stats)))
+     (format "%.3f" (ns->ms (:scoring-ns stats)))
+     (format "%.3f" (ns->ms (:candidate-transform-ns stats)))
+     (format "%.3f" (ns->ms (:expansion-ns stats)))
+     (format "%.3f" (ns->ms (:commit-wait-ns stats)))]))
+
+(defn- csv-row
+  [row collect-stats?]
+  (if collect-stats?
+    (str (base-csv-row row)
+         ","
+         (str/join "," (stats-csv-columns row)))
+    (base-csv-row row)))
 
 (defn- parse-list
   [s]
@@ -204,19 +271,29 @@
           "--runs"
           (recur (nnext args) (assoc opts :runs (parse-long value)))
 
+          "--stats"
+          (recur (nnext args) (assoc opts :collect-stats? (= "true" value)))
+
           (throw (ex-info "Unknown benchmark option" {:flag flag}))))
       opts)))
 
 (defn -main
   [& args]
-  (let [{:keys [tasks scales workers strategy warmups runs]} (cli-opts args)]
-    (println "impl,task,scale,workers,length,warmups,runs,median_ms,min_ms,max_ms,compression_rate,meets_threshold,steps,stop_reason")
+  (let [{:keys [tasks scales workers strategy warmups runs collect-stats?]}
+        (cli-opts args)
+        header "impl,task,scale,workers,length,warmups,runs,median_ms,min_ms,max_ms,compression_rate,meets_threshold,steps,stop_reason"
+        stats-header "frontier_popped,frontier_enqueued,materialized_results,duplicate_results,emitted,max_active_frontier_items,queue_wait_ms,materialization_ms,dedupe_ms,scoring_ms,candidate_transform_ms,expansion_ms,commit_wait_ms"]
+    (println (if collect-stats?
+               (str header "," stats-header)
+               header))
     (doseq [task tasks
             scale scales
             worker-count workers]
       (println (csv-row (summarize task
-                                   scale
-                                   worker-count
-                                   strategy
-                                   warmups
-                                   runs))))))
+                                    scale
+                                    worker-count
+                                    strategy
+                                    warmups
+                                    runs
+                                    collect-stats?)
+                        collect-stats?)))))

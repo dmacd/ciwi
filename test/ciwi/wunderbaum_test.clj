@@ -19,6 +19,35 @@
                        :input-specs [:int :int]
                        :output-spec :array-int}]}))
 
+(defn- constant-int-op
+  [id output arg]
+  (op/operator
+   {:id id
+    :conditions [[]]
+    :call (fn [_inputs] output)
+    :inverse (fn [actual-output _cond-inputs cond]
+               (when (and (= output actual-output)
+                          (empty? cond))
+                 [[arg]]))}))
+
+(defn- ordered-commit-wunderbaum
+  []
+  (let [slow (constant-int-op :slow-best 10 [0])
+        fast (constant-int-op :fast-later 10 [1])]
+    (sut/wunderbaum
+     {:registry {:slow-best slow
+                 :fast-later fast}
+      :ops-with-counts [{:op :slow-best
+                         :count 0
+                         :input-specs [:array-int]
+                         :output-spec :int
+                         :dl 1.0}
+                        {:op :fast-later
+                         :count 0
+                         :input-specs [:array-int]
+                         :output-spec :int
+                         :dl 2.0}]})))
+
 (def ^:private python-wunderbaum-operator-declarations
   [{:op :map :input-specs [:operator :array-int] :output-spec :array-int :dl 8.0}
    {:op :brange :input-specs [:int :int] :output-spec :array-int :dl 8.0}
@@ -145,6 +174,29 @@
     (is (some? result))
     (is (= [:brange 0 4]
            (get-in result [:selected :target0])))))
+
+(deftest global-best-first-uses-ordered-commit-when-later-worker-finishes-first
+  (let [target (value/value 10 {:spec :int})
+        stats (atom {})
+        result (sut/realize-selected
+                (first (sut/iterate-global-best-first
+                        (ordered-commit-wunderbaum)
+                        [target]
+                        {:parallelism 2
+                         :frontier-batch-size 1
+                         :max-popped 8
+                         :max-yields 1
+                         :wunderbaum-stats-atom stats
+                         :candidate-transform
+                         (fn [summary]
+                           (when (< (:build-dl summary) 1.5)
+                             (Thread/sleep 75))
+                           summary)})))]
+    (is (some? result))
+    (is (= [:slow-best [0]]
+           (get-in result [:selected :target0])))
+    (is (= :global-best-first (:strategy @stats)))
+    (is (pos? (:commit-wait-ns @stats)))))
 
 (deftest python-wunderbaum-parallel-drains-bounded-prefix
   (let [wb (sut/wunderbaum

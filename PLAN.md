@@ -52,7 +52,7 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   A first CIWI-vs-Python parallel scaling sweep, plus the first coordinated
   global queue prototype results, is recorded in
   `parallel-performance-scaling.md`.
-  Tests pass locally with 174 tests and 929 assertions on the default vector
+  Tests pass locally with 177 tests and 941 assertions on the default vector
   backend, plus 8 tests and 43 assertions on the opt-in DJL backend.
 
 ## Current State
@@ -187,16 +187,21 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   path. The other stochastic Python regression rows still need exact NumPy
   fixture capture before CIWI should claim direct fixture parity.
 - CIWI now has an experimental `:parallel-strategy :global-best-first` path
-  with one coordinated frontier, shared pop/yield counters, and shared
-  delayed-builder `seen` state. It is not the Python-parity path. Initial
-  measurements show that it improves threshold stability on medium
-  `insert_repeat3` but is not a blanket speedup; strict result ordering,
-  frontier-level coordination, and hard cancellation remain open design work.
+  with one coordinated frontier, dynamic worker batches, shared pop/yield
+  counters, concurrent delayed-result admission, and ordered commit. It is not
+  the Python-parity path. The first ordered-commit implementation keeps
+  threshold candidates from committing while earlier-ranked frontier work is
+  still queued or active, and it exposes opt-in scheduler stats through
+  `:wunderbaum-stats-atom` and Alice's `:collect-wunderbaum-stats?`.
   Medium `insert_repeat3` partitioned threshold failures are now understood as
   greedy path/order sensitivity, not absence of a solution: worker-local
   frontiers can accept a cumsum-first local compression that later stops below
   the task threshold with `:leaf-below-worthy`, while serial/global-best-first
   reach the insert/cumsum/getitem path.
+- Cache contexts now use caller-owned `ConcurrentMap` stores through
+  `ciwi.cache` helpers instead of atom-wrapped persistent maps. Value DL,
+  delayed-builder value fingerprints/inverse results, MDL node DL, and
+  optimizer-backed value DL scoring use the same cache boundary.
 - Native condition extraction now covers Python `test_conditions.py` fixture
   shapes `co0`-`co21` and `dag0`-`dag7`, including the `co15` order-only
   fixture. These are expressed as native graph/composite specs instead of DOT
