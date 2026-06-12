@@ -267,6 +267,40 @@ but the trend shows real wasted speculative work. The next scaling step should
 therefore focus on throttling speculation and cancellation, not on adding more
 workers.
 
+## Deferred Expansion And Cancellation
+
+The next global-queue slice added two scheduler controls:
+
+- Cancellation at safe boundaries: once a pending threshold candidate exists,
+  workers skip later-ranked queued work and stop between materialized results
+  from the same build item.
+- Deferred descendant expansion: non-emitting materialized graphs enqueue one
+  lower-bound expansion task instead of immediately expanding all descendants.
+
+The same large-task matrix was rerun with `--runs 3 --stats true` after that
+change. Each cell is `median milliseconds / threshold?`.
+
+| Task | w1 | w2 | w4 | w8 |
+| --- | ---: | ---: | ---: | ---: |
+| `insert_repeat3` large | 3825.092 / true | 1108.835 / true | 857.084 / true | 795.914 / true |
+| `increasing_runs` large | 986.208 / true | 792.778 / true | 764.279 / true | 4495.562 / true |
+| `reg_only_y` large | 57.811 / true | 57.950 / true | 125.312 / true | 162.483 / true |
+
+This is a real improvement for `insert_repeat3`: the ordered global path now
+gets about `4.8x` from one to eight workers while preserving the stable greedy
+solution. The important mechanism is deferred expansion, not thread count by
+itself. The previous large `insert_repeat3` ordered-global rows enqueued about
+`156k` to `160k` frontier descendants; the new rows enqueue about `20k`. On the
+slow step 5, wall time fell from about `2197 ms` to about `531 ms`, enqueues
+fell from about `128k` to `11.8k`, and summed expansion time fell from about
+`11.4 s` to `0.54 s`.
+
+The other tasks still mostly demonstrate limits. `increasing_runs` improves at
+two and four workers, but eight workers create enough speculative
+materialization to lose badly. `reg_only_y` remains an overhead calibration
+case: the useful serial work is too small for a coordinated scheduler to
+amortize.
+
 ## Per-Step Ordered Global Diagnostics
 
 Per-step rows can be collected with:
@@ -289,9 +323,8 @@ frontier work that the first threshold candidate can commit.
 
 | Task | Workers | Dominant Step Pattern |
 | --- | ---: | --- |
-| `insert_repeat3` large | 2 | Step 3 took `526 ms` after `2,972` pops; step 5 took `3,032 ms` after `4,200` pops and `128,185` enqueues. |
-| `insert_repeat3` large | 4 | Step 5 improved to `2,392 ms`, but summed expansion work rose to `6,479 ms`. |
-| `insert_repeat3` large | 8 | Step 5 improved only to `2,225 ms`, while summed expansion work rose to `11,529 ms`. |
+| `insert_repeat3` large | 2 | Before deferred expansion, step 5 took `3,032 ms` after `4,200` pops and `128,185` enqueues. After deferred expansion, the same class of run finishes that step near `531 ms` with about `11.8k` enqueues. |
+| `insert_repeat3` large | 8 | Before deferred expansion, step 5 improved only to `2,225 ms` while summed expansion work rose to `11,529 ms`. After deferred expansion, the large run finishes in about `796 ms` overall. |
 | `increasing_runs` large | 2 | Three narrow steps took `130/399/265 ms` with only `12/48/48` pops. |
 | `increasing_runs` large | 8 | The same three steps worsened to `1088/1862/1871 ms`; the scheduler popped more work, but not useful work. |
 | `reg_only_y` large | 2 | Two tiny steps took `41/11 ms`; there is not enough search work to amortize threads. |
@@ -322,22 +355,17 @@ For `insert_repeat3` large this produced `3721/2902/2728 ms` at `w2/w4/w8`.
 It caps `max_active_frontier_items` to `2/4/8`, but it does not materially
 reduce the total frontier proof: the run still popped about `7,500` items and
 enqueued about `156k` descendants. This means batch throttling is useful but
-insufficient. The bigger waste is active work that keeps materializing or
-expanding after a pending threshold candidate has already made later-ranked
-work unlikely to matter.
+insufficient by itself. Deferred expansion was the larger win because it
+changed when descendants become real queued build items.
 
 The next implementation work should reduce wasted speculation in four ways:
 
 - Candidate-sensitive dispatch: keep small batches in threshold mode until the
   scheduler has evidence that no candidate is near. This prevents simple tasks
   from turning one early winner into many active frontier items.
-- Active-work cancellation: once a pending candidate exists, active workers
-  whose item rank is not earlier than that candidate should stop at
-  materialization, scoring, and expansion boundaries.
-- Lazy descendant expansion: do not eagerly expand descendants of a
-  non-emitting materialized graph when a pending candidate may commit before
-  those descendants can be relevant. This directly targets the huge expansion
-  counters on `insert_repeat3` step 5.
+- Finer cancellation: cancellation now exists at queue, scoring, result, and
+  expansion boundaries, but expensive operator inversion/materialization calls
+  still run to their next boundary.
 - Adaptive useful-width control: use per-step stats such as popped/emitted
   ratio, commit wait, and duplicate rate to reduce worker width on narrow
   steps and open it only on steps like `insert_repeat3` step 5 where thousands
@@ -346,8 +374,9 @@ The next implementation work should reduce wasted speculation in four ways:
 ## Follow-Up
 
 - Continue tuning the ordered global queue before treating 4/8-worker results
-  as expected wins. It now has ordered commit and concurrent result admission,
-  but not hard cancellation inside already-running materializations.
+  as expected wins. It now has ordered commit, concurrent result admission,
+  safe-boundary cancellation, and deferred expansion, but not hard
+  cancellation inside already-running materializations.
 - Add a thresholded-search scheduling mode with `:frontier-batch-size 1` or an
   adaptive batch policy so workers do not pop far past the earliest pending
   threshold candidate. Re-run the same matrix after that change.

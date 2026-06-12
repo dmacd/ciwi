@@ -32,9 +32,13 @@
 (def ^:private stat-sum-keys
   [:frontier-popped
    :frontier-enqueued
+   :deferred-expansions
+   :expansion-tasks-popped
    :materialized-results
    :duplicate-results
    :emitted
+   :cancelled-items
+   :cancelled-results
    :queue-wait-ns
    :materialization-ns
    :dedupe-ns
@@ -215,9 +219,13 @@
   (let [stats (:stats row)]
     [(long (or (:frontier-popped stats) 0))
      (long (or (:frontier-enqueued stats) 0))
+     (long (or (:deferred-expansions stats) 0))
+     (long (or (:expansion-tasks-popped stats) 0))
      (long (or (:materialized-results stats) 0))
      (long (or (:duplicate-results stats) 0))
      (long (or (:emitted stats) 0))
+     (long (or (:cancelled-items stats) 0))
+     (long (or (:cancelled-results stats) 0))
      (long (or (:max-active-frontier-items stats) 0))
      (format "%.3f" (ns->ms (:queue-wait-ns stats)))
      (format "%.3f" (ns->ms (:materialization-ns stats)))
@@ -255,9 +263,13 @@
                (format "%.3f" (double (or (:search-elapsed-ms step) 0.0)))
                (long (or (:frontier-popped stats) 0))
                (long (or (:frontier-enqueued stats) 0))
+               (long (or (:deferred-expansions stats) 0))
+               (long (or (:expansion-tasks-popped stats) 0))
                (long (or (:materialized-results stats) 0))
                (long (or (:duplicate-results stats) 0))
                (long (or (:emitted stats) 0))
+               (long (or (:cancelled-items stats) 0))
+               (long (or (:cancelled-results stats) 0))
                (long (or (:max-active-frontier-items stats) 0))
                (format "%.3f" (ns->ms (:queue-wait-ns stats)))
                (format "%.3f" (ns->ms (:materialization-ns stats)))
@@ -360,8 +372,8 @@
         report (or report "summary")
         bench-opts {:frontier-batch-size frontier-batch-size}
         header "impl,task,scale,workers,length,warmups,runs,median_ms,min_ms,max_ms,compression_rate,meets_threshold,steps,stop_reason"
-        stats-header "frontier_popped,frontier_enqueued,materialized_results,duplicate_results,emitted,max_active_frontier_items,queue_wait_ms,materialization_ms,dedupe_ms,scoring_ms,candidate_transform_ms,expansion_ms,commit_wait_ms"
-        step-header "impl,task,scale,workers,length,run,step,path,initial_dl,step_dl,step_compression_rate,candidates_consumed,stop_reason,search_ms,frontier_popped,frontier_enqueued,materialized_results,duplicate_results,emitted,max_active_frontier_items,queue_wait_ms,materialization_ms,dedupe_ms,scoring_ms,candidate_transform_ms,expansion_ms,commit_wait_ms"]
+        stats-header "frontier_popped,frontier_enqueued,deferred_expansions,expansion_tasks_popped,materialized_results,duplicate_results,emitted,cancelled_items,cancelled_results,max_active_frontier_items,queue_wait_ms,materialization_ms,dedupe_ms,scoring_ms,candidate_transform_ms,expansion_ms,commit_wait_ms"
+        step-header "impl,task,scale,workers,length,run,step,path,initial_dl,step_dl,step_compression_rate,candidates_consumed,stop_reason,search_ms,frontier_popped,frontier_enqueued,deferred_expansions,expansion_tasks_popped,materialized_results,duplicate_results,emitted,cancelled_items,cancelled_results,max_active_frontier_items,queue_wait_ms,materialization_ms,dedupe_ms,scoring_ms,candidate_transform_ms,expansion_ms,commit_wait_ms"]
     (case report
       "summary"
       (do

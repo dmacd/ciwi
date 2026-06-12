@@ -30,6 +30,18 @@
                           (empty? cond))
                  [[arg]]))}))
 
+(defn- delayed-constant-int-op
+  [id output arg delay-ms]
+  (op/operator
+   {:id id
+    :conditions [[]]
+    :call (fn [_inputs] output)
+    :inverse (fn [actual-output _cond-inputs cond]
+               (when (and (= output actual-output)
+                          (empty? cond))
+                 (Thread/sleep delay-ms)
+                 [[arg]]))}))
+
 (defn- ordered-commit-wunderbaum
   []
   (let [slow (constant-int-op :slow-best 10 [0])
@@ -47,6 +59,31 @@
                          :input-specs [:array-int]
                          :output-spec :int
                          :dl 2.0}]})))
+
+(defn- cancellation-wunderbaum
+  []
+  (let [slow (constant-int-op :slow-best 10 [0])
+        fast (delayed-constant-int-op :fast-pending 10 [1] 50)
+        later (delayed-constant-int-op :cancelled-later 10 [2] 120)]
+    (sut/wunderbaum
+     {:registry {:slow-best slow
+                 :fast-pending fast
+                 :cancelled-later later}
+      :ops-with-counts [{:op :slow-best
+                         :count 0
+                         :input-specs [:array-int]
+                         :output-spec :int
+                         :dl 1.0}
+                        {:op :fast-pending
+                         :count 0
+                         :input-specs [:array-int]
+                         :output-spec :int
+                         :dl 2.0}
+                        {:op :cancelled-later
+                         :count 0
+                         :input-specs [:array-int]
+                         :output-spec :int
+                         :dl 3.0}]})))
 
 (def ^:private python-wunderbaum-operator-declarations
   [{:op :map :input-specs [:operator :array-int] :output-spec :array-int :dl 8.0}
@@ -175,6 +212,20 @@
     (is (= [:brange 0 4]
            (get-in result [:selected :target0])))))
 
+(deftest global-best-first-defers-descendant-expansion
+  (let [target (value/value [0 1 2 3] {:spec :array-int})
+        stats (atom {})
+        results (doall (sut/iterate-global-best-first
+                        (range-wunderbaum)
+                        [target]
+                        {:parallelism 2
+                         :max-popped 8
+                         :threshold-dl 0.0
+                         :wunderbaum-stats-atom stats}))]
+    (is (empty? results))
+    (is (pos? (:deferred-expansions @stats)))
+    (is (pos? (:expansion-tasks-popped @stats)))))
+
 (deftest global-best-first-uses-ordered-commit-when-later-worker-finishes-first
   (let [target (value/value 10 {:spec :int})
         stats (atom {})
@@ -197,6 +248,30 @@
            (get-in result [:selected :target0])))
     (is (= :global-best-first (:strategy @stats)))
     (is (pos? (:commit-wait-ns @stats)))))
+
+(deftest global-best-first-cancels-later-ranked-active-work
+  (let [target (value/value 10 {:spec :int})
+        stats (atom {})
+        result (sut/realize-selected
+                (first (sut/iterate-global-best-first
+                        (cancellation-wunderbaum)
+                        [target]
+                        {:parallelism 3
+                         :frontier-batch-size 1
+                         :max-popped 8
+                         :max-yields 1
+                         :wunderbaum-stats-atom stats
+                         :candidate-transform
+                         (fn [summary]
+                           (when (< (:build-dl summary) 1.5)
+                             (Thread/sleep 180))
+                           summary)})))
+        cancelled (+ (long (or (:cancelled-items @stats) 0))
+                     (long (or (:cancelled-results @stats) 0)))]
+    (is (some? result))
+    (is (= [:slow-best [0]]
+           (get-in result [:selected :target0])))
+    (is (pos? cancelled))))
 
 (deftest python-wunderbaum-parallel-drains-bounded-prefix
   (let [wb (sut/wunderbaum

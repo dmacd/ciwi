@@ -357,6 +357,14 @@
   [item]
   (build-rank item))
 
+(defn- expansion-item?
+  [item]
+  (= :expand (:kind item)))
+
+(defn- build-item?
+  [item]
+  (not (expansion-item? item)))
+
 (defn- rank-before?
   [left right]
   (neg? (compare left right)))
@@ -370,6 +378,15 @@
 (defn- frontier-batch-size
   [opts]
   (long (max 1 (or (:frontier-batch-size opts) 4))))
+
+(defn- min-element-dl
+  [wb]
+  (let [dl (reduce min
+                   Double/POSITIVE_INFINITY
+                   (map :dl
+                        (mapcat val (:elements-by-condition-key wb))))]
+    (when (< dl Double/POSITIVE_INFINITY)
+      dl)))
 
 (defn- global-search-state
   [queue order opts]
@@ -435,11 +452,20 @@
   [{:keys [pending-candidates]}]
   (some-> (first @pending-candidates) :frontier-rank))
 
-(defn- dispatchable-item?
+(defn- item-earlier-than-pending?
   [state item]
   (if-let [cutoff (min-pending-frontier-rank state)]
     (rank-before? (item-rank item) cutoff)
     true))
+
+(defn- cancel-item-work?
+  [state item]
+  (or (global-done? state)
+      (not (item-earlier-than-pending? state item))))
+
+(defn- dispatchable-item?
+  [state item]
+  (item-earlier-than-pending? state item))
 
 (defn- pop-dispatch-batch
   [queue n cutoff]
@@ -477,12 +503,15 @@
                                     @queue
                                     n
                                     (min-pending-frontier-rank state))
-                ranks (map item-rank items)]
+                ranks (map item-rank items)
+                build-count (count (filter build-item? items))
+                expansion-count (- (count items) build-count)]
             (reset! queue next-queue)
-            (swap! popped + (count items))
+            (swap! popped + build-count)
             (swap! active-ranks into ranks)
             (add-stat! state :queue-wait-ns (- (now-ns) wait-start))
-            (add-stat! state :frontier-popped (count items))
+            (add-stat! state :frontier-popped build-count)
+            (add-stat! state :expansion-tasks-popped expansion-count)
             (max-stat! state :max-active-frontier-items (count @active-ranks))
             items)
 
@@ -571,6 +600,17 @@
     (add-stat! state :expanded-results 1)
     items))
 
+(defn- deferred-expansion-item
+  [state wb graph memory build-dl]
+  (when-let [min-dl (min-element-dl wb)]
+    (add-stat! state :deferred-expansions 1)
+    {:kind :expand
+     :dl (+ (double build-dl) (double min-dl))
+     :order (.incrementAndGet (:order-counter state))
+     :expand-info {:graph graph
+                   :memory memory
+                   :build-dl build-dl}}))
+
 (defn- candidate-record
   [state item summary threshold?]
   (let [result-order (.incrementAndGet (:candidate-counter state))
@@ -583,7 +623,7 @@
 
 (defn- process-global-materialized-result
   [state wb opts target-ids cache-context item {:keys [graph memory]}]
-  (when-not (global-done? state)
+  (when-not (cancel-item-work? state item)
     (let [{:keys [threshold-dl]} opts
           threshold? (threshold-active? threshold-dl)
           score-start (now-ns)
@@ -595,7 +635,8 @@
                                   opts)
           score-end (now-ns)]
       (add-stat! state :scoring-ns (- score-end score-start))
-      (if-not (keep-result-summary? summary opts)
+      (if (or (cancel-item-work? state item)
+              (not (keep-result-summary? summary opts)))
         {:expansions []
          :candidates []}
         (let [transform-start (now-ns)
@@ -603,14 +644,16 @@
               transform-end (now-ns)
               emit? (or (not threshold?)
                         (< (:dl summary) (double threshold-dl)))
-              expansions (if (and threshold? emit?)
+              expansions (if (or (and threshold? emit?)
+                                 (cancel-item-work? state item))
                            []
-                           (expand-global-result state
-                                                 wb
-                                                 opts
-                                                 graph
-                                                 memory
-                                                 (:dl item)))
+                           (if-let [deferred (deferred-expansion-item state
+                                                                      wb
+                                                                      graph
+                                                                      memory
+                                                                      (:dl item))]
+                             [deferred]
+                             []))
               candidates (if emit?
                            [(candidate-record state item summary threshold?)]
                            [])]
@@ -626,25 +669,36 @@
 
 (defn- process-global-frontier-item
   [state wb opts target-ids cache-context item]
-  (let [results (materialize-build-concurrent state
-                                              wb
-                                              (:build-info item)
-                                              cache-context)]
-    (reduce (fn [work result]
-              (if (global-done? state)
-                (reduced work)
-                (combine-global-work
-                 work
-                 (process-global-materialized-result state
-                                                     wb
-                                                     opts
-                                                     target-ids
-                                                     cache-context
-                                                     item
-                                                     result))))
-            {:expansions []
-             :candidates []}
-            results)))
+  (if (cancel-item-work? state item)
+    (do
+      (add-stat! state :cancelled-items 1)
+      {:expansions []
+       :candidates []})
+    (if (expansion-item? item)
+      (let [{:keys [graph memory build-dl]} (:expand-info item)]
+        {:expansions (expand-global-result state wb opts graph memory build-dl)
+         :candidates []})
+      (let [results (materialize-build-concurrent state
+                                                  wb
+                                                  (:build-info item)
+                                                  cache-context)]
+        (reduce (fn [work result]
+                  (if (cancel-item-work? state item)
+                    (do
+                      (add-stat! state :cancelled-results 1)
+                      (reduced work))
+                    (combine-global-work
+                     work
+                     (process-global-materialized-result state
+                                                         wb
+                                                         opts
+                                                         target-ids
+                                                         cache-context
+                                                         item
+                                                         result))))
+                {:expansions []
+                 :candidates []}
+                results)))))
 
 (defn- global-worker
   [state wb opts target-ids cache-context]
@@ -654,7 +708,7 @@
         (when-let [items (seq (take-global-frontier-batch! state opts))]
           (doseq [item items]
             (let [{:keys [expansions candidates]}
-                  (if (global-done? state)
+                  (if (cancel-item-work? state item)
                     {:expansions []
                      :candidates []}
                     (try

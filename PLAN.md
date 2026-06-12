@@ -52,7 +52,7 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   A first CIWI-vs-Python parallel scaling sweep, plus the first coordinated
   global queue prototype results, is recorded in
   `parallel-performance-scaling.md`.
-  Tests pass locally with 177 tests and 941 assertions on the default vector
+  Tests pass locally with 179 tests and 947 assertions on the default vector
   backend, plus 8 tests and 43 assertions on the opt-in DJL backend.
 
 ## Current State
@@ -188,23 +188,24 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   fixture capture before CIWI should claim direct fixture parity.
 - CIWI now has an experimental `:parallel-strategy :global-best-first` path
   with one coordinated frontier, dynamic worker batches, shared pop/yield
-  counters, concurrent delayed-result admission, and ordered commit. It is not
-  the Python-parity path. The first ordered-commit implementation keeps
+  counters, concurrent delayed-result admission, ordered commit,
+  candidate-sensitive cancellation at safe boundaries, and deferred descendant
+  expansion through first-class expansion queue items. It is not the
+  Python-parity path. The ordered-commit implementation keeps
   threshold candidates from committing while earlier-ranked frontier work is
   still queued or active, and it exposes opt-in scheduler stats through
   `:wunderbaum-stats-atom` and Alice's `:collect-wunderbaum-stats?`.
   A full warm `insert_repeat3`/`increasing_runs`/`reg_only_y` ordered-global
   matrix with `--runs 3 --stats true` is now recorded in
-  `parallel-performance-scaling.md`. It confirms threshold stability but weak
-  scaling: 2 workers sometimes helps, while 4/8 workers often add speculative
-  materialization and commit-wait overhead.
-  Per-step diagnostics show that every accepted large-case step consumes one
-  yielded candidate; the slow work is clearing earlier-ranked frontier prefixes
-  before that candidate can commit. `insert_repeat3` has the only plausibly
-  parallel slow steps, especially step 5, but even there batch throttling alone
-  is insufficient. The next scheduler work should add candidate-sensitive
-  dispatch, active-work cancellation, lazy descendant expansion, and adaptive
-  useful-width control.
+  `parallel-performance-scaling.md`. Deferred expansion is the first clear
+  scaling win for the ordered global path: large `insert_repeat3` now improves
+  from `3825 ms` at one worker to `796 ms` at eight workers, and its large-case
+  frontier enqueues drop from about `160k` to about `20k`.
+  `increasing_runs` and `reg_only_y` remain weak scaling cases: extra workers
+  can still over-speculate on narrow paths where materialization/scoring
+  dominates useful search work. The next scheduler work should add adaptive
+  useful-width control, candidate-sensitive dispatch width, and finer
+  cancellation inside long inversion/materialization paths where possible.
   Medium `insert_repeat3` partitioned threshold failures are now understood as
   greedy path/order sensitivity, not absence of a solution: worker-local
   frontiers can accept a cumsum-first local compression that later stops below

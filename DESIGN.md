@@ -768,13 +768,29 @@ result-key admission, and an ordered commit rule. Workers may speculate on
 later frontier items, but a threshold candidate is emitted only when no queued
 or active frontier item has an earlier `[build-dl order]` rank. This keeps the
 first accepted candidate stable relative to the best-first frontier while still
-allowing materialization, scoring, and expansion to run concurrently. It is not
-the Python-parity implementation and it still does not provide hard
-cancellation inside an already-running operator inversion/materialization or
-the future bounded local rewrite semantics.
+allowing materialization, scoring, and expansion to run concurrently.
+
+The global queue has two item kinds. Build items materialize one delayed graph
+builder. Expansion items represent the deferred descendant expansion of a
+materialized graph that did not emit a threshold-accepted candidate. Expansion
+items are ranked by `build-dl + min-element-dl`, which is the same lower bound
+the first child build item would have had. This avoids eagerly flooding the
+frontier with descendants that may be irrelevant once an earlier threshold
+candidate is pending. It also preserves best-first ordering because expansion
+work must be popped before any child build item can exist.
+
+Thresholded global search also has candidate-sensitive cancellation at safe
+boundaries. Workers skip queued items whose rank is not earlier than the
+earliest pending threshold candidate, stop between materialized results from
+the same build item, and re-check before scoring or enqueueing expansion work.
+This prevents later-ranked speculation from continuing after it cannot affect
+the ordered commit decision. The implementation still does not hard-interrupt
+an already-running operator inversion/materialization call, and it is not the
+future bounded local rewrite semantics.
 
 Scheduler diagnostics are opt-in. Passing `:wunderbaum-stats-atom` to
 Wunderbaum records frontier pops/enqueues, materialized and duplicate results,
+deferred expansion tasks, popped expansion tasks, cancelled items/results,
 emissions, active frontier width, queue wait, materialization, de-duplication,
 scoring, candidate transform, expansion, and commit-wait time. Passing
 `:collect-wunderbaum-stats? true` to the Alice runner attaches one such stats
