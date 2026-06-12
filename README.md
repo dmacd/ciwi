@@ -1,23 +1,59 @@
 # CIWI
 
-CIWI is a Clojure proof of concept for incremental compression in the style of
-[WILLIAM](https://gitlab.com/occam_ua/william). The goal is to make the core
-machinery easier to inspect, test, and evolve: values, operators, graph
-construction, MDL selection, bounded rewrite, exhaustive rewrite, and the
-Alice/Wunderbaum compression path are represented with ordinary Clojure data and
-small explicit interfaces.
+CIWI is a Clojure proof of concept for WILLIAM-style incremental compression,
+using [Python WILLIAM](https://gitlab.com/occam_ua/william) as the behavioral
+baseline. It is not a Python API clone. The goal is to make the core machinery
+easy to inspect, test, and evolve: values, operators, graph construction, MDL
+selection, propagation, delayed graph materialization, Wunderbaum/Alice search,
+bounded rewrite, and exhaustive rewrite are represented with ordinary Clojure
+data and small explicit interfaces.
 
 For more context, see [DESIGN.md](./DESIGN.md) for the current architecture and
 [PLAN.md](./PLAN.md) for the active implementation roadmap.
 
-
-
-
 ## Status
 
 CIWI is pre-alpha research code and still very much under construction. It is
-not yet at parity with WILLIAM, and APIs, data shapes, search behavior, and
-performance characteristics may change quickly.
+now past the first useful Python WILLIAM/Alice baseline: the active
+`ciwi.alice.wunderbaum` path has Python-scale compression evidence for all
+sequence rows in Python `william/tests/test_alice.py`, using the Python Alice
+operator basis and Python-compatible value description length model.
+
+That does not mean CIWI is a full WILLIAM replacement.
+
+- Core Alice sequence tasks are covered through the straight Wunderbaum port:
+  `simple_repeat`, `insert_repeat`, `insert_repeat2`, `insert_repeat3`,
+  `repeat_with_noise`, `simply_linear`, `sprinkled`, `increasing_runs`, and
+  `map_negate`.
+- Core WILLIAM machinery has fixture coverage for bottleneck/MDL selection,
+  propagation, delayed graph building, standalone Wunderbaum iteration,
+  condition extraction, and most compression-relevant composite behavior.
+- Optimizer-backed graph search covers the matrix-regression Alice pipeline
+  rows and several supporting optimizer/helper behaviors. Some standalone
+  numeric rows are still behavior-level CIWI fixtures rather than exact NumPy
+  fixture captures.
+- Parallel Wunderbaum/Alice is opt-in. The Python-shaped partitioned path has
+  completion coverage for the sequence rows plus deterministic regression and
+  matrix rows, but this is not a broad performance claim or full Python
+  `all_tasks` parallel parity claim.
+- The `:global-best-first` parallel strategy, Iris classifier rows, dense DJL
+  backend, and local bounded rewrite machinery are active experiments or
+  supporting infrastructure, not baseline parity claims unless called out in
+  the evidence docs.
+
+APIs, data shapes, search behavior, and performance characteristics may still
+change quickly.
+
+The main evidence records are:
+
+- [alice-test-parity.md](./alice-test-parity.md) for plain Alice/Wunderbaum
+  sequence compression.
+- [PYTHON-TEST-ROADMAP.md](./PYTHON-TEST-ROADMAP.md) for the Python test-suite
+  parity map and out-of-scope decisions.
+- [optimizer-graph-search-parity.md](./optimizer-graph-search-parity.md) for
+  numeric optimizer-backed graph search.
+- [parallel-performance-scaling.md](./parallel-performance-scaling.md) for
+  early parallel timing and scheduler experiments.
 
 ## Terminology
 
@@ -88,6 +124,19 @@ Alice/Wunderbaum path that is currently driving parity work. The graph rewrite
 operator is the active local bounded rewrite mechanism; the older standalone
 enumerative rewrite path has been removed.
 
+The active Python baseline path is:
+
+```text
+ciwi.alice task data
+  -> ciwi.alice.wunderbaum greedy runner
+  -> ciwi.wunderbaum frontier/materialization/search
+  -> ciwi.mdl Python-style graph/value scoring
+```
+
+`ciwi.alice-legacy` is retained only as a local no-recognizer baseline harness.
+Recognizer templates are proposal/debugging tools and are disabled by default;
+they are not Alice parity evidence.
+
 ## License
 
 CIWI uses the same terms as WILLIAM: Creative Commons
@@ -107,7 +156,7 @@ finish the port and see what we could build on top of it. As a bonus, I
 tend understand things better by building them, or at least coaching someone 
 else to build them.
 
-So that's the emotional rationale. The more technical motivation is clojure 
+So that's the emotional rationale. The more technical motivation is Clojure 
 seems like a more natural fit for experimenting
 with more sophisticated local, incremental, and bounded graph rewrites due
 to its emphasis on immutability and use of efficient persistent data
