@@ -212,34 +212,69 @@ opt-in stats:
 
 ```bash
 ./bin/clojure -M:dev -m ciwi.bench.parallel-scaling \
-  --tasks insert_repeat3 \
-  --scales medium \
-  --workers 2,4,8 \
+  --tasks insert_repeat3,increasing_runs,reg_only_y \
+  --scales small,medium,large \
+  --workers 1,2,4,8 \
   --strategy global-best-first \
-  --warmups 0 \
-  --runs 1 \
+  --warmups 1 \
+  --runs 3 \
   --stats true
 ```
 
-Smoke results after the ordered-commit implementation:
+Date: 2026-06-12. Each cell is `median milliseconds / threshold?`.
 
-| Task | Scale | w2 | w4 | w8 |
-| --- | --- | ---: | ---: | ---: |
-| `insert_repeat3` | medium | 249.022 / true | 107.708 / true | 116.162 / true |
+### Ordered Global insert_repeat3
 
-All three rows reached the same `0.962651994` compression rate in five greedy
-steps. The stats columns showed increasing speculation with worker count
-(`frontier_popped` 280/300/331 and `max_active_frontier_items` 8/16/32), so the
-next measurement pass should use warm medians and inspect useful work per
-committed step, not only wall time.
+| Scale | w1 | w2 | w4 | w8 |
+| --- | ---: | ---: | ---: | ---: |
+| small | 104.937 / false | 73.008 / false | 50.425 / false | 55.628 / false |
+| medium | 114.980 / true | 106.309 / true | 87.064 / true | 89.577 / true |
+| large | 3711.626 / true | 3681.209 / true | 2960.311 / true | 2819.673 / true |
+
+### Ordered Global increasing_runs
+
+| Scale | w1 | w2 | w4 | w8 |
+| --- | ---: | ---: | ---: | ---: |
+| small | 101.423 / false | 92.604 / false | 99.302 / false | 279.148 / false |
+| medium | 389.542 / true | 346.357 / true | 434.797 / true | 1521.719 / true |
+| large | 1019.790 / true | 823.582 / true | 990.535 / true | 3407.078 / true |
+
+### Ordered Global reg_only_y
+
+| Scale | w1 | w2 | w4 | w8 |
+| --- | ---: | ---: | ---: | ---: |
+| small | 13.711 / true | 8.549 / true | 9.072 / true | 18.683 / true |
+| medium | 29.350 / true | 27.749 / true | 55.693 / true | 87.844 / true |
+| large | 59.455 / true | 60.060 / true | 58.882 / true | 180.484 / true |
+
+Ordered global search fixes the important stability problem: every medium and
+large row that should reach the task threshold does so, and `insert_repeat3`
+medium/large converge to the stable ordered path. It does not yet scale well.
+The best rows are modest: `insert_repeat3` large improves only from
+`3711.626 ms` to `2819.673 ms` at 8 workers, and `increasing_runs` large
+improves from `1019.790 ms` to `823.582 ms` at 2 workers before getting worse.
+`reg_only_y` remains overhead calibration; there is too little search work for
+threads to amortize.
+
+The stats columns explain the gap. With default `:frontier-batch-size 4`,
+`max_active_frontier_items` rises to `8`, `16`, and `32` at `w2`, `w4`, and
+`w8`. That means the ordered scheduler is allowing up to four speculative
+frontier items per worker. On `increasing_runs` large, summed
+`materialization_ms` grows from `1177.987` at `w2` to `3171.197` at `w4` and
+`8796.617` at `w8`; `commit_wait_ms` also grows from `0.037` to `71.229` and
+`257.672`. These are summed worker-time counters, so they can exceed wall time,
+but the trend shows real wasted speculative work. The next scaling step should
+therefore focus on throttling speculation and cancellation, not on adding more
+workers.
 
 ## Follow-Up
 
-- Rerun the solved rows with `--runs 3` or `--runs 5` and report medians once
-  the next parallel implementation change lands.
 - Continue tuning the ordered global queue before treating 4/8-worker results
   as expected wins. It now has ordered commit and concurrent result admission,
   but not hard cancellation inside already-running materializations.
+- Add a thresholded-search scheduling mode with `:frontier-batch-size 1` or an
+  adaptive batch policy so workers do not pop far past the earliest pending
+  threshold candidate. Re-run the same matrix after that change.
 - Keep `reg_only_y` in the suite as overhead calibration; do not use it as
   evidence that parallel search improves useful work.
 - Revisit `increasing_runs` after the planned dense primitive backend cleanup,

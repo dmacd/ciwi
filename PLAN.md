@@ -1,6 +1,6 @@
 # CIWI Plan
 
-Last updated: 2026-06-11.
+Last updated: 2026-06-12.
 
 ## Objective
 
@@ -193,6 +193,11 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   threshold candidates from committing while earlier-ranked frontier work is
   still queued or active, and it exposes opt-in scheduler stats through
   `:wunderbaum-stats-atom` and Alice's `:collect-wunderbaum-stats?`.
+  A full warm `insert_repeat3`/`increasing_runs`/`reg_only_y` ordered-global
+  matrix with `--runs 3 --stats true` is now recorded in
+  `parallel-performance-scaling.md`. It confirms threshold stability but weak
+  scaling: 2 workers sometimes helps, while 4/8 workers often add speculative
+  materialization and commit-wait overhead.
   Medium `insert_repeat3` partitioned threshold failures are now understood as
   greedy path/order sensitivity, not absence of a solution: worker-local
   frontiers can accept a cumsum-first local compression that later stops below
