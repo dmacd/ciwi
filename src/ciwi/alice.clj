@@ -34,7 +34,9 @@
                  solutions {}
                  metadata {}}}]
   (let [coerce-task-data (fn [x]
-                           (value/datum (value/value x)))]
+                           (if (value/value? x)
+                             x
+                             (value/datum (value/value x))))]
     (->CompressionTask name
                        (mapv coerce-task-data targets)
                        (require-rate-fraction :threshold-rate threshold-rate)

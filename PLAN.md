@@ -1,6 +1,6 @@
 # CIWI Plan
 
-Last updated: 2026-06-12.
+Last updated: 2026-06-15.
 
 ## Objective
 
@@ -52,8 +52,26 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   A first CIWI-vs-Python parallel scaling sweep, plus the first coordinated
   global queue prototype results, is recorded in
   `parallel-performance-scaling.md`.
-  Tests pass locally with 179 tests and 947 assertions on the default vector
-  backend, plus 8 tests and 43 assertions on the opt-in DJL backend.
+- CIWI now has an opt-in generic graph rendering and tracing layer for demo
+  and debugging work: `ciwi.render.graph` writes deterministic DOT and PNG
+  through Graphviz when available, `ciwi.render.movie` provides stable frame
+  names and optional ffmpeg MP4 assembly, and `ciwi.wunderbaum`/Alice greedy
+  options accept sampled `:observer` callbacks for frontier materialization,
+  accepted candidate, and greedy-step events. These hooks are inactive unless
+  supplied by the caller, and the no-observer path now short-circuits before
+  constructing event payload maps.
+- A first native house-demo scaffold now lives in `ciwi.demos.house`. It
+  includes the Python legacy fixture geometry, a small RandomState-compatible
+  MT19937 normal generator for the seeded noisy 50x50x3 RGB task, demo-local
+  low-level geometry/rendering primitives (`point-add`, `line`, `fill`,
+  `concat`, `dye`, `draw`, and image residual `add`), PNG image output, and a
+  guided compression entry point with an injected primitive registry and native
+  solution-prefix predicate. The full guided acceptance threshold and unguided
+  compression milestone are still pending search-bound/order tuning; do not
+  count them as achieved parity evidence yet.
+- The default vector-backend suite passes locally with 188 tests and 974
+  assertions. The opt-in DJL backend was not rerun in this turn; the last
+  recorded DJL suite remains 8 tests and 43 assertions.
 
 ## Current State
 
@@ -70,7 +88,24 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   generalized conditions, node-tuple enumeration, delayed graph building,
   operator inversion, usage-biased DL, MDL-selected materialized results, and
   an opt-in partitioned parallel iterator for Python's parallel-drain and
-  Alice parallel completion shapes.
+  Alice parallel completion shapes. It also exposes opt-in sampled observer
+  events for materialized frontier items and emitted candidates; Alice greedy
+  emits matching accepted-step events. The observer path is a debugging/demo
+  surface and does not alter search results when absent. Absent observers are
+  checked before event payload construction, so rendering/tracing costs stay
+  opt-in.
+- `ciwi.render.graph` is the generic graph visualization surface. It renders
+  value and operator nodes, explicit roots, selected options, graph/value DL
+  labels, and compact value summaries to DOT, and shells out to installed
+  Graphviz `dot` for PNGs. `ciwi.render.movie` builds stable graph-frame paths
+  and optionally invokes `ffmpeg` for MP4s.
+- `ciwi.demos.house` is the staged house-image demo area. Its fixture and
+  primitives are intentionally demo-local and are not part of the default
+  Alice parity basis. Current coverage verifies deterministic fixture
+  generation, primitive rendering behavior, PNG writing, and that the bounded
+  guided entry point is executable; discovering the full house graph at a
+  documented compression threshold and then removing the guide remain open
+  demo milestones.
 - `ciwi.alice.wunderbaum` adds an Alice-facing greedy runner over that core.
   It is the main Alice parity path. `ciwi.alice` still supplies shared task
   records, the Alice operator registry, constructors, and compression-rate

@@ -5,6 +5,7 @@
             [ciwi.graph :as graph]
             [ciwi.mdl :as mdl]
             [ciwi.propagation :as propagation]
+            [ciwi.search.trace :as trace]
             [ciwi.spec :as spec]
             [ciwi.wunderbaum.attachment :as attachment]
             [ciwi.wunderbaum.declarations :as declarations]
@@ -243,13 +244,32 @@
           (cond
             (and threshold? emit?)
             (do
+              (when (trace/enabled? opts)
+                (trace/emit! opts
+                             :accepted-candidate
+                             {:dl (:dl summary)
+                              :build-dl build-dl
+                              :threshold? true
+                              :target-ids target-ids
+                              :summary summary}
+                             (inc yielded)))
               (request-halt! opts)
               (reduced [queue order (inc yielded) (conj emitted summary) true]))
 
             :else
             (let [[queue order] (expand-graph wb queue graph memory build-dl opts order)]
               (if emit?
-                [queue order (inc yielded) (conj emitted summary) false]
+                (do
+                  (when (trace/enabled? opts)
+                    (trace/emit! opts
+                                 :accepted-candidate
+                                 {:dl (:dl summary)
+                                  :build-dl build-dl
+                                  :threshold? false
+                                  :target-ids target-ids
+                                  :summary summary}
+                                 (inc yielded)))
+                  [queue order (inc yielded) (conj emitted summary) false])
                 [queue order yielded emitted false]))))))))
 
 (defn- process-frontier-item
@@ -259,6 +279,13 @@
                                                   seen
                                                   build-info
                                                   cache-context)
+        _ (when (trace/enabled? opts)
+            (trace/emit! opts
+                         :frontier-materialized
+                         {:frontier-order (:order item)
+                          :frontier-dl (:dl item)
+                          :result-count (count results)}
+                         (:order item)))
         [queue order yielded emitted stop?]
         (reduce (partial add-materialized-result wb opts target-ids cache-context (:dl item))
                 [queue order yielded [] false]
@@ -443,6 +470,15 @@
                        :commit-wait-ns
                        (- (now-ns) (:found-ns candidate)))
             (let [yielded-count (swap! yielded inc)]
+              (when (trace/enabled? opts)
+                (trace/emit! opts
+                             :accepted-candidate
+                             {:dl (:dl (:summary candidate))
+                              :build-dl (:build-dl (:summary candidate))
+                              :threshold? (:threshold? candidate)
+                              :target-ids (:target-ids (:summary candidate))
+                              :summary (:summary candidate)}
+                             yielded-count))
               (when (or (:threshold? candidate)
                         (<= max-yields yielded-count))
                 (reset! done? true)))
@@ -563,7 +599,7 @@
     (nil? (cache/put-if-absent! (:seen state) k true))))
 
 (defn- materialize-build-concurrent
-  [state wb build-info cache-context]
+  [state wb opts item build-info cache-context]
   (let [t0 (now-ns)
         raw-results (delayed/raw-delayed-dag-build
                      build-info
@@ -584,6 +620,15 @@
     (add-stat! state :materialization-ns (- t1 t0))
     (add-stat! state :materialized-results (count raw-results))
     (add-stat! state :duplicate-results duplicate-count)
+    (when (trace/enabled? opts)
+      (trace/emit! opts
+                   :frontier-materialized
+                   {:frontier-order (:order item)
+                    :frontier-dl (:dl item)
+                    :result-count (count raw-results)
+                    :admitted-count (count admitted)
+                    :duplicate-count duplicate-count}
+                   (:order item)))
     (persistent! admitted)))
 
 (defn- expand-global-result
@@ -680,6 +725,8 @@
          :candidates []})
       (let [results (materialize-build-concurrent state
                                                   wb
+                                                  opts
+                                                  item
                                                   (:build-info item)
                                                   cache-context)]
         (reduce (fn [work result]

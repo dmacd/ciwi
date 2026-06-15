@@ -3,6 +3,7 @@
             [ciwi.alice.wunderbaum.context :as wb-context]
             [ciwi.alice.wunderbaum.render :as render]
             [ciwi.cache :as cache]
+            [ciwi.search.trace :as trace]
             [ciwi.value :as value]))
 
 (defn- same-leaf?
@@ -355,9 +356,18 @@
                                                    (count steps))
                 consumed (+ consumed (:candidates-consumed step))]
             (if (:replacement-tree step)
-              (recur (apply-compression target-trees step)
-                     (conj steps (record-step step))
-                     consumed)
+              (let [recorded-step (record-step step)]
+                (when (trace/enabled? opts)
+                  (trace/emit! opts
+                               :greedy-step-completed
+                               {:step-index (count steps)
+                                :step recorded-step
+                                :selected (:selected recorded-step)
+                                :compression-rate (:compression-rate recorded-step)}
+                               (inc (count steps))))
+                (recur (apply-compression target-trees step)
+                       (conj steps recorded-step)
+                       consumed))
               (greedy-result task
                              search-context
                              initial-dl

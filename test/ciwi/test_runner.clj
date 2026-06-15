@@ -9,6 +9,7 @@
             [ciwi.conditions-test]
             [ciwi.dense-test]
             [ciwi.delayed-builder-test]
+            [ciwi.demos.house-test]
             [ciwi.dsl-test]
             [ciwi.enumerator-test]
             [ciwi.fix-test]
@@ -22,9 +23,12 @@
             [ciwi.operator-test]
             [ciwi.optimize-test]
             [ciwi.propagation-test]
+            [ciwi.render-graph-test]
+            [ciwi.render-movie-test]
             [ciwi.search-test]
             [ciwi.structure-test]
             [ciwi.value-test]
+            [ciwi.wunderbaum-observer-test]
             [ciwi.wunderbaum-test]))
 
 (defn -main
@@ -38,6 +42,7 @@
                                              'ciwi.conditions-test
                                              'ciwi.dense-test
                                              'ciwi.delayed-builder-test
+                                             'ciwi.demos.house-test
                                              'ciwi.dsl-test
                                              'ciwi.enumerator-test
                                              'ciwi.fix-test
@@ -51,9 +56,12 @@
                                              'ciwi.operator-test
                                              'ciwi.optimize-test
                                              'ciwi.propagation-test
+                                             'ciwi.render-graph-test
+                                             'ciwi.render-movie-test
                                              'ciwi.search-test
                                              'ciwi.structure-test
                                              'ciwi.value-test
+                                             'ciwi.wunderbaum-observer-test
                                              'ciwi.wunderbaum-test)]
     (when (pos? (+ fail error))
       (System/exit 1))))

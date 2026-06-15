@@ -279,7 +279,11 @@
   (let [v (with-inferred-spec x)]
     (when (or (nil? expected)
               (spec/conforms? expected (:spec v)))
-      v)))
+      (if (or (nil? expected)
+              (= expected (:spec v))
+              (contains? #{:unknown :number :array :array-number} expected))
+        v
+        (assoc v :spec expected)))))
 
 (defn- forward-build
   [g memory {:keys [operator arity output-spec] :as element} positions]
