@@ -12,6 +12,7 @@
             [clojure.java.io :as io]
             [clojure.string :as str])
   (:import [java.awt.image BufferedImage]
+           [java.util IdentityHashMap]
            [javax.imageio ImageIO]))
 
 (def red [255.0 100.0 100.0])
@@ -116,6 +117,43 @@
     (mapv vec (partition 2 (dense/ravel points)))
     (mapv point-values points)))
 
+(defn- colored-point-rows
+  [colored-points]
+  (cond
+    (dense/ndarray? colored-points)
+    (let [shape (dense/shape colored-points)]
+      (when-not (and (= 2 (count shape))
+                     (= 5 (second shape)))
+        (throw (ex-info "Expected colored point list with rows [row col r g b]"
+                        {:shape shape})))
+      (mapv vec (partition 5 (dense/ravel colored-points))))
+
+    :else
+    (mapv (fn [entry]
+            (if (map? entry)
+              (let [[row column] (point-values (:point entry))
+                    [r g b] (color-values (:color entry))]
+                [(double row) (double column) r g b])
+              (let [[row column r g b] (as-vector entry)]
+                [(double row) (double column) r g b])))
+          colored-points)))
+
+(defn- colored-point-list?
+  [x]
+  (or (and (dense/ndarray? x)
+           (= [5] (subvec (dense/shape x) 1)))
+      (and (sequential? x)
+           (seq x)
+           (or (map? (first x))
+               (= 5 (count (first x)))))))
+
+(defn- colored-point-array
+  [rows]
+  (let [rows (vec rows)]
+    (dense/from-flat (vec (mapcat identity rows))
+                     [(count rows) 5]
+                     {:dtype :float64})))
+
 (defn- arange
   [start stop step]
   (let [more? (if (pos? step) < >)]
@@ -174,11 +212,12 @@
 (defn dye
   "Attach one RGB color to every point."
   [color points]
-  (let [color (mapv double (color-values color))]
-    (mapv (fn [point]
-            {:color color
-             :point (point-values point)})
-          (point-list points))))
+  (let [[r g b] (mapv double (color-values color))
+        rows (mapv (fn [point]
+                     (let [[row column] (point-values point)]
+                       [(double row) (double column) r g b]))
+                   (point-list points))]
+    (colored-point-array rows)))
 
 (defn draw
   "Draw colored points onto an RGB background image."
@@ -192,8 +231,9 @@
          base (vec (mapcat identity
                            (repeat (* height width)
                                    (mapv double background))))
-         flat (reduce (fn [flat {:keys [color point]}]
-                        (let [[row column] (map long (point-values point))]
+         flat (reduce (fn [flat [row column r g b]]
+                        (let [color [r g b]
+                              [row column] (map long [row column])]
                           (if (and (<= 0 row) (< row height)
                                    (<= 0 column) (< column width))
                             (reduce (fn [flat channel]
@@ -206,12 +246,17 @@
                                     (range channels))
                             flat)))
                       base
-                      colored-points)]
+                      (colored-point-rows colored-points))]
      (dense/from-flat flat shape {:dtype :float64}))))
 
 (defn concat-point-lists
   [left right]
   (vec (concat (point-list left) (point-list right))))
+
+(defn concat-colored-point-lists
+  [left right]
+  (colored-point-array (concat (colored-point-rows left)
+                               (colored-point-rows right))))
 
 (defn- polygon-border
   [points]
@@ -232,8 +277,9 @@
 (defn base-house-image
   "Return the noiseless 50x50x3 RGB house image from the Python fixture."
   []
-  (draw (concat (dye blue (filled-polygon roof-points))
-                (dye green (filled-polygon body-points)))))
+  (draw (concat-colored-point-lists
+         (dye blue (filled-polygon roof-points))
+         (dye green (filled-polygon body-points)))))
 
 (defn- round2
   [x]
@@ -321,41 +367,36 @@
    {:id :concat
     :conditions [[0] [1]]
     :call (fn [[left right]]
-            (let [colored? (or (and (sequential? left)
-                                    (seq left)
-                                    (map? (first left)))
-                               (and (sequential? right)
-                                    (seq right)
-                                    (map? (first right))))
+            (let [colored? (or (colored-point-list? left)
+                               (colored-point-list? right))
                   result (if colored?
-                           (vec (concat left right))
+                           (concat-colored-point-lists left right)
                            (concat-point-lists left right))
-                  spec (if (and (seq result)
-                                (map? (first result))
-                                (contains? (first result) :color))
-                         :colored-point-list
-                         :point-list)]
+                  spec (if colored? :colored-point-list :point-list)]
               (spec-value result spec)))
     :inverse (fn [output cond-inputs cond]
                (when (= 1 (count cond))
                  (let [known (first cond-inputs)
-                       output (vec output)
-                       known (vec known)]
+                       colored? (colored-point-list? output)
+                       output (vec (if colored?
+                                     (colored-point-rows output)
+                                     (point-list output)))
+                       known (vec (if colored?
+                                    (colored-point-rows known)
+                                    (point-list known)))
+                       spec (if colored? :colored-point-list :point-list)
+                       make-result (fn [rows]
+                                     (spec-value (if colored?
+                                                   (colored-point-array rows)
+                                                   (vec rows))
+                                                 spec))]
                    (case (first cond)
                      0 (when (= known (subvec output 0 (count known)))
-                         [[(spec-value (subvec output (count known))
-                                       (if (and (seq output)
-                                                (map? (first output)))
-                                         :colored-point-list
-                                         :point-list))]])
+                         [[(make-result (subvec output (count known)))]])
                      1 (let [split (- (count output) (count known))]
                          (when (and (<= 0 split)
                                     (= known (subvec output split)))
-                           [[(spec-value (subvec output 0 split)
-                                         (if (and (seq output)
-                                                  (map? (first output)))
-                                           :colored-point-list
-                                           :point-list))]]))
+                           [[(make-result (subvec output 0 split))]]))
                      nil))))}))
 
 (def dye-operator
@@ -367,13 +408,12 @@
     :inverse (fn [output cond-inputs cond]
                (case (vec cond)
                  [0] (let [color (mapv double (color-values (first cond-inputs)))
-                           points (keep (fn [{point-color :color
-                                              :keys [point]}]
-                                          (when (= color (mapv double
-                                                               (color-values point-color)))
-                                            point))
-                                        output)]
-                       (when (= (count points) (count output))
+                           rows (colored-point-rows output)
+                           points (keep (fn [[row column r g b]]
+                                          (when (= color [r g b])
+                                            [(long row) (long column)]))
+                                        rows)]
+                       (when (= (count points) (count rows))
                          [[(spec-value (vec points) :point-list)]]))
                  nil))}))
 
@@ -479,6 +519,17 @@
   [data]
   (hashing/content-fingerprint data))
 
+(defn- cached-fingerprint
+  [^IdentityHashMap cache data]
+  (if-not cache
+    (fingerprint data)
+    (locking cache
+      (if (.containsKey cache data)
+        (.get cache data)
+        (let [fp (fingerprint data)]
+          (.put cache data fp)
+          fp)))))
+
 (defn- concat-point-list-data
   [& point-lists]
   (spec-data (vec (mapcat point-list point-lists)) :point-list))
@@ -513,7 +564,8 @@
         body-fill (spec-data (fill body1234) :point-list)
         roof-colored (spec-data (dye blue roof-fill) :colored-point-list)
         body-colored (spec-data (dye green body-fill) :colored-point-list)
-        colored-combo (spec-data (vec (concat roof-colored body-colored))
+        colored-combo (spec-data (concat-colored-point-lists roof-colored
+                                                             body-colored)
                                  :colored-point-list)
         base (spec-data (base-house-image) :rgb-image)
         target (spec-data (house-image) :rgb-image)
@@ -643,52 +695,64 @@
     (nth order (count steps) nil)))
 
 (defn- expected-input-fingerprints
-  [step]
-  (mapv fingerprint (get-in @canonical-solution [:step-inputs step :inputs])))
+  ([step]
+   (expected-input-fingerprints step nil))
+  ([step cache]
+   (mapv #(cached-fingerprint cache %)
+         (get-in @canonical-solution [:step-inputs step :inputs]))))
 
 (defn- node-fingerprint
-  [memory id]
-  (fingerprint (memory-data memory id)))
+  ([memory id]
+   (node-fingerprint nil memory id))
+  ([cache memory id]
+   (cached-fingerprint cache (memory-data memory id))))
 
 (defn- same-inputs?
-  [memory node-ids expected-fps commutative?]
-  (let [actual (mapv #(node-fingerprint memory %) node-ids)]
+  ([memory node-ids expected-fps commutative?]
+   (same-inputs? nil memory node-ids expected-fps commutative?))
+  ([cache memory node-ids expected-fps commutative?]
+   (let [actual (mapv #(node-fingerprint cache memory %) node-ids)]
     (if commutative?
       (= (set expected-fps) (set actual))
-      (= expected-fps actual))))
+      (= expected-fps actual)))))
 
 (defn solution-frontier?
   "Pre-materialization version of the guided house solution-prefix predicate."
-  [{:keys [graph memory nodes element]}]
+  ([info]
+   (solution-frontier? info nil))
+  ([{:keys [graph memory nodes element]} cache]
   (let [step (next-step graph)
         {:keys [op inputs commutative?]} (get-in @canonical-solution
                                                  [:step-inputs step])
-        expected-fps (mapv fingerprint inputs)]
+        expected-fps (mapv #(cached-fingerprint cache %) inputs)]
     (and step
          (= op (:id (:operator element)))
          (case step
            (:line-top :line-roof-right :line-roof-left
             :line-body-right :line-body-bottom :line-body-left)
            (and (= [0 1] (:gen-cond element))
-                (same-inputs? memory nodes expected-fps true))
+                (same-inputs? cache memory nodes expected-fps true))
 
            :add-target
            (and (some #{-1} (:gen-cond element))
-                (same-inputs? memory nodes expected-fps true))
+                (same-inputs? cache memory nodes expected-fps true))
 
-           (same-inputs? memory nodes expected-fps commutative?)))))
+           (same-inputs? cache memory nodes expected-fps commutative?))))))
 
 (defn preferred-prefix-nodes
   "Return value nodes that should be tried first for the next guided step."
-  [{:keys [graph memory]}]
+  ([info]
+   (preferred-prefix-nodes info nil))
+  ([{:keys [graph memory]} cache]
   (let [step (next-step graph)
-        expected (set (expected-input-fingerprints step))]
+        expected (set (expected-input-fingerprints step cache))]
     (vec
      (keep (fn [[id entry]]
              (when (contains? expected
-                              (fingerprint (value/datum (:value entry))))
+                              (cached-fingerprint cache
+                                                  (value/datum (:value entry))))
                id))
-           memory))))
+           memory)))))
 
 (defn guided-operator-declarations
   "Return house declarations with a demo-local search prior.
@@ -711,16 +775,18 @@
 
 (defn guided-options
   []
-  {:registry (registry)
-   :ops-with-counts (guided-operator-declarations)
-   :max-dag-dl 20
-   :max-popped 2000
-   :max-yields 50
-   :allow-multiple-op-roots? true
-   :recent-roots-first? true
-   :candidate-predicate solution-prefix?
-   :frontier-predicate solution-frontier?
-   :preferred-node-fn preferred-prefix-nodes})
+  (let [guide-fingerprint-cache (IdentityHashMap.)]
+    {:registry (registry)
+     :ops-with-counts (guided-operator-declarations)
+     :max-dag-dl 20
+     :max-popped 2000
+     :max-node-tuples 32
+     :max-yields 50
+     :allow-multiple-op-roots? true
+     :recent-roots-first? true
+     :candidate-predicate solution-prefix?
+     :frontier-predicate #(solution-frontier? % guide-fingerprint-cache)
+     :preferred-node-fn #(preferred-prefix-nodes % guide-fingerprint-cache)}))
 
 (defn run-guided-compression
   "Run the guided house compression search with the demo-local primitive basis."
@@ -734,6 +800,7 @@
          initial-dl (value/desc-len target)
          min-compression-rate (double (or (:min-compression-rate opts) 0.01))
          threshold-dl (* initial-dl (- 1.0 min-compression-rate))
+         realize-selected? (boolean (:realize-selected? opts))
          prefixes (when (:collect-prefixes? opts) (atom []))
          prefix-limit (long (or (:prefix-limit opts) 64))
          t0 (System/nanoTime)
@@ -748,7 +815,9 @@
                    (swap! prefixes conj candidate))
                rate (alice/compression-rate initial-dl (:dl candidate))]
            (if (>= rate min-compression-rate)
-             (let [candidate (wunderbaum/realize-selected candidate)]
+             (let [candidate (cond-> candidate
+                               realize-selected?
+                               wunderbaum/realize-selected)]
                (cond-> {:candidate candidate
                         :initial-dl initial-dl
                         :dl (:dl candidate)
@@ -757,8 +826,10 @@
                         :stop-reason :threshold-reached
                         :search-elapsed-ms (/ (double (- (System/nanoTime) t0))
                                               1000000.0)
-                        :selected (get (:selected candidate) :target0)
                         :prefix-steps (prefix-steps (:graph candidate))}
+                 realize-selected?
+                 (assoc :selected (get (:selected candidate) :target0))
+
                  prefixes (assoc :prefixes @prefixes)))
              (recur (rest remaining) consumed last-prefix)))
          (cond-> {:candidate nil
@@ -813,6 +884,18 @@
     (io/make-parents file)
     (spit file text)
     (.getPath file)))
+
+(defn- clear-frame-dir!
+  [dir]
+  (let [dir (io/file dir)]
+    (when (.exists dir)
+      (doseq [file (.listFiles dir)]
+        (when (.isDirectory file)
+          (throw (ex-info "Refusing to delete nested frame directory"
+                          {:path (.getPath file)})))
+        (io/delete-file file true)))
+    (.mkdirs dir)
+    dir))
 
 (defn- result-stats
   [result]
@@ -914,56 +997,101 @@
       (:base @canonical-solution)
 
       :else
-      (draw (concat (dye blue (roof-preview-points steps))
-                    (dye green (body-preview-points steps)))))))
+      (draw (concat-colored-point-lists
+             (dye blue (roof-preview-points steps))
+             (dye green (body-preview-points steps)))))))
 
 (defn- prefix-image
   [summary]
   (prefix-preview-image summary))
 
 (defn- artifact-readme
-  [result prefixes]
-  (str/join
-   "\n"
-   ["# Guided House Demo Artifacts"
-    ""
-    "These frames are a bounded guided partial run, not a completed house compression yet."
-    "The guide accepts only graphs whose operators are the first N operations of the intended low-level expression. In earlier notes this was called prefix discovery; here it means partial expression discovery."
-    ""
-    "## Graph Frames"
-    ""
-    "- A box is a value node. A leading `*` marks a permeable/free value."
-    "- An oval/table is an operator option: one possible way to describe its parent value."
-    "- Read edges as `value -> operator option -> child values`. Operator ports `arg0`, `arg1`, etc. name the child positions."
-    "- Blue edges/operators are the MDL-selected option path for the rendered roots. Gray options are present but not selected by the current graph-level DL choice."
-    "- Dashed rounded boxes mark frontier leaves: values that still have no option underneath them and are encoded directly if the selected expression stops there."
-    "- The table at the top follows the Python renderer convention: section DL, leaves DL, model DL, max leaf DL, node counts, frontier leaf counts, and graph depth."
-    ""
-    "## Image Frames"
-    ""
-    "- Image frames are partial-reconstruction previews. Before the graph reaches `draw`, the demo overlays the discovered roof/body geometry on the red background so progress is visible."
-    "- Preview roof/body colors come from the guided demo's intended expression. They do not add a recognizer or proposal shortcut to search."
-    "- Once `draw` or `add` is represented, the frame switches to the actual image value for that step."
-    ""
-    "## Current Run"
-    ""
-    (str "- Stop reason: `" (:stop-reason result) "`.")
-    (str "- Candidates consumed: " (:candidates-consumed result) ".")
-    (str "- Partial graphs written: " (count prefixes) ".")
-    (str "- Found steps: `" (pr-str (:prefix-steps result)) "`.")]))
+  [result prefixes graph-frame-count]
+  (let [complete? (= :threshold-reached (:stop-reason result))]
+    (str/join
+     "\n"
+     ["# Guided House Demo Artifacts"
+      ""
+      (if complete?
+        "These frames are a completed guided compression run for the current low-level house expression."
+        "These frames are a bounded guided partial run, not a completed house compression yet.")
+      "The guide accepts only graphs whose operators are the first N operations of the intended low-level expression. In earlier notes this was called prefix discovery; here it means partial expression discovery."
+      ""
+      "## Graph Frames"
+      ""
+      "- A box is a value node. A leading `*` marks a permeable/free value."
+      "- An oval/table is an operator option: one possible way to describe its parent value."
+      "- Read edges as `value -> operator option -> child values`. Operator ports `arg0`, `arg1`, etc. name the child positions."
+      "- Blue edges/operators are the guided operators represented by that frame. Gray options are present but not highlighted."
+      "- The reusable graph renderer can also show MDL-selected paths, frontier boxes, and a Python-style DL table; movie frames disable those expensive overlays so completed runs render quickly."
+      ""
+      "## Image Frames"
+      ""
+      "- Image frames are partial-reconstruction previews. Before the graph reaches `draw`, the demo overlays the discovered roof/body geometry on the red background so progress is visible."
+      "- Preview roof/body colors come from the guided demo's intended expression. They do not add a recognizer or proposal shortcut to search."
+      "- Once `draw` or `add` is represented, the frame switches to the actual image value for that step."
+      ""
+      "## Current Run"
+      ""
+      (str "- Stop reason: `" (:stop-reason result) "`.")
+      (str "- Candidates consumed: " (:candidates-consumed result) ".")
+      (str "- Compression rate: " (format "%.4f" (double (:compression-rate result))) ".")
+      (str "- Graph steps written: " (count prefixes) ".")
+      (str "- Graph movie frames written: " graph-frame-count ".")
+      (str "- Found steps: `" (pr-str (:prefix-steps result)) "`.")])))
+
+(defn- sampled-prefix-indexes
+  [n max-frames]
+  (cond
+    (or (nil? max-frames)
+        (<= n max-frames))
+    (vec (range n))
+
+    (<= max-frames 1)
+    [(dec n)]
+
+    :else
+    (let [last-idx (dec n)
+          step (/ (double last-idx)
+                  (double (dec (long max-frames))))]
+      (->> (range max-frames)
+           (map #(long (Math/round (* step %))))
+           distinct
+           (cons 0)
+           (concat [last-idx])
+           distinct
+           sort
+           vec))))
 
 (defn write-guided-artifacts!
   "Write stats, graph frames, image frames, and optional movies for a run."
   ([result output-dir]
    (write-guided-artifacts! result output-dir {}))
-  ([result output-dir {:keys [framerate movies?]
+  ([result output-dir {:keys [framerate movies? max-graph-frames
+                              graph-render-opts]
                        :or {framerate 2
-                            movies? true}}]
+                            movies? true}
+                       :as artifact-opts}]
    (let [output-dir (io/file output-dir)
          prefixes (or (seq (:prefixes result))
                       (some-> (:candidate result) vector)
                       (some-> (:last-prefix result) vector)
                       [])
+         max-graph-frames (when (contains? artifact-opts :max-graph-frames)
+                            max-graph-frames)
+         graph-render-opts (merge {:label-option-edges? true
+                                   :show-dl? false
+                                   :show-frontier? false
+                                   :show-operator-ports? false
+                                   :show-node-xlabels? false}
+                                  graph-render-opts)
+         graph-prefix-indexes (sampled-prefix-indexes (count prefixes)
+                                                      max-graph-frames)
+         graph-prefixes (vec (map-indexed (fn [frame-idx prefix-idx]
+                                             [frame-idx
+                                              prefix-idx
+                                              (nth prefixes prefix-idx)])
+                                           graph-prefix-indexes))
          graph-frame-dir (io/file output-dir "graph-frames")
          image-frame-dir (io/file output-dir "image-frames")
          stats-path (.getPath (io/file output-dir "stats.edn"))
@@ -972,15 +1100,26 @@
          image-movie-path (.getPath (io/file output-dir "image-prefixes.mp4"))]
      (write-edn! (assoc (result-stats result)
                         :prefix-count (count prefixes)
+                        :graph-frame-count (count graph-prefixes)
                         :candidate? (boolean (:candidate result)))
                  stats-path)
-     (write-text! (artifact-readme result prefixes) readme-path)
+     (clear-frame-dir! graph-frame-dir)
+     (clear-frame-dir! image-frame-dir)
+     (write-text! (artifact-readme result prefixes (count graph-prefixes))
+                  readme-path)
+     (doseq [[frame-idx prefix-idx summary] graph-prefixes]
+       (let [frame-opts (merge graph-render-opts
+                               {:label (prefix-label prefix-idx summary)})
+             frame-opts (cond-> frame-opts
+                          (not (contains? graph-render-opts
+                                          :selected-operator-ids))
+                          (assoc :selected-operator-ids
+                                 (graph/operator-ids (:graph summary))))]
+         (movie/write-graph-frame! (.getPath graph-frame-dir)
+                                   frame-idx
+                                   (:graph summary)
+                                   frame-opts)))
      (doseq [[idx summary] (map-indexed vector prefixes)]
-       (movie/write-graph-frame! (.getPath graph-frame-dir)
-                                 idx
-                                 (:graph summary)
-                                 {:label (prefix-label idx summary)
-                                  :label-option-edges? true})
        (write-image-png! (prefix-image summary)
                          (movie/frame-path (.getPath image-frame-dir) idx)))
      {:stats-path stats-path

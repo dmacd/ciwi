@@ -68,15 +68,15 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   low-level geometry/rendering primitives (`point-add`, `line`, `fill`,
   `concat`, `dye`, `draw`, and image residual `add`), PNG image output, and a
   guided partial-expression entry point with an injected primitive registry
-  and native solution predicate. The demo now writes stats, graph frames, image
-  preview frames, MP4s, and an artifact README for bounded guided partial
-  graphs. Image frames intentionally preview discovered geometry before the
-  graph reaches an actual `draw` image value. The full guided acceptance
-  threshold still times out before the final draw/add structure in local
-  probes, so the full guided and unguided compression milestones remain
-  pending search-bound/order tuning; do not count them as achieved parity
-  evidence yet.
-- The default vector-backend suite passes locally with 191 tests and 986
+  and native solution predicate. Colored point lists are represented as dense
+  `[row col r g b]` arrays so the demo guide does not repeatedly hash large
+  map vectors. The guided run now reaches the full 18-step expression through
+  `draw` and residual `add`, hits a `0.1136` compression rate under default
+  bounded guided settings, and writes stats, 18 graph frames, 18 image frames,
+  MP4s, and an artifact README. The unguided compression milestone remains
+  pending; do not count recognizer-free unguided house discovery as achieved
+  yet.
+- The default vector-backend suite passes locally with 192 tests and 993
   assertions. The opt-in DJL backend was not rerun in this turn; the last
   recorded DJL suite remains 8 tests and 43 assertions.
 
@@ -113,10 +113,10 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   primitives are intentionally demo-local and are not part of the default
   Alice parity basis. Current coverage verifies deterministic fixture
   generation, primitive rendering behavior, PNG writing, bounded guided
-  partial-expression discovery, partial image preview changes, and guided
-  artifact writing; discovering the full house graph at a documented
-  compression threshold and then removing the guide remain open demo
-  milestones.
+  partial-expression discovery, partial image preview changes, guided artifact
+  writing, and full guided threshold completion. Removing the guide and still
+  discovering a recognizably house-shaped compressive graph remains the next
+  open demo milestone.
 - `ciwi.alice.wunderbaum` adds an Alice-facing greedy runner over that core.
   It is the main Alice parity path. `ciwi.alice` still supplies shared task
   records, the Alice operator registry, constructors, and compression-rate

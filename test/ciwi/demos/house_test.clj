@@ -24,6 +24,7 @@
         flat (dense/ravel image)]
     (is (= [[1 1] [1 2] [1 3]] border))
     (is (= [[1 1] [1 2] [1 3]] filled))
+    (is (= [3 5] (dense/shape colored)))
     (is (= [5 5 3] (dense/shape image)))
     (is (= [10.0 20.0 30.0]
            (subvec flat (* (+ (* 1 5) 2) 3)
@@ -71,6 +72,33 @@
         second-image (sut/prefix-preview-image (second (:prefixes result)))]
     (is (not= (dense/ravel first-image)
               (dense/ravel second-image)))))
+
+(deftest guided-house-compression-reaches-threshold
+  (let [result (sut/run-guided-compression {:max-yields 18})]
+    (is (= :threshold-reached (:stop-reason result)))
+    (is (= 18 (:candidates-consumed result)))
+    (is (= [:line-top
+            :line-roof-right
+            :line-roof-left
+            :concat-roof12
+            :concat-roof123
+            :fill-roof
+            :dye-roof
+            :line-body-right
+            :line-body-bottom
+            :line-body-left
+            :concat-body12
+            :concat-body123
+            :concat-body1234
+            :fill-body
+            :dye-body
+            :concat-colored
+            :draw-base
+            :add-target]
+           (:prefix-steps result)))
+    (is (< 0.10 (:compression-rate result)))
+    (is (:candidate result))
+    (is (not (contains? result :selected)))))
 
 (deftest guided-prefix-artifacts-write-stats-and-frames
   (let [dir (.toFile (java.nio.file.Files/createTempDirectory
