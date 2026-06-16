@@ -224,11 +224,6 @@ Demo-local visualizations may layer additional explanatory artifacts around
 generic graph frames. For example, the house demo's partial image frames are
 preview overlays of discovered geometry before a `draw` image value exists;
 those previews are not search operators, recognizers, or compression evidence.
-Completed house-demo graph movies use the same value/operator edge convention
-but disable per-frame MDL selected-expression computation, frontier clusters,
-and DL tables for speed; static/debug callers can still enable those overlays
-through `ciwi.render.graph` options.
-
 The house demo's `:colored-point-list` value representation is a dense numeric
 array with rows `[row col r g b]`. This keeps the primitive basis unchanged
 while avoiding repeated stable-key hashing of large vectors of maps during

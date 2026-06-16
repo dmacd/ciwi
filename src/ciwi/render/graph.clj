@@ -113,14 +113,25 @@
   [xs]
   (reduce + 0.0 (filter finite? xs)))
 
-(defn- selected-operator-ids
+(defn- graph-description
   [g opts]
+  (when (or (not= false (:show-dl? opts))
+            (and (not= false (:show-selected? opts))
+                 (not (contains? opts :selected-operator-ids))))
+    (try
+      (mdl/graph-description g {})
+      (catch Exception _
+        nil))))
+
+(defn- selected-operator-ids
+  [g opts description]
   (set (or (:selected-operator-ids opts)
            (when (not= false (:show-selected? opts))
-             (try
-               (mapcat #(mdl/selected-operators g % {}) (graph/roots g))
-               (catch Exception _
-                 []))))))
+             (or (:selected description)
+                 (try
+                   (mapcat #(mdl/selected-operators g % {}) (graph/roots g))
+                   (catch Exception _
+                     [])))))))
 
 (defn- section-value-ids
   [g]
@@ -147,11 +158,9 @@
          vec)))
 
 (defn- graph-dl-stats
-  [g opts]
+  [g opts selected description leaf-ids]
   (let [roots (section-value-ids g)
         reachable (reachable-ids g)
-        leaf-ids (frontier-ids g)
-        selected (selected-operator-ids g opts)
         zero-arity-selected (filter (fn [id]
                                       (empty? (:children (graph/node g id))))
                                     selected)
@@ -165,10 +174,11 @@
         max-leaf-dl (if-let [leaf-dls (seq (filter finite? value-leaf-dls))]
                       (apply max leaf-dls)
                       0.0)
-        section-dl (try
-                     (double (mdl/graph-dl g {}))
-                     (catch Exception _
-                       (sum-finite (map #(safe-node-dl g %) roots))))]
+        section-dl (or (some-> description :dl double)
+                       (try
+                         (double (mdl/graph-dl g {}))
+                         (catch Exception _
+                           (sum-finite (map #(safe-node-dl g %) roots)))))]
     {:section-dl section-dl
      :leaves-dl leaves-dl
      :model-dl (- leaves-dl max-leaf-dl)
@@ -195,10 +205,8 @@
    (str "depth: " (:depth stats))])
 
 (defn- graph-label-html
-  [g opts]
+  [g opts stats]
   (let [provided (:label opts)
-        stats (when (not= false (:show-dl? opts))
-                (graph-dl-stats g opts))
         parts (cond-> []
                 provided (into (str/split-lines (str provided)))
                 stats (into (stats-lines stats))
@@ -352,9 +360,9 @@
     []))
 
 (defn- frontier-cluster-lines
-  [g opts]
+  [leaf-ids opts]
   (when (not= false (:show-frontier? opts))
-    (for [[idx id] (map-indexed vector (frontier-ids g))]
+    (for [[idx id] (map-indexed vector leaf-ids)]
       (str "  subgraph cluster_frontier_" idx " {\n"
            "    label=\"\";\n"
            "    style=\"rounded,dashed\";\n"
@@ -369,8 +377,12 @@
   ([g]
    (graph->dot g {}))
   ([g opts]
-   (let [selected (selected-operator-ids g opts)
-         label (graph-label-html g opts)
+   (let [description (graph-description g opts)
+         selected (selected-operator-ids g opts description)
+         leaf-ids (frontier-ids g)
+         stats (when (not= false (:show-dl? opts))
+                 (graph-dl-stats g opts selected description leaf-ids))
+         label (graph-label-html g opts stats)
          graph-attrs (cond-> {:bgcolor bg-col}
                        label (assoc :labelloc "t"
                                     :labeljust "l"
@@ -381,7 +393,7 @@
                          "  edge [fontname=\"Helvetica\", fontsize=\"9\"];"])
          nodes (map #(node-line g selected % opts) (node-order g))
          edges (mapcat #(edge-lines selected opts %) (node-order g))
-         frontier (frontier-cluster-lines g opts)]
+         frontier (frontier-cluster-lines leaf-ids opts)]
      (str (str/join "\n" (concat header nodes edges frontier ["}"])) "\n"))))
 
 (defn write-dot!

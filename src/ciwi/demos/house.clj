@@ -1022,8 +1022,9 @@
       "- A box is a value node. A leading `*` marks a permeable/free value."
       "- An oval/table is an operator option: one possible way to describe its parent value."
       "- Read edges as `value -> operator option -> child values`. Operator ports `arg0`, `arg1`, etc. name the child positions."
-      "- Blue edges/operators are the guided operators represented by that frame. Gray options are present but not highlighted."
-      "- The reusable graph renderer can also show MDL-selected paths, frontier boxes, and a Python-style DL table; movie frames disable those expensive overlays so completed runs render quickly."
+      "- Blue edges/operators are the MDL-selected option path for the rendered roots. Gray options are present but not selected by the current graph-level DL choice."
+      "- Dashed rounded boxes mark frontier leaves: values that still have no option underneath them and are encoded directly if the selected expression stops there."
+      "- The table at the top follows the Python renderer convention: section DL, leaves DL, model DL, max leaf DL, node counts, frontier leaf counts, and graph depth."
       ""
       "## Image Frames"
       ""
@@ -1040,58 +1041,23 @@
       (str "- Graph movie frames written: " graph-frame-count ".")
       (str "- Found steps: `" (pr-str (:prefix-steps result)) "`.")])))
 
-(defn- sampled-prefix-indexes
-  [n max-frames]
-  (cond
-    (or (nil? max-frames)
-        (<= n max-frames))
-    (vec (range n))
-
-    (<= max-frames 1)
-    [(dec n)]
-
-    :else
-    (let [last-idx (dec n)
-          step (/ (double last-idx)
-                  (double (dec (long max-frames))))]
-      (->> (range max-frames)
-           (map #(long (Math/round (* step %))))
-           distinct
-           (cons 0)
-           (concat [last-idx])
-           distinct
-           sort
-           vec))))
-
 (defn write-guided-artifacts!
   "Write stats, graph frames, image frames, and optional movies for a run."
   ([result output-dir]
    (write-guided-artifacts! result output-dir {}))
-  ([result output-dir {:keys [framerate movies? max-graph-frames
-                              graph-render-opts]
+  ([result output-dir {:keys [framerate movies?]
                        :or {framerate 2
-                            movies? true}
-                       :as artifact-opts}]
+                            movies? true}}]
    (let [output-dir (io/file output-dir)
          prefixes (or (seq (:prefixes result))
                       (some-> (:candidate result) vector)
                       (some-> (:last-prefix result) vector)
                       [])
-         max-graph-frames (when (contains? artifact-opts :max-graph-frames)
-                            max-graph-frames)
-         graph-render-opts (merge {:label-option-edges? true
-                                   :show-dl? false
-                                   :show-frontier? false
-                                   :show-operator-ports? false
-                                   :show-node-xlabels? false}
-                                  graph-render-opts)
-         graph-prefix-indexes (sampled-prefix-indexes (count prefixes)
-                                                      max-graph-frames)
          graph-prefixes (vec (map-indexed (fn [frame-idx prefix-idx]
                                              [frame-idx
                                               prefix-idx
                                               (nth prefixes prefix-idx)])
-                                           graph-prefix-indexes))
+                                           (range (count prefixes))))
          graph-frame-dir (io/file output-dir "graph-frames")
          image-frame-dir (io/file output-dir "image-frames")
          stats-path (.getPath (io/file output-dir "stats.edn"))
@@ -1108,17 +1074,11 @@
      (write-text! (artifact-readme result prefixes (count graph-prefixes))
                   readme-path)
      (doseq [[frame-idx prefix-idx summary] graph-prefixes]
-       (let [frame-opts (merge graph-render-opts
-                               {:label (prefix-label prefix-idx summary)})
-             frame-opts (cond-> frame-opts
-                          (not (contains? graph-render-opts
-                                          :selected-operator-ids))
-                          (assoc :selected-operator-ids
-                                 (graph/operator-ids (:graph summary))))]
-         (movie/write-graph-frame! (.getPath graph-frame-dir)
-                                   frame-idx
-                                   (:graph summary)
-                                   frame-opts)))
+       (movie/write-graph-frame! (.getPath graph-frame-dir)
+                                 frame-idx
+                                 (:graph summary)
+                                 {:label (prefix-label prefix-idx summary)
+                                  :label-option-edges? true}))
      (doseq [[idx summary] (map-indexed vector prefixes)]
        (write-image-png! (prefix-image summary)
                          (movie/frame-path (.getPath image-frame-dir) idx)))
