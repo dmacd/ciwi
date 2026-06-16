@@ -9,7 +9,8 @@
             [ciwi.render.movie :as movie]
             [ciwi.value :as value]
             [ciwi.wunderbaum :as wunderbaum]
-            [clojure.java.io :as io])
+            [clojure.java.io :as io]
+            [clojure.string :as str])
   (:import [java.awt.image BufferedImage]
            [javax.imageio ImageIO]))
 
@@ -806,6 +807,13 @@
     (spit file (pr-str data))
     (.getPath file)))
 
+(defn- write-text!
+  [text path]
+  (let [file (io/file path)]
+    (io/make-parents file)
+    (spit file text)
+    (.getPath file)))
+
 (defn- result-stats
   [result]
   (select-keys result
@@ -819,12 +827,83 @@
 
 (defn- prefix-label
   [idx summary]
-  (str "house guided prefix "
+  (str "house guided partial graph "
        (inc (long idx))
        "\n"
+       "found steps="
        (pr-str (prefix-steps (:graph summary)))))
 
-(defn- prefix-image
+(defn- line-step-points
+  [step]
+  (case step
+    :line-top (line [21 9] [21 39])
+    :line-roof-right (line [21 39] [6 24])
+    :line-roof-left (line [6 24] [21 9])
+    :line-body-right (line [21 39] [45 39])
+    :line-body-bottom (line [45 39] [45 9])
+    :line-body-left (line [45 9] [21 9])
+    []))
+
+(defn- available-lines
+  [steps line-steps]
+  (vec (mapcat line-step-points
+               (filter (set steps) line-steps))))
+
+(defn- roof-preview-points
+  [steps]
+  (let [steps (set steps)]
+    (cond
+      (or (contains? steps :fill-roof)
+          (contains? steps :dye-roof)
+          (contains? steps :concat-colored)
+          (contains? steps :draw-base)
+          (contains? steps :add-target))
+      (filled-polygon roof-points)
+
+      (contains? steps :concat-roof123)
+      (available-lines steps [:line-top :line-roof-right :line-roof-left])
+
+      (contains? steps :concat-roof12)
+      (available-lines steps [:line-top :line-roof-right])
+
+      :else
+      (available-lines steps [:line-top :line-roof-right :line-roof-left]))))
+
+(defn- body-preview-points
+  [steps]
+  (let [steps (set steps)]
+    (cond
+      (or (contains? steps :fill-body)
+          (contains? steps :dye-body)
+          (contains? steps :concat-colored)
+          (contains? steps :draw-base)
+          (contains? steps :add-target))
+      (filled-polygon body-points)
+
+      (contains? steps :concat-body1234)
+      (available-lines steps [:line-top
+                              :line-body-right
+                              :line-body-bottom
+                              :line-body-left])
+
+      (contains? steps :concat-body123)
+      (available-lines steps [:line-top :line-body-right :line-body-bottom])
+
+      (contains? steps :concat-body12)
+      (available-lines steps [:line-top :line-body-right])
+
+      :else
+      (available-lines steps [:line-body-right
+                              :line-body-bottom
+                              :line-body-left]))))
+
+(defn prefix-preview-image
+  "Return the image-frame preview for a guided partial house graph.
+
+  Before the graph contains an actual `draw` image value, this intentionally
+  visualizes discovered geometry over the red background. It is a demo preview,
+  not a recognizer or a replacement for graph-level reconstruction.
+  "
   [summary]
   (let [steps (set (prefix-steps (:graph summary)))]
     (cond
@@ -835,7 +914,43 @@
       (:base @canonical-solution)
 
       :else
-      (house-image))))
+      (draw (concat (dye blue (roof-preview-points steps))
+                    (dye green (body-preview-points steps)))))))
+
+(defn- prefix-image
+  [summary]
+  (prefix-preview-image summary))
+
+(defn- artifact-readme
+  [result prefixes]
+  (str/join
+   "\n"
+   ["# Guided House Demo Artifacts"
+    ""
+    "These frames are a bounded guided partial run, not a completed house compression yet."
+    "The guide accepts only graphs whose operators are the first N operations of the intended low-level expression. In earlier notes this was called prefix discovery; here it means partial expression discovery."
+    ""
+    "## Graph Frames"
+    ""
+    "- A box is a value node. A leading `*` marks a permeable/free value."
+    "- An oval/table is an operator option: one possible way to describe its parent value."
+    "- Read edges as `value -> operator option -> child values`. Operator ports `arg0`, `arg1`, etc. name the child positions."
+    "- Blue edges/operators are the MDL-selected option path for the rendered roots. Gray options are present but not selected by the current graph-level DL choice."
+    "- Dashed rounded boxes mark frontier leaves: values that still have no option underneath them and are encoded directly if the selected expression stops there."
+    "- The table at the top follows the Python renderer convention: section DL, leaves DL, model DL, max leaf DL, node counts, frontier leaf counts, and graph depth."
+    ""
+    "## Image Frames"
+    ""
+    "- Image frames are partial-reconstruction previews. Before the graph reaches `draw`, the demo overlays the discovered roof/body geometry on the red background so progress is visible."
+    "- Preview roof/body colors come from the guided demo's intended expression. They do not add a recognizer or proposal shortcut to search."
+    "- Once `draw` or `add` is represented, the frame switches to the actual image value for that step."
+    ""
+    "## Current Run"
+    ""
+    (str "- Stop reason: `" (:stop-reason result) "`.")
+    (str "- Candidates consumed: " (:candidates-consumed result) ".")
+    (str "- Partial graphs written: " (count prefixes) ".")
+    (str "- Found steps: `" (pr-str (:prefix-steps result)) "`.")]))
 
 (defn write-guided-artifacts!
   "Write stats, graph frames, image frames, and optional movies for a run."
@@ -852,20 +967,24 @@
          graph-frame-dir (io/file output-dir "graph-frames")
          image-frame-dir (io/file output-dir "image-frames")
          stats-path (.getPath (io/file output-dir "stats.edn"))
+         readme-path (.getPath (io/file output-dir "README.md"))
          graph-movie-path (.getPath (io/file output-dir "graph-prefixes.mp4"))
          image-movie-path (.getPath (io/file output-dir "image-prefixes.mp4"))]
      (write-edn! (assoc (result-stats result)
                         :prefix-count (count prefixes)
                         :candidate? (boolean (:candidate result)))
                  stats-path)
+     (write-text! (artifact-readme result prefixes) readme-path)
      (doseq [[idx summary] (map-indexed vector prefixes)]
        (movie/write-graph-frame! (.getPath graph-frame-dir)
                                  idx
                                  (:graph summary)
-                                 {:label (prefix-label idx summary)})
+                                 {:label (prefix-label idx summary)
+                                  :label-option-edges? true})
        (write-image-png! (prefix-image summary)
                          (movie/frame-path (.getPath image-frame-dir) idx)))
      {:stats-path stats-path
+      :readme-path readme-path
       :graph-frame-dir (.getPath graph-frame-dir)
       :image-frame-dir (.getPath image-frame-dir)
       :graph-movie (when (and movies? (seq prefixes))

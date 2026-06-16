@@ -205,6 +205,26 @@ subgraphs. The selected graph is derived by MDL selection. A global shared-DAG
 minimizer must walk the selected option tree and charge shared selected value
 nodes once; it must not trim by naively keeping every option under every node.
 
+## Graph Rendering
+
+`ciwi.render.graph` is a diagnostic surface, not a graph semantics layer. It
+keeps the Python WILLIAM render reading convention: value nodes are boxes,
+operator nodes are option ovals/tables, and edges read from parent value to
+operator option to child values. Operator tables expose `arg0`, `arg1`, and so
+on as child-position ports when the operator has inputs.
+
+The graph label uses the Python-style DL statistics table: section DL, leaves
+DL, model DL, max leaf DL, value/operator node counts, leaf counts including
+operator leaves, and depth. Dashed rounded frontier boxes mark value leaves
+that have no further option underneath them. Render coloring is for
+interpretation only: selected roots/options can be highlighted, but selection
+is still computed by MDL and never by the renderer.
+
+Demo-local visualizations may layer additional explanatory artifacts around
+generic graph frames. For example, the house demo's partial image frames are
+preview overlays of discovered geometry before a `draw` image value exists;
+those previews are not search operators, recognizers, or compression evidence.
+
 ## Propagation
 
 Propagation treats an entry whose value data is `nil` as unknown, matching

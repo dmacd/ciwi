@@ -62,6 +62,16 @@
            (:prefix-steps result)))
     (is (= 4 (count (:prefixes result))))))
 
+(deftest guided-prefix-image-previews-change-with-discovered-geometry
+  (let [result (sut/run-guided-compression {:max-yields 2
+                                            :max-popped 250
+                                            :collect-prefixes? true
+                                            :prefix-limit 2})
+        first-image (sut/prefix-preview-image (first (:prefixes result)))
+        second-image (sut/prefix-preview-image (second (:prefixes result)))]
+    (is (not= (dense/ravel first-image)
+              (dense/ravel second-image)))))
+
 (deftest guided-prefix-artifacts-write-stats-and-frames
   (let [dir (.toFile (java.nio.file.Files/createTempDirectory
                       "ciwi-house-guided-test"
@@ -73,5 +83,6 @@
         artifacts (sut/write-guided-artifacts! result (.getPath dir)
                                                {:movies? false})]
     (is (.exists (io/file (:stats-path artifacts))))
+    (is (.exists (io/file (:readme-path artifacts))))
     (is (.exists (io/file (:graph-frame-dir artifacts) "frame-000000.png")))
     (is (.exists (io/file (:image-frame-dir artifacts) "frame-000000.png")))))

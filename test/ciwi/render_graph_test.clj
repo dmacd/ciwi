@@ -20,10 +20,12 @@
         left (sut/graph->dot g {:label "tiny"})
         right (sut/graph->dot g {:label "tiny"})]
     (is (= left right))
-    (is (re-find #"digraph ciwi" left))
+    (is (re-find #"digraph tree" left))
     (is (re-find #":out" left))
     (is (re-find #":add" left))
-    (is (re-find #"graph dl=" left))))
+    (is (re-find #"section DL:" left))
+    (is (re-find #"cluster_frontier_" left))
+    (is (re-find #"arg0" left))))
 
 (deftest graph-rendering-does-not-change-graph-scoring
   (let [g (add-graph)

@@ -7,6 +7,13 @@
             [clojure.java.shell :as sh]
             [clojure.string :as str]))
 
+(def ^:private value-col "#555555")
+(def ^:private op-col "#555555")
+(def ^:private edge-col "#888888")
+(def ^:private selected-col "#6699ff")
+(def ^:private frontier-col "#222222")
+(def ^:private bg-col "#ffffff")
+
 (defn- dot-escape
   [x]
   (-> (str x)
@@ -14,13 +21,35 @@
       (str/replace "\"" "\\\"")
       (str/replace "\n" "\\n")))
 
+(defn- html-escape
+  [x]
+  (-> (str x)
+      (str/replace "&" "&amp;")
+      (str/replace "<" "&lt;")
+      (str/replace ">" "&gt;")
+      (str/replace "\"" "&quot;")))
+
+(defn- html-attr
+  [s]
+  {::html s})
+
+(defn- html-attr?
+  [x]
+  (and (map? x) (contains? x ::html)))
+
 (defn- dot-id
   [prefix id]
   (str (name prefix) "_" (dot-escape (pr-str id))))
 
+(defn- dot-ref
+  [prefix id]
+  (str "\"" (dot-id prefix id) "\""))
+
 (defn- attr
   [[k v]]
-  (str (name k) "=\"" (dot-escape v) "\""))
+  (if (html-attr? v)
+    (str (name k) "=<" (::html v) ">")
+    (str (name k) "=\"" (dot-escape v) "\"")))
 
 (defn- attrs
   [m]
@@ -29,7 +58,7 @@
 (defn- format-dl
   [x]
   (when (number? x)
-    (format "%.3f" (double x))))
+    (format "%.2f" (double x))))
 
 (defn- take-summary
   [s max-len]
@@ -62,6 +91,28 @@
       :else
       (take-summary (pr-str x) 100))))
 
+(defn- safe-value-dl
+  [v]
+  (try
+    (double (value/desc-len v))
+    (catch Exception _
+      Double/NaN)))
+
+(defn- safe-node-dl
+  [g id]
+  (try
+    (double (:dl (mdl/node-dl g id {})))
+    (catch Exception _
+      Double/NaN)))
+
+(defn- finite?
+  [x]
+  (and (number? x) (Double/isFinite (double x))))
+
+(defn- sum-finite
+  [xs]
+  (reduce + 0.0 (filter finite? xs)))
+
 (defn- selected-operator-ids
   [g opts]
   (set (or (:selected-operator-ids opts)
@@ -71,19 +122,102 @@
                (catch Exception _
                  []))))))
 
-(defn- graph-label
+(defn- section-value-ids
+  [g]
+  (let [roots (seq (graph/roots g))]
+    (if roots
+      roots
+      (graph/value-ids g))))
+
+(defn- reachable-ids
+  [g]
+  (let [starts (section-value-ids g)]
+    (->> starts
+         (mapcat #(graph/walk g %))
+         distinct
+         vec)))
+
+(defn- frontier-ids
+  [g]
+  (let [roots (section-value-ids g)]
+    (->> roots
+         (mapcat #(graph/leaves g %))
+         distinct
+         (sort-by pr-str)
+         vec)))
+
+(defn- graph-dl-stats
+  [g opts]
+  (let [roots (section-value-ids g)
+        reachable (reachable-ids g)
+        leaf-ids (frontier-ids g)
+        selected (selected-operator-ids g opts)
+        zero-arity-selected (filter (fn [id]
+                                      (empty? (:children (graph/node g id))))
+                                    selected)
+        value-leaf-dls (map #(safe-value-dl (get-in g [:nodes % :value]))
+                            leaf-ids)
+        selected-leaf-op-dls (map #(double (or (:dl (:operator (graph/node g %)))
+                                             0.0))
+                                  zero-arity-selected)
+        leaves-dl (+ (sum-finite value-leaf-dls)
+                     (sum-finite selected-leaf-op-dls))
+        max-leaf-dl (if-let [leaf-dls (seq (filter finite? value-leaf-dls))]
+                      (apply max leaf-dls)
+                      0.0)
+        section-dl (try
+                     (double (mdl/graph-dl g {}))
+                     (catch Exception _
+                       (sum-finite (map #(safe-node-dl g %) roots))))]
+    {:section-dl section-dl
+     :leaves-dl leaves-dl
+     :model-dl (- leaves-dl max-leaf-dl)
+     :max-leaf-dl max-leaf-dl
+     :section-nodes (count roots)
+     :value-nodes (count (filter #(graph/value-node? (graph/node g %))
+                                 reachable))
+     :op-nodes (count (filter #(graph/operator-node? (graph/node g %))
+                              reachable))
+     :leaves (count leaf-ids)
+     :leaves-with-ops (+ (count leaf-ids)
+                         (count zero-arity-selected))
+     :depth (graph/graph-depth g)}))
+
+(defn- stats-lines
+  [stats]
+  [(str "section DL: " (format-dl (:section-dl stats)))
+   (str "leaves DL: " (format-dl (:leaves-dl stats)))
+   (str "model DL: " (format-dl (:model-dl stats)))
+   (str "max leaf DL: " (format-dl (:max-leaf-dl stats)))
+   (str "nodes: " (:value-nodes stats) " value / " (:op-nodes stats) " op")
+   (str "leaves: " (:leaves stats) " value / "
+        (:leaves-with-ops stats) " incl ops")
+   (str "depth: " (:depth stats))])
+
+(defn- graph-label-html
   [g opts]
   (let [provided (:label opts)
-        dl (when (not= false (:show-dl? opts))
-             (try (mdl/graph-dl g {}) (catch Exception _ nil)))
+        stats (when (not= false (:show-dl? opts))
+                (graph-dl-stats g opts))
         parts (cond-> []
-                provided (conj provided)
-                dl (conj (str "graph dl=" (format-dl dl)))
+                provided (into (str/split-lines (str provided)))
+                stats (into (stats-lines stats))
                 (:compression-rate opts)
                 (conj (str "compression="
                            (format "%.4f" (double (:compression-rate opts))))))]
     (when (seq parts)
-      (str/join "\n" parts))))
+      (let [rows (map-indexed
+                  (fn [idx line]
+                    (str "<TR><TD ALIGN=\"LEFT\">"
+                         (if (and (zero? idx) provided)
+                           (str "<B>" (html-escape line) "</B>")
+                           (html-escape line))
+                         "</TD></TR>"))
+                  parts)]
+        (str "<TABLE BORDER=\"1\" CELLBORDER=\"0\" CELLSPACING=\"0\" "
+             "CELLPADDING=\"4\">"
+             (str/join "" rows)
+             "</TABLE>")))))
 
 (defn- node-order
   [g]
@@ -91,13 +225,14 @@
 
 (defn- value-node-label
   [g id node opts]
-  (let [raw-dl (when (not= false (:show-dl? opts))
+  (let [raw-dl (when (:show-node-dl? opts)
                  (try (format-dl (value/desc-len (:value node)))
                       (catch Exception _ nil)))
-        best-dl (when (not= false (:show-dl? opts))
+        best-dl (when (:show-node-dl? opts)
                   (try (format-dl (:dl (mdl/node-dl g id {})))
                        (catch Exception _ nil)))
-        lines (cond-> [(pr-str id)]
+        prefix (if (:permeable? (:value node)) "*" "")
+        lines (cond-> [(str prefix (pr-str id))]
                 (some #{id} (graph/roots g)) (conj "root")
                 (:spec (:value node)) (conj (str "spec=" (:spec (:value node))))
                 raw-dl (conj (str "raw=" raw-dl))
@@ -107,77 +242,127 @@
 
 (defn- value-node-style
   [g id]
-  (if (some #{id} (graph/roots g))
-    {:shape "box"
-     :style "rounded,bold,filled"
-     :fillcolor "#fff7ed"
-     :color "#c2410c"}
-    {:shape "box"
-     :style "rounded,filled"
-     :fillcolor "#f8fafc"
-     :color "#64748b"}))
+  {:shape "box"
+   :color (if (some #{id} (graph/roots g)) selected-col value-col)
+   :height "0.02"
+   :width "0.01"
+   :fontsize "10"
+   :fontcolor (if (some #{id} (graph/roots g)) selected-col value-col)})
 
-(defn- operator-node-label
+(defn- operator-name
   [node]
-  (let [operator (:operator node)]
-    (str/join "\n"
-              (cond-> [(pr-str (:id node))
-                       (str (:id operator))]
-                (:dl operator) (conj (str "dl=" (format-dl (:dl operator))))))))
+  (name (:id (:operator node))))
+
+(defn- operator-label-html
+  [node color]
+  (let [arity (count (:children node))
+        op-name (html-escape (operator-name node))
+        port-cells (map-indexed
+                    (fn [idx _]
+                      (str "<TD PORT=\"arg" idx "\">"
+                           "<FONT POINT-SIZE=\"9\">arg" idx "</FONT>"
+                           "</TD>"))
+                    (:children node))
+        colspan (when (> arity 1)
+                  (str " COLSPAN=\"" arity "\""))]
+    (str "<TABLE BORDER=\"1\" CELLBORDER=\"1\" CELLSPACING=\"0\" "
+         "CELLPADDING=\"4\" COLOR=\"" color "\">"
+         "<TR><TD" (or colspan "") "><FONT POINT-SIZE=\"10\">"
+         op-name
+         "</FONT></TD></TR>"
+         (when (pos? arity)
+           (str "<TR>" (str/join "" port-cells) "</TR>"))
+         "</TABLE>")))
 
 (defn- operator-node-style
-  [id selected]
-  (if (contains? selected id)
-    {:shape "ellipse"
-     :style "bold,filled"
-     :fillcolor "#dcfce7"
-     :color "#15803d"}
-    {:shape "ellipse"
-     :style "filled"
-     :fillcolor "#e0f2fe"
-     :color "#0369a1"}))
+  [id selected node opts]
+  (let [selected? (contains? selected id)
+        color (if selected? selected-col op-col)
+        arity (count (:children node))
+        base {:color color
+              :height "0.02"
+              :width "0.01"
+              :fontsize "10"
+              :fontcolor color}]
+    (cond-> base
+      (and (:show-node-ids? opts true) (not= false (:show-node-xlabels? opts)))
+      (assoc :xlabel (pr-str id))
+
+      (and (pos? arity) (not= false (:show-operator-ports? opts)))
+      (assoc :label (html-attr (operator-label-html node color))
+             :shape "plain")
+
+      (or (zero? arity) (= false (:show-operator-ports? opts)))
+      (assoc :label (operator-name node)
+             :shape "oval"))))
 
 (defn- node-line
   [g selected [id node] opts]
-  (let [attrs (if (graph/value-node? node)
-                (assoc (value-node-style g id)
-                       :label (value-node-label g id node opts))
-                (assoc (operator-node-style id selected)
-                       :label (operator-node-label node)))]
-    (str "  \"" (dot-id (:kind node) id) "\" " (attrs attrs) ";")))
+  (let [node-attrs (if (graph/value-node? node)
+                     (assoc (value-node-style g id)
+                            :label (value-node-label g id node opts))
+                     (operator-node-style id selected node opts))]
+    (str "  " (dot-ref (:kind node) id) " " (attrs node-attrs) ";")))
 
 (defn- option-edge-lines
-  [id node selected]
+  [id node selected opts]
   (for [op-id (:options node)]
-    (str "  \"" (dot-id :operator op-id) "\" -> \""
-         (dot-id :value id) "\" "
-         (attrs (cond-> {:label "option"
-                         :color "#94a3b8"}
+    (str "  " (dot-ref :value id) " -> "
+         (dot-ref :operator op-id) " "
+         (attrs (cond-> {:arrowsize "0.5"
+                         :arrowhead "none"
+                         :color edge-col}
+                  (:label-option-edges? opts)
+                  (assoc :label "option")
+
                   (contains? selected op-id)
                   (assoc :penwidth "2.2"
-                         :color "#16a34a")))
+                         :color selected-col)))
          ";")))
 
+(defn- operator-port-ref
+  [id idx opts]
+  (if (not= false (:show-operator-ports? opts))
+    (str (dot-ref :operator id) ":arg" idx)
+    (dot-ref :operator id)))
+
 (defn- child-edge-lines
-  [id node]
+  [id node selected opts]
   (for [[idx child-id] (map-indexed vector (:children node))]
-    (str "  \"" (dot-id :value child-id) "\" -> \""
-         (dot-id :operator id) "\" "
-         (attrs {:label idx
-                 :color "#94a3b8"})
+    (str "  " (operator-port-ref id idx opts) " -> "
+         (dot-ref :value child-id) " "
+         (attrs (cond-> {:arrowsize "0.5"
+                         :arrowhead "none"
+                         :color edge-col}
+                  (contains? selected id)
+                  (assoc :penwidth "2.2"
+                         :color selected-col)))
          ";")))
 
 (defn- edge-lines
-  [selected [id node]]
+  [selected opts [id node]]
   (cond
     (graph/value-node? node)
-    (option-edge-lines id node selected)
+    (option-edge-lines id node selected opts)
 
     (graph/operator-node? node)
-    (child-edge-lines id node)
+    (child-edge-lines id node selected opts)
 
     :else
     []))
+
+(defn- frontier-cluster-lines
+  [g opts]
+  (when (not= false (:show-frontier? opts))
+    (for [[idx id] (map-indexed vector (frontier-ids g))]
+      (str "  subgraph cluster_frontier_" idx " {\n"
+           "    label=\"\";\n"
+           "    style=\"rounded,dashed\";\n"
+           "    color=\"" frontier-col "\";\n"
+           "    penwidth=\"2\";\n"
+           "    margin=\"8\";\n"
+           "    " (dot-ref :value id) ";\n"
+           "  }"))))
 
 (defn graph->dot
   "Render any CIWI graph to deterministic Graphviz DOT text."
@@ -185,15 +370,19 @@
    (graph->dot g {}))
   ([g opts]
    (let [selected (selected-operator-ids g opts)
-         label (graph-label g opts)
-         header (cond-> ["digraph ciwi {"
-                         "  graph [rankdir=\"BT\", labelloc=\"t\"];"]
-                  label (conj (str "  label=\"" (dot-escape label) "\";"))
-                  true (conj "  node [fontname=\"Helvetica\", fontsize=\"10\"];")
-                  true (conj "  edge [fontname=\"Helvetica\", fontsize=\"9\"];"))
+         label (graph-label-html g opts)
+         graph-attrs (cond-> {:bgcolor bg-col}
+                       label (assoc :labelloc "t"
+                                    :labeljust "l"
+                                    :label (html-attr label)))
+         header (cond-> ["digraph tree {"
+                         (str "  graph " (attrs graph-attrs) ";")
+                         "  node [fontname=\"Helvetica\", fontsize=\"10\"];"
+                         "  edge [fontname=\"Helvetica\", fontsize=\"9\"];"])
          nodes (map #(node-line g selected % opts) (node-order g))
-         edges (mapcat #(edge-lines selected %) (node-order g))]
-     (str (str/join "\n" (concat header nodes edges ["}"])) "\n"))))
+         edges (mapcat #(edge-lines selected opts %) (node-order g))
+         frontier (frontier-cluster-lines g opts)]
+     (str (str/join "\n" (concat header nodes edges frontier ["}"])) "\n"))))
 
 (defn write-dot!
   "Write a CIWI graph DOT file and return the output path."

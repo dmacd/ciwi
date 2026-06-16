@@ -1,6 +1,6 @@
 # CIWI Plan
 
-Last updated: 2026-06-15.
+Last updated: 2026-06-16.
 
 ## Objective
 
@@ -53,26 +53,30 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   global queue prototype results, is recorded in
   `parallel-performance-scaling.md`.
 - CIWI now has an opt-in generic graph rendering and tracing layer for demo
-  and debugging work: `ciwi.render.graph` writes deterministic DOT and PNG
-  through Graphviz when available, `ciwi.render.movie` provides stable frame
-  names and optional ffmpeg MP4 assembly, and `ciwi.wunderbaum`/Alice greedy
-  options accept sampled `:observer` callbacks for frontier materialization,
-  accepted candidate, and greedy-step events. These hooks are inactive unless
-  supplied by the caller, and the no-observer path now short-circuits before
-  constructing event payload maps.
+  and debugging work. `ciwi.render.graph` writes deterministic DOT and PNG
+  through Graphviz when available, following the Python renderer's reading
+  convention: value boxes, operator option nodes/tables, value-to-option-to-child
+  edges, frontier leaf boxes, and a top DL statistics table.
+  `ciwi.render.movie` provides stable frame names and optional ffmpeg MP4 assembly, and
+  `ciwi.wunderbaum`/Alice greedy options accept sampled `:observer` callbacks
+  for frontier materialization, accepted candidate, and greedy-step events.
+  These hooks are inactive unless supplied by the caller, and the no-observer
+  path now short-circuits before constructing event payload maps.
 - A first native house-demo scaffold now lives in `ciwi.demos.house`. It
   includes the Python legacy fixture geometry, a small RandomState-compatible
   MT19937 normal generator for the seeded noisy 50x50x3 RGB task, demo-local
   low-level geometry/rendering primitives (`point-add`, `line`, `fill`,
   `concat`, `dye`, `draw`, and image residual `add`), PNG image output, and a
-  guided prefix-search entry point with an injected primitive registry and
-  native solution-prefix predicate. The demo can now write stats, graph frames,
-  image frames, and MP4s for bounded guided prefixes. The full guided
-  acceptance threshold still times out before the final draw/add structure in
-  local probes, so the full guided and unguided compression milestones remain
+  guided partial-expression entry point with an injected primitive registry
+  and native solution predicate. The demo now writes stats, graph frames, image
+  preview frames, MP4s, and an artifact README for bounded guided partial
+  graphs. Image frames intentionally preview discovered geometry before the
+  graph reaches an actual `draw` image value. The full guided acceptance
+  threshold still times out before the final draw/add structure in local
+  probes, so the full guided and unguided compression milestones remain
   pending search-bound/order tuning; do not count them as achieved parity
   evidence yet.
-- The default vector-backend suite passes locally with 190 tests and 982
+- The default vector-backend suite passes locally with 191 tests and 986
   assertions. The opt-in DJL backend was not rerun in this turn; the last
   recorded DJL suite remains 8 tests and 43 assertions.
 
@@ -100,17 +104,19 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   frontier predicates and preferred tuple nodes; those hooks are caller-owned
   scheduling controls and are not enabled by the Alice parity harness.
 - `ciwi.render.graph` is the generic graph visualization surface. It renders
-  value and operator nodes, explicit roots, selected options, graph/value DL
-  labels, and compact value summaries to DOT, and shells out to installed
-  Graphviz `dot` for PNGs. `ciwi.render.movie` builds stable graph-frame paths
-  and optionally invokes `ffmpeg` for MP4s.
+  value boxes, operator option nodes/tables with argument ports, explicit
+  roots, selected options, frontier leaves, graph DL statistics, and compact
+  value summaries to DOT using Python-compatible visual conventions, and
+  shells out to installed Graphviz `dot` for PNGs. `ciwi.render.movie` builds
+  stable graph-frame paths and optionally invokes `ffmpeg` for MP4s.
 - `ciwi.demos.house` is the staged house-image demo area. Its fixture and
   primitives are intentionally demo-local and are not part of the default
   Alice parity basis. Current coverage verifies deterministic fixture
-  generation, primitive rendering behavior, PNG writing, bounded guided prefix
-  discovery, and guided prefix artifact writing; discovering the full house
-  graph at a documented compression threshold and then removing the guide
-  remain open demo milestones.
+  generation, primitive rendering behavior, PNG writing, bounded guided
+  partial-expression discovery, partial image preview changes, and guided
+  artifact writing; discovering the full house graph at a documented
+  compression threshold and then removing the guide remain open demo
+  milestones.
 - `ciwi.alice.wunderbaum` adds an Alice-facing greedy runner over that core.
   It is the main Alice parity path. `ciwi.alice` still supplies shared task
   records, the Alice operator registry, constructors, and compression-rate
