@@ -61,7 +61,10 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   `ciwi.wunderbaum`/Alice greedy options accept sampled `:observer` callbacks
   for frontier materialization, accepted candidate, and greedy-step events.
   These hooks are inactive unless supplied by the caller, and the no-observer
-  path now short-circuits before constructing event payload maps.
+  path now short-circuits before constructing event payload maps. Graph
+  rendering now computes graph-level MDL description once per frame and reuses
+  it for selected highlighting and DL labels, so completed house movies can
+  use full Python-style graph frames without per-root recomputation.
 - A first native house-demo scaffold now lives in `ciwi.demos.house`. It
   includes the Python legacy fixture geometry, a small RandomState-compatible
   MT19937 normal generator for the seeded noisy 50x50x3 RGB task, demo-local
@@ -73,10 +76,12 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   map vectors. The guided run now reaches the full 18-step expression through
   `draw` and residual `add`, hits a `0.1136` compression rate under default
   bounded guided settings, and writes stats, 18 graph frames, 18 image frames,
-  MP4s, and an artifact README. The unguided compression milestone remains
-  pending; do not count recognizer-free unguided house discovery as achieved
-  yet.
-- The default vector-backend suite passes locally with 192 tests and 993
+  MP4s, and an artifact README. The first unguided runner now removes the
+  solution predicate, frontier predicate, and preferred-node scheduling while
+  keeping the same primitive basis; under a bounded 10-yield baseline it
+  yields candidates but only negative-compression low-level roots. Unguided
+  recognizer-free house discovery remains pending.
+- The default vector-backend suite passes locally with 194 tests and 1002
   assertions. The opt-in DJL backend was not rerun in this turn; the last
   recorded DJL suite remains 8 tests and 43 assertions.
 
@@ -114,9 +119,10 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   Alice parity basis. Current coverage verifies deterministic fixture
   generation, primitive rendering behavior, PNG writing, bounded guided
   partial-expression discovery, partial image preview changes, guided artifact
-  writing, and full guided threshold completion. Removing the guide and still
-  discovering a recognizably house-shaped compressive graph remains the next
-  open demo milestone.
+  writing, full guided threshold completion, and the first bounded unguided
+  no-compression baseline. Removing the guide and still discovering a
+  recognizably house-shaped compressive graph remains the next open demo
+  milestone.
 - `ciwi.alice.wunderbaum` adds an Alice-facing greedy runner over that core.
   It is the main Alice parity path. `ciwi.alice` still supplies shared task
   records, the Alice operator registry, constructors, and compression-rate

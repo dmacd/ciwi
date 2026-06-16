@@ -100,6 +100,22 @@
     (is (:candidate result))
     (is (not (contains? result :selected)))))
 
+(deftest unguided-house-options-remove-solution-guide
+  (let [opts (sut/unguided-options)]
+    (is (nil? (:candidate-predicate opts)))
+    (is (nil? (:frontier-predicate opts)))
+    (is (nil? (:preferred-node-fn opts)))
+    (is (= 1000 (:max-node-tuples opts)))))
+
+(deftest bounded-unguided-house-baseline-yields-no-compression
+  (let [result (sut/run-unguided-compression {:max-yields 10
+                                              :max-popped 20000})]
+    (is (= :exhausted (:stop-reason result)))
+    (is (= 10 (:candidates-consumed result)))
+    (is (nil? (:candidate result)))
+    (is (:best result))
+    (is (neg? (:compression-rate result)))))
+
 (deftest guided-prefix-artifacts-write-stats-and-frames
   (let [dir (.toFile (java.nio.file.Files/createTempDirectory
                       "ciwi-house-guided-test"

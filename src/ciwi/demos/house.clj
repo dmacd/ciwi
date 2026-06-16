@@ -788,6 +788,21 @@
      :frontier-predicate #(solution-frontier? % guide-fingerprint-cache)
      :preferred-node-fn #(preferred-prefix-nodes % guide-fingerprint-cache)}))
 
+(defn unguided-options
+  "Return house demo options without solution-prefix guidance.
+
+  This keeps the same primitive basis and generic operator DL schedule as the
+  guided run, but removes the native solution predicate and tuple scheduler.
+  "
+  []
+  {:registry (registry)
+   :ops-with-counts (guided-operator-declarations)
+   :max-dag-dl 20
+   :max-popped 2000
+   :max-node-tuples 1000
+   :max-yields 50
+   :allow-multiple-op-roots? true})
+
 (defn run-guided-compression
   "Run the guided house compression search with the demo-local primitive basis."
   ([]
@@ -842,6 +857,63 @@
                   :last-prefix last-prefix
                   :prefix-steps (some-> last-prefix :graph prefix-steps)}
            prefixes (assoc :prefixes @prefixes)))))))
+
+(defn run-unguided-compression
+  "Run the house compression search without solution-prefix guidance.
+
+  Returns the first candidate that reaches `:min-compression-rate` when one is
+  found, otherwise returns the best yielded candidate seen under the supplied
+  bounds. This is a baseline runner for the unguided milestone; it does not add
+  recognizers, proposals, or task-specific operators.
+  "
+  ([]
+   (run-unguided-compression {}))
+  ([opts]
+   (let [opts (merge (unguided-options) opts)
+         target (house-value)
+         inputs (into [target] (free-values))
+         wb (wunderbaum/wunderbaum opts)
+         initial-dl (value/desc-len target)
+         min-compression-rate (double (or (:min-compression-rate opts) 0.01))
+         collected (when (:collect-candidates? opts) (atom []))
+         candidate-limit (long (or (:candidate-limit opts) 64))
+         t0 (System/nanoTime)
+         candidates (wunderbaum/iterate wb inputs opts)]
+     (loop [remaining candidates
+            consumed 0
+            best nil]
+       (if-let [candidate (first remaining)]
+         (let [consumed (inc consumed)
+               rate (alice/compression-rate initial-dl (:dl candidate))
+               candidate (assoc candidate :compression-rate rate)
+               best (if (or (nil? best)
+                            (< (:dl candidate) (:dl best)))
+                      candidate
+                      best)
+               _ (when (and collected (< (count @collected) candidate-limit))
+                   (swap! collected conj candidate))]
+           (if (>= rate min-compression-rate)
+             (cond-> {:candidate candidate
+                      :best best
+                      :initial-dl initial-dl
+                      :dl (:dl candidate)
+                      :compression-rate rate
+                      :candidates-consumed consumed
+                      :stop-reason :threshold-reached
+                      :search-elapsed-ms (/ (double (- (System/nanoTime) t0))
+                                            1000000.0)}
+               collected (assoc :candidates @collected))
+             (recur (rest remaining) consumed best)))
+         (cond-> {:candidate nil
+                  :best best
+                  :initial-dl initial-dl
+                  :dl (:dl best)
+                  :compression-rate (double (or (:compression-rate best) 0.0))
+                  :candidates-consumed consumed
+                  :stop-reason :exhausted
+                  :search-elapsed-ms (/ (double (- (System/nanoTime) t0))
+                                        1000000.0)}
+           collected (assoc :candidates @collected)))))))
 
 (defn- clamp-byte
   [x]
