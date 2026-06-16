@@ -68,6 +68,12 @@
                    (compare (build-rank left)
                             (build-rank right)))))
 
+(defn- keep-frontier-item?
+  [opts info]
+  (if-let [pred (:frontier-predicate opts)]
+    (boolean (pred info))
+    true))
+
 (defn expand-graph
   [wb queue graph memory dl {:keys [max-dag-dl max-tuple-len max-node-tuples
                                     primary-root-id root-order free-root-ids]
@@ -77,7 +83,22 @@
                              :as opts} order]
   (let [attachment-context (attachment/context graph
                                                primary-root-id
-                                               free-root-ids)]
+                                               free-root-ids
+                                               opts)
+        tuple-root-order (if (:recent-roots-first? opts)
+                           (let [fixed-roots (vec (distinct
+                                                   (concat (when primary-root-id
+                                                             [primary-root-id])
+                                                           free-root-ids)))
+                                 fixed-root-set (set fixed-roots)]
+                             (vec (concat fixed-roots
+                                          (remove fixed-root-set
+                                                  (reverse (graph/roots graph))))))
+                           root-order)
+        preferred-nodes (when-let [preferred-node-fn (:preferred-node-fn opts)]
+                          (preferred-node-fn {:graph graph
+                                              :memory memory
+                                              :opts opts}))]
     (reduce
      (fn [[queue order] {:keys [nodes]}]
        (let [k (node-condition-key graph nodes)
@@ -89,7 +110,15 @@
                       (attachment/invalid? graph
                                            (:gen-cond element)
                                            nodes
-                                           attachment-context))
+                                           attachment-context)
+                      (not (keep-frontier-item?
+                            opts
+                            {:graph graph
+                             :memory memory
+                             :nodes nodes
+                             :condition-key k
+                             :element element
+                             :dl new-dl})))
                 [queue order]
                 (let [[item-order order] (next-frontier-order opts order)
                       build-info (delayed/build-info
@@ -108,7 +137,8 @@
      [queue order]
      (tuples/node-tuples graph {:max-tuple-len max-tuple-len
                                 :max-results max-node-tuples
-                                :root-order root-order}))))
+                                :root-order tuple-root-order
+                                :preferred-nodes preferred-nodes}))))
 
 (defn- score-target-dl
   [graph target-ids cache-context score-target-count]

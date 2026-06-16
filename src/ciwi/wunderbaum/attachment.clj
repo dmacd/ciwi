@@ -25,12 +25,15 @@
                               :include-self? true})))
 
 (defn context
-  [g root-id free-root-ids]
+  ([g root-id free-root-ids]
+   (context g root-id free-root-ids {}))
+  ([g root-id free-root-ids opts]
   (let [root-id (or root-id (first (graph/roots g)))
         free-root-ids (vec free-root-ids)
         op-roots (op-carrying-roots g root-id)]
     {:primary-root-id root-id
      :free-root-ids free-root-ids
+     :allow-multiple-op-roots? (boolean (:allow-multiple-op-roots? opts))
      :primary-descendants (when root-id
                             (descendant-set g root-id))
      :free-ancestors (into #{}
@@ -43,7 +46,7 @@
                                 (map (fn [op-root-id]
                                        [op-root-id
                                         (descendant-set g op-root-id)]))
-                                op-roots)}))
+                                op-roots)})))
 
 (defn- leaves-below-primary-outside-op-root?
   [{:keys [primary-leaves op-root-descendants]} op-root-id]
@@ -69,7 +72,8 @@
                                          op-roots]
                                   :as context}]
    (let [root-id primary-root-id
-         input-attachment? (some #(not= -1 %) gen-cond)]
+         input-attachment? (some #(not= -1 %) gen-cond)
+         single-op-root? (not (:allow-multiple-op-roots? context))]
      (boolean
       (or
        (some (fn [[position node-id]]
@@ -93,8 +97,10 @@
 
                  :else false))
              (map vector gen-cond conditioned-nodes))
-       (> (count op-roots) 1)
-       (and (seq op-roots)
+       (and single-op-root?
+            (> (count op-roots) 1))
+       (and single-op-root?
+            (seq op-roots)
             input-attachment?
             (let [op-root-id (first op-roots)]
               (or (not (some #{op-root-id} conditioned-nodes))

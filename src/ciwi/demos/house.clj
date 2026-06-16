@@ -1,10 +1,14 @@
 (ns ciwi.demos.house
   (:refer-clojure :exclude [line])
-  (:require [ciwi.alice.wunderbaum :as alice-wb]
+  (:require [ciwi.alice :as alice]
             [ciwi.dense.core :as dense]
+            [ciwi.graph :as graph]
+            [ciwi.hashing :as hashing]
             [ciwi.operator.core :as operator]
             [ciwi.render.graph :as render-graph]
+            [ciwi.render.movie :as movie]
             [ciwi.value :as value]
+            [ciwi.wunderbaum :as wunderbaum]
             [clojure.java.io :as io])
   (:import [java.awt.image BufferedImage]
            [javax.imageio ImageIO]))
@@ -466,37 +470,306 @@
            (map #(spec-value % :point)
                 (distinct (concat roof-points body-points))))))
 
-(defn- op-ids
-  [summary]
-  (set (keep (fn [[_ node]]
-               (when (= :operator (:kind node))
-                 (:id (:operator node))))
-             (:nodes (:graph summary)))))
+(defn- spec-data
+  [data spec]
+  (value/datum (spec-value data spec)))
+
+(defn- fingerprint
+  [data]
+  (hashing/content-fingerprint data))
+
+(defn- concat-point-list-data
+  [& point-lists]
+  (spec-data (vec (mapcat point-list point-lists)) :point-list))
+
+(defn- memory-data
+  [memory id]
+  (value/datum (:value (get memory id))))
+
+(defn- graph-value-data
+  [g id]
+  (value/datum (get-in g [:nodes id :value])))
+
+(defn- canonical-solution*
+  []
+  (let [p-a (spec-data [21 9] :point)
+        p-b (spec-data [21 39] :point)
+        p-c (spec-data [6 24] :point)
+        p-d (spec-data [45 39] :point)
+        p-e (spec-data [45 9] :point)
+        top (spec-data (line [21 9] [21 39]) :point-list)
+        roof-right (spec-data (line [21 39] [6 24]) :point-list)
+        roof-left (spec-data (line [6 24] [21 9]) :point-list)
+        body-right (spec-data (line [21 39] [45 39]) :point-list)
+        body-bottom (spec-data (line [45 39] [45 9]) :point-list)
+        body-left (spec-data (line [45 9] [21 9]) :point-list)
+        roof12 (concat-point-list-data top roof-right)
+        roof123 (concat-point-list-data top roof-right roof-left)
+        body12 (concat-point-list-data top body-right)
+        body123 (concat-point-list-data top body-right body-bottom)
+        body1234 (concat-point-list-data top body-right body-bottom body-left)
+        roof-fill (spec-data (fill roof123) :point-list)
+        body-fill (spec-data (fill body1234) :point-list)
+        roof-colored (spec-data (dye blue roof-fill) :colored-point-list)
+        body-colored (spec-data (dye green body-fill) :colored-point-list)
+        colored-combo (spec-data (vec (concat roof-colored body-colored))
+                                 :colored-point-list)
+        base (spec-data (base-house-image) :rgb-image)
+        target (spec-data (house-image) :rgb-image)
+        step-order [:line-top
+                    :line-roof-right
+                    :line-roof-left
+                    :concat-roof12
+                    :concat-roof123
+                    :fill-roof
+                    :dye-roof
+                    :line-body-right
+                    :line-body-bottom
+                    :line-body-left
+                    :concat-body12
+                    :concat-body123
+                    :concat-body1234
+                    :fill-body
+                    :dye-body
+                    :concat-colored
+                    :draw-base
+                    :add-target]
+        step-inputs {:line-top {:op :line
+                                :inputs [p-a p-b]
+                                :commutative? true}
+                     :line-roof-right {:op :line
+                                       :inputs [p-b p-c]
+                                       :commutative? true}
+                     :line-roof-left {:op :line
+                                      :inputs [p-c p-a]
+                                      :commutative? true}
+                     :concat-roof12 {:op :concat
+                                     :inputs [top roof-right]}
+                     :concat-roof123 {:op :concat
+                                      :inputs [roof12 roof-left]}
+                     :fill-roof {:op :fill
+                                 :inputs [roof123]}
+                     :dye-roof {:op :dye
+                                :inputs [(spec-data blue :color) roof-fill]}
+                     :line-body-right {:op :line
+                                       :inputs [p-b p-d]
+                                       :commutative? true}
+                     :line-body-bottom {:op :line
+                                        :inputs [p-d p-e]
+                                        :commutative? true}
+                     :line-body-left {:op :line
+                                      :inputs [p-e p-a]
+                                      :commutative? true}
+                     :concat-body12 {:op :concat
+                                     :inputs [top body-right]}
+                     :concat-body123 {:op :concat
+                                      :inputs [body12 body-bottom]}
+                     :concat-body1234 {:op :concat
+                                       :inputs [body123 body-left]}
+                     :fill-body {:op :fill
+                                 :inputs [body1234]}
+                     :dye-body {:op :dye
+                                :inputs [(spec-data green :color) body-fill]}
+                     :concat-colored {:op :concat
+                                      :inputs [roof-colored body-colored]}
+                     :draw-base {:op :draw
+                                 :inputs [colored-combo]}
+                     :add-target {:op :add
+                                  :inputs [target base]
+                                  :commutative? true}}
+        step-by-output {[:line (fingerprint top)] :line-top
+                        [:line (fingerprint roof-right)] :line-roof-right
+                        [:line (fingerprint roof-left)] :line-roof-left
+                        [:concat (fingerprint roof12)] :concat-roof12
+                        [:concat (fingerprint roof123)] :concat-roof123
+                        [:fill (fingerprint roof-fill)] :fill-roof
+                        [:dye (fingerprint roof-colored)] :dye-roof
+                        [:line (fingerprint body-right)] :line-body-right
+                        [:line (fingerprint body-bottom)] :line-body-bottom
+                        [:line (fingerprint body-left)] :line-body-left
+                        [:concat (fingerprint body12)] :concat-body12
+                        [:concat (fingerprint body123)] :concat-body123
+                        [:concat (fingerprint body1234)] :concat-body1234
+                        [:fill (fingerprint body-fill)] :fill-body
+                        [:dye (fingerprint body-colored)] :dye-body
+                        [:concat (fingerprint colored-combo)] :concat-colored
+                        [:draw (fingerprint base)] :draw-base
+                        [:add (fingerprint target)] :add-target}]
+    {:step-order step-order
+     :step-inputs step-inputs
+     :step-by-output step-by-output
+     :target target
+     :base base
+     :roof-colored roof-colored
+     :body-colored body-colored
+     :colored-combo colored-combo}))
+
+(def ^:private canonical-solution
+  (delay (canonical-solution*)))
+
+(defn- operator-output-step
+  [g op-id]
+  (let [node (graph/node g op-id)
+        op-id* (:id (:operator node))
+        output (graph-value-data g (:parent node))]
+    (get (:step-by-output @canonical-solution)
+         [op-id* (fingerprint output)])))
+
+(defn prefix-steps
+  "Return the canonical house solution prefix steps represented by `g`.
+
+  Returns nil when the graph contains an operator outside the guided prefix.
+  "
+  [g]
+  (let [steps (mapv #(operator-output-step g %) (graph/operator-ids g))
+        step-set (set steps)
+        k (count steps)
+        expected-set (set (take k (:step-order @canonical-solution)))]
+    (when (and (= k (count step-set))
+               (every? some? steps)
+               (= expected-set step-set))
+      (vec (take k (:step-order @canonical-solution))))))
 
 (defn solution-prefix?
-  "Guide the demo toward image residual plus rendered colored geometry."
+  "Native guide for the house demo's intended low-level primitive expression."
   [summary]
-  (let [ids (op-ids summary)]
-    (every? ids [:add :draw :dye :fill :line])))
+  (boolean (prefix-steps (:graph summary))))
+
+(defn- next-step
+  [g]
+  (let [steps (or (prefix-steps g) [])
+        order (:step-order @canonical-solution)]
+    (nth order (count steps) nil)))
+
+(defn- expected-input-fingerprints
+  [step]
+  (mapv fingerprint (get-in @canonical-solution [:step-inputs step :inputs])))
+
+(defn- node-fingerprint
+  [memory id]
+  (fingerprint (memory-data memory id)))
+
+(defn- same-inputs?
+  [memory node-ids expected-fps commutative?]
+  (let [actual (mapv #(node-fingerprint memory %) node-ids)]
+    (if commutative?
+      (= (set expected-fps) (set actual))
+      (= expected-fps actual))))
+
+(defn solution-frontier?
+  "Pre-materialization version of the guided house solution-prefix predicate."
+  [{:keys [graph memory nodes element]}]
+  (let [step (next-step graph)
+        {:keys [op inputs commutative?]} (get-in @canonical-solution
+                                                 [:step-inputs step])
+        expected-fps (mapv fingerprint inputs)]
+    (and step
+         (= op (:id (:operator element)))
+         (case step
+           (:line-top :line-roof-right :line-roof-left
+            :line-body-right :line-body-bottom :line-body-left)
+           (and (= [0 1] (:gen-cond element))
+                (same-inputs? memory nodes expected-fps true))
+
+           :add-target
+           (and (some #{-1} (:gen-cond element))
+                (same-inputs? memory nodes expected-fps true))
+
+           (same-inputs? memory nodes expected-fps commutative?)))))
+
+(defn preferred-prefix-nodes
+  "Return value nodes that should be tried first for the next guided step."
+  [{:keys [graph memory]}]
+  (let [step (next-step graph)
+        expected (set (expected-input-fingerprints step))]
+    (vec
+     (keep (fn [[id entry]]
+             (when (contains? expected
+                              (fingerprint (value/datum (:value entry))))
+               id))
+           memory))))
+
+(defn guided-operator-declarations
+  "Return house declarations with a demo-local search prior.
+
+  Line creation remains the expensive primitive; composition/rendering
+  operators are cheap so the guided prefix keeps building the current shape
+  before opening unrelated branches.
+  "
+  []
+  (let [dl-by-op {:line 1.0
+                  :point-add 4.0
+                  :concat 0.05
+                  :fill 0.05
+                  :dye 0.05
+                  :draw 0.05
+                  :add 0.05}]
+    (mapv (fn [declaration]
+            (assoc declaration :dl (get dl-by-op (:op declaration) 1.0)))
+          (operator-declarations))))
 
 (defn guided-options
   []
   {:registry (registry)
-   :ops-with-counts (operator-declarations)
-   :max-dag-dl 40
-   :max-popped 5000
-   :max-yields 20
-   :candidate-predicate solution-prefix?})
+   :ops-with-counts (guided-operator-declarations)
+   :max-dag-dl 20
+   :max-popped 2000
+   :max-yields 50
+   :allow-multiple-op-roots? true
+   :recent-roots-first? true
+   :candidate-predicate solution-prefix?
+   :frontier-predicate solution-frontier?
+   :preferred-node-fn preferred-prefix-nodes})
 
 (defn run-guided-compression
-  "Run the guided house compression step with the demo-local primitive basis."
+  "Run the guided house compression search with the demo-local primitive basis."
   ([]
    (run-guided-compression {}))
   ([opts]
-   (alice-wb/compression-step-candidate
-    (house-value)
-    (free-values)
-    (merge (guided-options) opts))))
+   (let [opts (merge (guided-options) opts)
+         target (house-value)
+         inputs (into [target] (free-values))
+         wb (wunderbaum/wunderbaum opts)
+         initial-dl (value/desc-len target)
+         min-compression-rate (double (or (:min-compression-rate opts) 0.01))
+         threshold-dl (* initial-dl (- 1.0 min-compression-rate))
+         prefixes (when (:collect-prefixes? opts) (atom []))
+         prefix-limit (long (or (:prefix-limit opts) 64))
+         t0 (System/nanoTime)
+         candidates (wunderbaum/iterate wb inputs opts)]
+     (loop [remaining candidates
+            consumed 0
+            last-prefix nil]
+       (if-let [candidate (first remaining)]
+         (let [consumed (inc consumed)
+               last-prefix candidate
+               _ (when (and prefixes (< (count @prefixes) prefix-limit))
+                   (swap! prefixes conj candidate))
+               rate (alice/compression-rate initial-dl (:dl candidate))]
+           (if (>= rate min-compression-rate)
+             (let [candidate (wunderbaum/realize-selected candidate)]
+               (cond-> {:candidate candidate
+                        :initial-dl initial-dl
+                        :dl (:dl candidate)
+                        :compression-rate rate
+                        :candidates-consumed consumed
+                        :stop-reason :threshold-reached
+                        :search-elapsed-ms (/ (double (- (System/nanoTime) t0))
+                                              1000000.0)
+                        :selected (get (:selected candidate) :target0)
+                        :prefix-steps (prefix-steps (:graph candidate))}
+                 prefixes (assoc :prefixes @prefixes)))
+             (recur (rest remaining) consumed last-prefix)))
+         (cond-> {:candidate nil
+                  :initial-dl initial-dl
+                  :candidates-consumed consumed
+                  :stop-reason :exhausted
+                  :compression-rate 0.0
+                  :search-elapsed-ms (/ (double (- (System/nanoTime) t0))
+                                        1000000.0)
+                  :last-prefix last-prefix
+                  :prefix-steps (some-> last-prefix :graph prefix-steps)}
+           prefixes (assoc :prefixes @prefixes)))))))
 
 (defn- clamp-byte
   [x]
@@ -525,6 +798,98 @@
         (.setRGB buffered column row rgb)))
     (ImageIO/write buffered "png" file)
     (.getPath file)))
+
+(defn- write-edn!
+  [data path]
+  (let [file (io/file path)]
+    (io/make-parents file)
+    (spit file (pr-str data))
+    (.getPath file)))
+
+(defn- result-stats
+  [result]
+  (select-keys result
+               [:initial-dl
+                :dl
+                :compression-rate
+                :candidates-consumed
+                :stop-reason
+                :search-elapsed-ms
+                :prefix-steps]))
+
+(defn- prefix-label
+  [idx summary]
+  (str "house guided prefix "
+       (inc (long idx))
+       "\n"
+       (pr-str (prefix-steps (:graph summary)))))
+
+(defn- prefix-image
+  [summary]
+  (let [steps (set (prefix-steps (:graph summary)))]
+    (cond
+      (contains? steps :add-target)
+      (:target @canonical-solution)
+
+      (contains? steps :draw-base)
+      (:base @canonical-solution)
+
+      :else
+      (house-image))))
+
+(defn write-guided-artifacts!
+  "Write stats, graph frames, image frames, and optional movies for a run."
+  ([result output-dir]
+   (write-guided-artifacts! result output-dir {}))
+  ([result output-dir {:keys [framerate movies?]
+                       :or {framerate 2
+                            movies? true}}]
+   (let [output-dir (io/file output-dir)
+         prefixes (or (seq (:prefixes result))
+                      (some-> (:candidate result) vector)
+                      (some-> (:last-prefix result) vector)
+                      [])
+         graph-frame-dir (io/file output-dir "graph-frames")
+         image-frame-dir (io/file output-dir "image-frames")
+         stats-path (.getPath (io/file output-dir "stats.edn"))
+         graph-movie-path (.getPath (io/file output-dir "graph-prefixes.mp4"))
+         image-movie-path (.getPath (io/file output-dir "image-prefixes.mp4"))]
+     (write-edn! (assoc (result-stats result)
+                        :prefix-count (count prefixes)
+                        :candidate? (boolean (:candidate result)))
+                 stats-path)
+     (doseq [[idx summary] (map-indexed vector prefixes)]
+       (movie/write-graph-frame! (.getPath graph-frame-dir)
+                                 idx
+                                 (:graph summary)
+                                 {:label (prefix-label idx summary)})
+       (write-image-png! (prefix-image summary)
+                         (movie/frame-path (.getPath image-frame-dir) idx)))
+     {:stats-path stats-path
+      :graph-frame-dir (.getPath graph-frame-dir)
+      :image-frame-dir (.getPath image-frame-dir)
+      :graph-movie (when (and movies? (seq prefixes))
+                     (movie/frames->mp4! (.getPath graph-frame-dir)
+                                         graph-movie-path
+                                         {:framerate framerate}))
+      :image-movie (when (and movies? (seq prefixes))
+                     (movie/frames->mp4! (.getPath image-frame-dir)
+                                         image-movie-path
+                                         {:framerate framerate}))})))
+
+(defn run-guided-demo!
+  "Run the bounded guided house demo and write prefix artifacts."
+  ([]
+   (run-guided-demo! {}))
+  ([{:keys [output-dir]
+     :or {output-dir "target/house-guided"}
+     :as opts}]
+   (let [result (run-guided-compression
+                 (merge {:collect-prefixes? true
+                         :prefix-limit 64}
+                        (dissoc opts :output-dir)))
+         artifacts (write-guided-artifacts! result output-dir)]
+     (assoc result :artifacts artifacts))))
 
 (defn write-candidate-artifacts!
   "Write graph and image artifacts for a house compression candidate."

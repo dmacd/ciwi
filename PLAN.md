@@ -65,11 +65,14 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   MT19937 normal generator for the seeded noisy 50x50x3 RGB task, demo-local
   low-level geometry/rendering primitives (`point-add`, `line`, `fill`,
   `concat`, `dye`, `draw`, and image residual `add`), PNG image output, and a
-  guided compression entry point with an injected primitive registry and native
-  solution-prefix predicate. The full guided acceptance threshold and unguided
-  compression milestone are still pending search-bound/order tuning; do not
-  count them as achieved parity evidence yet.
-- The default vector-backend suite passes locally with 188 tests and 974
+  guided prefix-search entry point with an injected primitive registry and
+  native solution-prefix predicate. The demo can now write stats, graph frames,
+  image frames, and MP4s for bounded guided prefixes. The full guided
+  acceptance threshold still times out before the final draw/add structure in
+  local probes, so the full guided and unguided compression milestones remain
+  pending search-bound/order tuning; do not count them as achieved parity
+  evidence yet.
+- The default vector-backend suite passes locally with 190 tests and 982
   assertions. The opt-in DJL backend was not rerun in this turn; the last
   recorded DJL suite remains 8 tests and 43 assertions.
 
@@ -93,7 +96,9 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   emits matching accepted-step events. The observer path is a debugging/demo
   surface and does not alter search results when absent. Absent observers are
   checked before event payload construction, so rendering/tracing costs stay
-  opt-in.
+  opt-in. Non-parity demos can additionally opt into pre-materialization
+  frontier predicates and preferred tuple nodes; those hooks are caller-owned
+  scheduling controls and are not enabled by the Alice parity harness.
 - `ciwi.render.graph` is the generic graph visualization surface. It renders
   value and operator nodes, explicit roots, selected options, graph/value DL
   labels, and compact value summaries to DOT, and shells out to installed
@@ -102,10 +107,10 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
 - `ciwi.demos.house` is the staged house-image demo area. Its fixture and
   primitives are intentionally demo-local and are not part of the default
   Alice parity basis. Current coverage verifies deterministic fixture
-  generation, primitive rendering behavior, PNG writing, and that the bounded
-  guided entry point is executable; discovering the full house graph at a
-  documented compression threshold and then removing the guide remain open
-  demo milestones.
+  generation, primitive rendering behavior, PNG writing, bounded guided prefix
+  discovery, and guided prefix artifact writing; discovering the full house
+  graph at a documented compression threshold and then removing the guide
+  remain open demo milestones.
 - `ciwi.alice.wunderbaum` adds an Alice-facing greedy runner over that core.
   It is the main Alice parity path. `ciwi.alice` still supplies shared task
   records, the Alice operator registry, constructors, and compression-rate

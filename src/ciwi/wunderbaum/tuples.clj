@@ -42,6 +42,15 @@
                    (compare (tuple-rank left)
                             (tuple-rank right)))))
 
+(defn- with-preferred-ids
+  [ids preferred-ids]
+  (let [ids (vec ids)
+        id-set (set ids)
+        preferred (vec (distinct (filter id-set preferred-ids)))
+        preferred-set (set preferred)]
+    (vec (concat preferred
+                 (remove preferred-set ids)))))
+
 (defn- pop-tuple
   [queue]
   (let [item (first queue)]
@@ -71,11 +80,13 @@
 
 (defn node-tuples
   "Enumerate graph value-node tuples in Python NodeTupleEnumerator order."
-  [g {:keys [max-tuple-len max-results]
+  [g {:keys [max-tuple-len max-results preferred-nodes]
       :or {max-tuple-len 2
            max-results 1000}
       :as opts}]
-  (let [ids (vec (graph-value-order g (:root-order opts)))]
+  (let [ids (cond-> (vec (graph-value-order g (:root-order opts)))
+              (seq preferred-nodes)
+              (with-preferred-ids preferred-nodes))]
     (if (empty? ids)
       []
       (loop [queue (into (tuple-queue) (starting-tuples ids max-tuple-len))

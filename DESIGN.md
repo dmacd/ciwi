@@ -728,6 +728,17 @@ optimizer-backed numeric candidates: the symbolic DAG is still found by
 Wunderbaum, then permeable leaves are optimized and the candidate DL is
 recomputed.
 
+Non-parity demos can also install opt-in pre-materialization scheduling hooks.
+`:frontier-predicate` receives the current graph, memory, conditioned nodes,
+selected declaration element, and prospective build DL before a delayed build
+is enqueued; absent this hook, every legal attachment is enqueued exactly as in
+the parity path. `:preferred-node-fn` can return value-node ids that should be
+tried first by tuple enumeration for the next expansion, and
+`:recent-roots-first?` keeps the primary target/free roots stable while moving
+newer generated roots earlier in the remaining tuple order. These hooks are
+search-order/pruning controls for guided demos and should remain caller-owned;
+they must not be enabled by default in Alice parity harnesses.
+
 The delayed builder uses explicit caller-owned caches for expensive immutable
 facts. Value DL and value-content caches avoid repeated scoring and exact
 duplicate checks. An inverse cache keys runtime inversions by operator id,
