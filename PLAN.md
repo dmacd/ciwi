@@ -79,8 +79,12 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   MP4s, and an artifact README. The first unguided runner now removes the
   solution predicate, frontier predicate, and preferred-node scheduling while
   keeping the same primitive basis; under a bounded 10-yield baseline it
-  yields candidates but only negative-compression low-level roots. Unguided
-  recognizer-free house discovery remains pending.
+  yields candidates but only negative-compression low-level roots. A
+  thresholded unguided probe with the same primitive basis did not find a 1%
+  compression candidate within a 180s/100k-pop guard, so the next unguided
+  task is generic search ordering/bounds work to get past the line-candidate
+  flood into useful composition. Unguided recognizer-free house discovery
+  remains pending.
 - The default vector-backend suite passes locally with 194 tests and 1002
   assertions. The opt-in DJL backend was not rerun in this turn; the last
   recorded DJL suite remains 8 tests and 43 assertions.
