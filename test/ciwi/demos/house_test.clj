@@ -1,6 +1,8 @@
 (ns ciwi.demos.house-test
   (:require [ciwi.demos.house :as sut]
             [ciwi.dense.core :as dense]
+            [ciwi.operator :as operator]
+            [ciwi.value :as value]
             [clojure.java.io :as io]
             [clojure.test :refer [deftest is]]))
 
@@ -29,6 +31,34 @@
     (is (= [10.0 20.0 30.0]
            (subvec flat (* (+ (* 1 5) 2) 3)
                    (+ (* (+ (* 1 5) 2) 3) 3))))))
+
+(deftest dye-inverse-can-infer-uniform-color-from-known-points
+  (let [points [[0 1] [1 0]]
+        colored (sut/dye [10.0 20.0 30.0] points)
+        inverses (operator/invert-op sut/dye-operator colored [points] [1])
+        inferred (value/datum (ffirst inverses))]
+    (is (= [10.0 20.0 30.0] (vec (dense/ravel inferred))))))
+
+(deftest dye-inverse-rejects-nonuniform-color-for-known-points
+  (let [colored (dense/from-flat [0.0 1.0 10.0 20.0 30.0
+                                  1.0 0.0 11.0 20.0 30.0]
+                                 [2 5]
+                                 {:dtype :float64})]
+    (is (empty? (operator/invert-op sut/dye-operator
+                                    colored
+                                    [[[0 1] [1 0]]]
+                                    [1])))))
+
+(deftest draw-inverse-round-trips-non-background-pixels
+  (let [opts {:shape [2 2 3]
+              :background [0.0 0.0 0.0]}
+        colored (sut/dye [10.0 20.0 30.0] [[0 1] [1 0]])
+        image (sut/draw colored opts)
+        inverses (operator/invert-op (sut/draw-operator opts) image [] [])
+        inferred (value/datum (ffirst inverses))]
+    (is (= [2 5] (dense/shape inferred)))
+    (is (= (dense/ravel image)
+           (dense/ravel (sut/draw inferred opts))))))
 
 (deftest house-fixture-has-python-shape-and-seeded-noise
   (let [base (sut/base-house-image)
@@ -115,6 +145,26 @@
     (is (nil? (:candidate result)))
     (is (:best result))
     (is (neg? (:compression-rate result)))))
+
+(deftest unguided-house-can-collect-frontier-stats
+  (let [result (sut/run-unguided-compression {:max-yields 3
+                                              :max-popped 200
+                                              :collect-wunderbaum-stats? true})
+        stats (:wunderbaum-stats result)]
+    (is (map? stats))
+    (is (pos? (:frontier-considered stats)))
+    (is (pos? (:frontier-popped stats)))
+    (is (contains? (:frontier-considered-by-op stats) :line))))
+
+(deftest unguided-house-runner-can-use-global-best-first
+  (let [result (sut/run-unguided-compression {:max-yields 1
+                                              :max-popped 8
+                                              :parallelism 2
+                                              :parallel-strategy :global-best-first
+                                              :collect-wunderbaum-stats? true})
+        stats (:wunderbaum-stats result)]
+    (is (= :global-best-first (:strategy stats)))
+    (is (= 2 (:worker-count stats)))))
 
 (deftest guided-prefix-artifacts-write-stats-and-frames
   (let [dir (.toFile (java.nio.file.Files/createTempDirectory

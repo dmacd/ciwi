@@ -1,7 +1,8 @@
 (ns ciwi.value
   (:require [ciwi.cache :as cache]
             [ciwi.dense.core :as dense]
-            [ciwi.hashing :as hashing]))
+            [ciwi.hashing :as hashing])
+  (:import [java.lang.ref WeakReference]))
 
 (defrecord Value [data name spec permeable? dummy?])
 
@@ -17,6 +18,30 @@
            (System/identityHashCode v)
            opts
            dummy?])))
+
+(deftype WeakIdentityValueCacheKey [ref identity-hash opts dummy?]
+  Object
+  (equals [_ other]
+    (and (instance? WeakIdentityValueCacheKey other)
+         (= identity-hash (.-identity-hash ^WeakIdentityValueCacheKey other))
+         (= opts (.-opts ^WeakIdentityValueCacheKey other))
+         (= dummy? (.-dummy? ^WeakIdentityValueCacheKey other))
+         (let [v (.get ^WeakReference ref)
+               other-v (.get ^WeakReference
+                             (.-ref ^WeakIdentityValueCacheKey other))]
+           (and v other-v (identical? v other-v)))))
+  (hashCode [_]
+    (hash [::weak-identity-value
+           identity-hash
+           opts
+           dummy?])))
+
+(defn- weak-identity-value-cache-key
+  [v opts dummy?]
+  (WeakIdentityValueCacheKey. (WeakReference. v)
+                              (System/identityHashCode v)
+                              opts
+                              dummy?))
 
 (def max-precision 10)
 (def intnan64 Long/MIN_VALUE)
@@ -1121,8 +1146,11 @@
   values immutable, so callers that score many related candidate graphs pass an
   explicit cache instead of mutating the value record. Existing `Value` records
   are cached by identity, matching Python's per-instance memoization and
-  avoiding repeated large-vector hash work on cache hits. Raw non-`Value` inputs
-  keep value-based keys because they do not have a stable instance identity.
+  avoiding repeated large-vector hash work on cache hits. Dense `Value` records
+  use weak identity keys, so search-scoped caches can reuse scores while the
+  value is live without retaining every generated dense array. Raw non-`Value`
+  inputs keep value-based keys because they do not have a stable instance
+  identity.
   "
   ([cache v]
    (desc-len-cached cache v {:mode :use-gaussian}))
@@ -1131,7 +1159,20 @@
      (desc-len v opts)
      (let [value-input? (value? v)
            v (value v)
-           k (if value-input?
+           data (:data v)
+           k (cond
+               (and value-input? (dense/ndarray? data))
+               (weak-identity-value-cache-key v opts (:dummy? v))
+
+               (dense/ndarray? data)
+               [::dense-value-desc-len
+                opts
+                (:dummy? v)
+                (hashing/content-fingerprint data)]
+
+               value-input?
                (IdentityValueCacheKey. v opts (:dummy? v))
-               [opts (:dummy? v) (:data v)])]
+
+               :else
+               [opts (:dummy? v) data])]
        (cache/get-or-compute! cache k #(desc-len v opts))))))

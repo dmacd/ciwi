@@ -246,8 +246,28 @@
                                     (range channels))
                             flat)))
                       base
-                      (colored-point-rows colored-points))]
+                   (colored-point-rows colored-points))]
      (dense/from-flat flat shape {:dtype :float64}))))
+
+(defn- draw-inverse-colored-points
+  [image {:keys [shape background]
+          :or {shape image-shape
+               background red}}]
+  (let [image (dense/asarray image)
+        [height width channels] shape
+        background (mapv double (color-values background))]
+    (when (and (= shape (dense/shape image))
+               (= channels (count background)))
+      (let [flat (dense/ravel image)
+            rows (vec
+                  (for [row (range height)
+                        column (range width)
+                        :let [offset (* (+ (* row width) column) channels)
+                              color (subvec flat offset (+ offset channels))]
+                        :when (not= color background)]
+                    (into [(double row) (double column)]
+                          (map double color))))]
+        (colored-point-array rows)))))
 
 (defn concat-point-lists
   [left right]
@@ -415,6 +435,22 @@
                                         rows)]
                        (when (= (count points) (count rows))
                          [[(spec-value (vec points) :point-list)]]))
+                 [1] (let [points (point-list (first cond-inputs))
+                           rows (colored-point-rows output)]
+                       (when (and (seq rows)
+                                  (= (count points) (count rows))
+                                  (every? true?
+                                          (map (fn [point [row column]]
+                                                 (= (mapv long point)
+                                                    [(long row) (long column)]))
+                                               points
+                                               rows)))
+                         (let [colors (mapv (fn [[_row _column r g b]]
+                                               [r g b])
+                                             rows)
+                               color (first colors)]
+                           (when (every? #{color} colors)
+                             [[(spec-value color :color)]]))))
                  nil))}))
 
 (defn draw-operator
@@ -422,14 +458,18 @@
   ([opts]
    (operator/operator
     {:id :draw
-     :conditions [[0]]
+     :conditions [[]]
      :call (fn [[colored-points]]
              (spec-value (draw colored-points opts) :rgb-image))
      :inverse (fn [output cond-inputs cond]
-                (when (= [0] (vec cond))
-                  (let [colored-points (first cond-inputs)]
-                    (when (same-image? output (draw colored-points opts))
-                      [[]]))))})))
+                (case (vec cond)
+                  [] (when-let [colored-points
+                                (draw-inverse-colored-points output opts)]
+                       [[(spec-value colored-points :colored-point-list)]])
+                  [0] (let [colored-points (first cond-inputs)]
+                        (when (same-image? output (draw colored-points opts))
+                          [[]]))
+                  nil))})))
 
 (def image-add-operator
   (operator/operator
@@ -803,12 +843,52 @@
    :max-yields 50
    :allow-multiple-op-roots? true})
 
+(defn- with-search-stats
+  [opts]
+  (if-let [stats (:wunderbaum-stats-atom opts)]
+    [opts stats]
+    (if (:collect-wunderbaum-stats? opts)
+      (let [stats (atom {})]
+        [(assoc opts :wunderbaum-stats-atom stats) stats])
+      [opts nil])))
+
+(defn- attach-search-stats
+  [result stats]
+  (cond-> result
+    stats (assoc :wunderbaum-stats @stats)))
+
+(defn- parallel-search?
+  [opts]
+  (> (long (or (:parallelism opts)
+               (:num-workers opts)
+               1))
+     1))
+
+(defn- candidate-seq
+  [wb inputs opts]
+  (if (parallel-search? opts)
+    (case (:parallel-strategy opts)
+      :global-best-first
+      (wunderbaum/iterate-global-best-first wb inputs opts)
+
+      nil
+      (wunderbaum/iterate-parallel wb inputs opts)
+
+      :partitioned
+      (wunderbaum/iterate-parallel wb inputs opts)
+
+      (throw (ex-info "Unknown Wunderbaum parallel strategy"
+                      {:parallel-strategy (:parallel-strategy opts)
+                       :allowed #{:partitioned :global-best-first}})))
+    (wunderbaum/iterate wb inputs opts)))
+
 (defn run-guided-compression
   "Run the guided house compression search with the demo-local primitive basis."
   ([]
    (run-guided-compression {}))
   ([opts]
    (let [opts (merge (guided-options) opts)
+         [opts stats] (with-search-stats opts)
          target (house-value)
          inputs (into [target] (free-values))
          wb (wunderbaum/wunderbaum opts)
@@ -819,7 +899,7 @@
          prefixes (when (:collect-prefixes? opts) (atom []))
          prefix-limit (long (or (:prefix-limit opts) 64))
          t0 (System/nanoTime)
-         candidates (wunderbaum/iterate wb inputs opts)]
+         candidates (candidate-seq wb inputs opts)]
      (loop [remaining candidates
             consumed 0
             last-prefix nil]
@@ -833,30 +913,34 @@
              (let [candidate (cond-> candidate
                                realize-selected?
                                wunderbaum/realize-selected)]
-               (cond-> {:candidate candidate
-                        :initial-dl initial-dl
-                        :dl (:dl candidate)
-                        :compression-rate rate
-                        :candidates-consumed consumed
-                        :stop-reason :threshold-reached
-                        :search-elapsed-ms (/ (double (- (System/nanoTime) t0))
-                                              1000000.0)
-                        :prefix-steps (prefix-steps (:graph candidate))}
-                 realize-selected?
-                 (assoc :selected (get (:selected candidate) :target0))
+               (attach-search-stats
+                (cond-> {:candidate candidate
+                         :initial-dl initial-dl
+                         :dl (:dl candidate)
+                         :compression-rate rate
+                         :candidates-consumed consumed
+                         :stop-reason :threshold-reached
+                         :search-elapsed-ms (/ (double (- (System/nanoTime) t0))
+                                               1000000.0)
+                         :prefix-steps (prefix-steps (:graph candidate))}
+                  realize-selected?
+                  (assoc :selected (get (:selected candidate) :target0))
 
-                 prefixes (assoc :prefixes @prefixes)))
+                  prefixes (assoc :prefixes @prefixes))
+                stats))
              (recur (rest remaining) consumed last-prefix)))
-         (cond-> {:candidate nil
-                  :initial-dl initial-dl
-                  :candidates-consumed consumed
-                  :stop-reason :exhausted
-                  :compression-rate 0.0
-                  :search-elapsed-ms (/ (double (- (System/nanoTime) t0))
-                                        1000000.0)
-                  :last-prefix last-prefix
-                  :prefix-steps (some-> last-prefix :graph prefix-steps)}
-           prefixes (assoc :prefixes @prefixes)))))))
+         (attach-search-stats
+          (cond-> {:candidate nil
+                   :initial-dl initial-dl
+                   :candidates-consumed consumed
+                   :stop-reason :exhausted
+                   :compression-rate 0.0
+                   :search-elapsed-ms (/ (double (- (System/nanoTime) t0))
+                                         1000000.0)
+                   :last-prefix last-prefix
+                   :prefix-steps (some-> last-prefix :graph prefix-steps)}
+            prefixes (assoc :prefixes @prefixes))
+          stats))))))
 
 (defn run-unguided-compression
   "Run the house compression search without solution-prefix guidance.
@@ -870,6 +954,7 @@
    (run-unguided-compression {}))
   ([opts]
    (let [opts (merge (unguided-options) opts)
+         [opts stats] (with-search-stats opts)
          target (house-value)
          inputs (into [target] (free-values))
          wb (wunderbaum/wunderbaum opts)
@@ -878,7 +963,7 @@
          collected (when (:collect-candidates? opts) (atom []))
          candidate-limit (long (or (:candidate-limit opts) 64))
          t0 (System/nanoTime)
-         candidates (wunderbaum/iterate wb inputs opts)]
+         candidates (candidate-seq wb inputs opts)]
      (loop [remaining candidates
             consumed 0
             best nil]
@@ -893,27 +978,31 @@
                _ (when (and collected (< (count @collected) candidate-limit))
                    (swap! collected conj candidate))]
            (if (>= rate min-compression-rate)
-             (cond-> {:candidate candidate
-                      :best best
-                      :initial-dl initial-dl
-                      :dl (:dl candidate)
-                      :compression-rate rate
-                      :candidates-consumed consumed
-                      :stop-reason :threshold-reached
-                      :search-elapsed-ms (/ (double (- (System/nanoTime) t0))
-                                            1000000.0)}
-               collected (assoc :candidates @collected))
+             (attach-search-stats
+              (cond-> {:candidate candidate
+                       :best best
+                       :initial-dl initial-dl
+                       :dl (:dl candidate)
+                       :compression-rate rate
+                       :candidates-consumed consumed
+                       :stop-reason :threshold-reached
+                       :search-elapsed-ms (/ (double (- (System/nanoTime) t0))
+                                             1000000.0)}
+                collected (assoc :candidates @collected))
+              stats)
              (recur (rest remaining) consumed best)))
-         (cond-> {:candidate nil
-                  :best best
-                  :initial-dl initial-dl
-                  :dl (:dl best)
-                  :compression-rate (double (or (:compression-rate best) 0.0))
-                  :candidates-consumed consumed
-                  :stop-reason :exhausted
-                  :search-elapsed-ms (/ (double (- (System/nanoTime) t0))
-                                        1000000.0)}
-           collected (assoc :candidates @collected)))))))
+         (attach-search-stats
+          (cond-> {:candidate nil
+                   :best best
+                   :initial-dl initial-dl
+                   :dl (:dl best)
+                   :compression-rate (double (or (:compression-rate best) 0.0))
+                   :candidates-consumed consumed
+                   :stop-reason :exhausted
+                   :search-elapsed-ms (/ (double (- (System/nanoTime) t0))
+                                         1000000.0)}
+            collected (assoc :candidates @collected))
+          stats))))))
 
 (defn- clamp-byte
   [x]
@@ -978,7 +1067,8 @@
                 :candidates-consumed
                 :stop-reason
                 :search-elapsed-ms
-                :prefix-steps]))
+                :prefix-steps
+                :wunderbaum-stats]))
 
 (defn- prefix-label
   [idx summary]

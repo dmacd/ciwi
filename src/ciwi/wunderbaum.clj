@@ -68,6 +68,86 @@
                    (compare (build-rank left)
                             (build-rank right)))))
 
+(defn- stats-atom
+  [context]
+  (or (:stats context)
+      (:wunderbaum-stats-atom context)))
+
+(defn- bump
+  [m k]
+  (update m k (fnil inc 0)))
+
+(defn- bump-by
+  [m k item]
+  (update m k (fn [counts]
+                (update (or counts {}) item (fnil inc 0)))))
+
+(defn- add-stat!
+  [context k delta]
+  (when-let [stats (stats-atom context)]
+    (swap! stats update k (fnil + 0) delta)))
+
+(defn- max-stat!
+  [context k value]
+  (when-let [stats (stats-atom context)]
+    (swap! stats update k (fnil max 0) value)))
+
+(defn- frontier-condition-stat-key
+  [element condition-key]
+  [(:id element) (:gen-cond element) condition-key])
+
+(defn- record-frontier-decision!
+  [opts element condition-key decision]
+  (when-let [stats (stats-atom opts)]
+    (let [op-id (:id element)
+          condition-stat (frontier-condition-stat-key element condition-key)]
+      (swap! stats
+             (fn [m]
+               (let [m (-> m
+                           (bump :frontier-considered)
+                           (bump-by :frontier-considered-by-op op-id)
+                           (bump-by :frontier-considered-by-condition
+                                    condition-stat)
+                           (bump-by :frontier-decisions decision)
+                           (bump-by :frontier-decisions-by-op
+                                    [op-id decision]))]
+                 (if (= :enqueued decision)
+                   (-> m
+                       (bump :frontier-kept)
+                       (bump-by :frontier-kept-by-op op-id)
+                       (bump-by :frontier-kept-by-condition condition-stat))
+                   m)))))))
+
+(defn- record-frontier-pop!
+  [opts item]
+  (when-let [stats (stats-atom opts)]
+    (let [op-id (:operator-id item)]
+      (swap! stats
+             (fn [m]
+               (cond-> (bump m :frontier-popped)
+                 op-id (bump-by :frontier-popped-by-op op-id)))))))
+
+(defn- record-materialization!
+  [opts item result-count]
+  (let [result-count (long result-count)]
+    (add-stat! opts :materialized-results result-count)
+    (when (zero? result-count)
+      (add-stat! opts :empty-materializations 1))
+    (when-let [op-id (:operator-id item)]
+      (when-let [stats (stats-atom opts)]
+        (swap! stats
+               (fn [m]
+                 (let [m (update m
+                                 :materialized-results-by-op
+                                 (fn [counts]
+                                   (update (or counts {})
+                                           op-id
+                                           (fnil + 0)
+                                           result-count)))]
+                   (cond-> m
+                     (zero? result-count)
+                     (bump-by :empty-materializations-by-op op-id)))))))))
+
 (defn- keep-frontier-item?
   [opts info]
   (if-let [pred (:frontier-predicate opts)]
@@ -105,20 +185,31 @@
              elements (get (:elements-by-condition-key wb) k)]
          (reduce
           (fn [[queue order] [element-index element]]
-            (let [new-dl (+ dl (double (:dl element)))]
-              (if (or (> new-dl max-dag-dl)
-                      (attachment/invalid? graph
-                                           (:gen-cond element)
-                                           nodes
-                                           attachment-context)
-                      (not (keep-frontier-item?
-                            opts
-                            {:graph graph
-                             :memory memory
-                             :nodes nodes
-                             :condition-key k
-                             :element element
-                             :dl new-dl})))
+            (let [new-dl (+ dl (double (:dl element)))
+                  decision (cond
+                             (> new-dl max-dag-dl)
+                             :max-dag-dl
+
+                             (attachment/invalid? graph
+                                                  (:gen-cond element)
+                                                  nodes
+                                                  attachment-context)
+                             :invalid-attachment
+
+                             (not (keep-frontier-item?
+                                   opts
+                                   {:graph graph
+                                    :memory memory
+                                    :nodes nodes
+                                    :condition-key k
+                                    :element element
+                                    :dl new-dl}))
+                             :frontier-predicate
+
+                             :else
+                             :enqueued)]
+              (record-frontier-decision! opts element k decision)
+              (if (not= :enqueued decision)
                 [queue order]
                 (let [[item-order order] (next-frontier-order opts order)
                       build-info (delayed/build-info
@@ -130,6 +221,11 @@
                                    :element-index element-index})]
                   [(enqueue queue {:dl new-dl
                                    :order item-order
+                                   :operator-id (:id element)
+                                   :condition-key k
+                                   :gen-cond (:gen-cond element)
+                                   :input-specs (:input-specs element)
+                                   :output-spec (:output-spec element)
                                    :build-info build-info})
                    order]))))
           [queue order]
@@ -267,7 +363,9 @@
                                   cache-context
                                   opts)]
       (if-not (keep-result-summary? summary opts)
-        [queue order yielded emitted false]
+        (do
+          (add-stat! opts :candidate-predicate-rejected 1)
+          [queue order yielded emitted false])
         (let [summary (transform-result-summary summary opts)
               emit? (or (not threshold?)
                         (< (:dl summary) (double threshold-dl)))]
@@ -283,6 +381,7 @@
                               :target-ids target-ids
                               :summary summary}
                              (inc yielded)))
+              (add-stat! opts :emitted 1)
               (request-halt! opts)
               (reduced [queue order (inc yielded) (conj emitted summary) true]))
 
@@ -299,22 +398,33 @@
                                   :target-ids target-ids
                                   :summary summary}
                                  (inc yielded)))
+                  (add-stat! opts :emitted 1)
                   [queue order (inc yielded) (conj emitted summary) false])
-                [queue order yielded emitted false]))))))))
+                (do
+                  (add-stat! opts :below-threshold-results 1)
+                  [queue order yielded emitted false])))))))))
 
 (defn- process-frontier-item
   [wb opts seen target-ids cache-context item queue order yielded]
   (let [build-info (:build-info item)
+        _ (record-frontier-pop! opts item)
         {:keys [seen results]} (materialize-build wb
                                                   seen
                                                   build-info
                                                   cache-context)
+        result-count (count results)
+        _ (record-materialization! opts item result-count)
         _ (when (trace/enabled? opts)
             (trace/emit! opts
                          :frontier-materialized
                          {:frontier-order (:order item)
                           :frontier-dl (:dl item)
-                          :result-count (count results)}
+                          :operator-id (:operator-id item)
+                          :condition-key (:condition-key item)
+                          :gen-cond (:gen-cond item)
+                          :input-specs (:input-specs item)
+                          :output-spec (:output-spec item)
+                          :result-count result-count}
                          (:order item)))
         [queue order yielded emitted stop?]
         (reduce (partial add-materialized-result wb opts target-ids cache-context (:dl item))
@@ -399,16 +509,6 @@
 (defn- now-ns
   []
   (System/nanoTime))
-
-(defn- add-stat!
-  [state k delta]
-  (when-let [stats (:stats state)]
-    (swap! stats update k (fnil + 0) delta)))
-
-(defn- max-stat!
-  [state k value]
-  (when-let [stats (:stats state)]
-    (swap! stats update k (fnil max 0) value)))
 
 (defn- item-rank
   [item]

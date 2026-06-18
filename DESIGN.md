@@ -228,6 +228,12 @@ The house demo's `:colored-point-list` value representation is a dense numeric
 array with rows `[row col r g b]`. This keeps the primitive basis unchanged
 while avoiding repeated stable-key hashing of large vectors of maps during
 guided search and artifact rendering.
+House `draw` inversion is exact and intentionally literal: an RGB image
+inverts to all pixels whose color differs from the configured background,
+encoded as one colored-point row per pixel. It is not a region proposal.
+House `dye` inversion infers a missing color only when the conditioned points
+match the colored-point output exactly and every colored row has the same RGB
+value; noisy-region averaging remains outside exact primitive inversion.
 
 ## Propagation
 
@@ -457,7 +463,10 @@ immutable and passes explicit concurrent cache stores through scoring contexts
 instead.
 `ciwi.value/desc-len-cached` memoizes existing `Value` records by identity,
 matching Python's per-instance memoization and avoiding repeated large-vector
-hash work on cache hits. Raw non-`Value` inputs keep value-based cache keys.
+hash work on cache hits. Dense `Value` records use weak identity cache keys:
+the cache can reuse their description lengths while they are live, but it must
+not keep generated dense arrays alive after their candidate graph falls out of
+the frontier. Raw non-`Value` inputs keep value-based cache keys.
 `ciwi.mdl/scoring-context` adds graph-local node-DL memoization. Wunderbaum
 shares the value-DL cache across a candidate stream but creates fresh node
 caches per graph.
@@ -771,6 +780,20 @@ This avoids recomputing the same inverse when multiple declarations/spec rows
 share one runtime operator and condition; declaration-specific spec filtering
 still happens after the cached inverse values are returned.
 
+Dense value-content fingerprints also use weak identity cache keys. This keeps
+Python-style per-value memoization for live graph values without letting
+search-scoped caches retain every generated dense residual, rendered image, or
+colored-point array. Materialized-result de-duplication keys store compact
+value fingerprints rather than raw value data for the same reason.
+
+Generated values are rejected when their content is already present in the
+current materialization memory. This applies to forward operator calls and to
+inverse-generated missing leaves, matching Python `delayed_dag_build`'s
+`value_hashes` guard. It is a generic duplicate-suppression rule, not a
+domain recognizer: if the same value is already available as a tuple input,
+creating another root with identical content only floods the frontier and does
+not attach a new option to the existing value.
+
 When `:threshold-dl` is supplied, `wunderbaum/iterate` mirrors Python's
 `threshold_dl` behavior: it still expands materialized graphs that do not meet
 the threshold, but it does not yield them to the caller, and it stops after the
@@ -824,12 +847,15 @@ an already-running operator inversion/materialization call, and it is not the
 future bounded local rewrite semantics.
 
 Scheduler diagnostics are opt-in. Passing `:wunderbaum-stats-atom` to
-Wunderbaum records frontier pops/enqueues, materialized and duplicate results,
-deferred expansion tasks, popped expansion tasks, cancelled items/results,
-emissions, active frontier width, queue wait, materialization, de-duplication,
-scoring, candidate transform, expansion, and commit-wait time. Passing
-`:collect-wunderbaum-stats? true` to the Alice runner attaches one such stats
-map to each accepted greedy step.
+Wunderbaum records generic frontier decisions by operator and condition key,
+serial frontier pops, materialized and empty results by operator, threshold
+non-emissions, accepted emissions, and candidate-predicate rejections. The
+global best-first strategy additionally records frontier enqueues, duplicate
+results, deferred expansion tasks, popped expansion tasks, cancelled
+items/results, active frontier width, queue wait, materialization,
+de-duplication, scoring, candidate transform, expansion, and commit-wait time.
+Passing `:collect-wunderbaum-stats? true` to the Alice runner attaches one such
+stats map to each accepted greedy step.
 
 `ciwi.alice.wunderbaum` is the Alice-facing greedy runner over that core with
 an explicit declaration table for the Python `test_alice.py` operator basis. It

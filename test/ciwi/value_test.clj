@@ -1,5 +1,7 @@
 (ns ciwi.value-test
-  (:require [ciwi.operator :as op]
+  (:require [ciwi.cache :as cache]
+            [ciwi.dense.core :as dense]
+            [ciwi.operator :as op]
             [ciwi.value :as sut]
             [clojure.test :refer [deftest is]]))
 
@@ -8,6 +10,15 @@
    (approx= expected actual 1.0e-9))
   ([expected actual epsilon]
    (< (Math/abs (- (double expected) (double actual))) epsilon)))
+
+(defn- contains-identical?
+  [needle x]
+  (boolean
+   (some #(identical? needle %)
+         (tree-seq #(and (coll? %)
+                         (not (dense/ndarray? %)))
+                   seq
+                   x))))
 
 (deftest value-wraps-plain-data
   (let [v (sut/value 42)]
@@ -87,6 +98,17 @@
                  (sut/desc-len-data x {:mode :default})))
     (is (approx= expected-value
                  (sut/desc-len-data x)))))
+
+(deftest desc-len-cache-fingerprints-dense-values-without-retaining-raw-arrays
+  (let [arr1 (dense/from-flat [1.0 2.0 3.0 4.0] [2 2] {:dtype :float64})
+        v1 (sut/value arr1)
+        store (cache/cache-store)
+        dl1 (sut/desc-len-cached store v1)
+        dl2 (sut/desc-len-cached store v1)
+        keys (vec (.keySet store))]
+    (is (approx= dl1 dl2))
+    (is (= 1 (cache/size store)))
+    (is (not-any? #(contains-identical? arr1 %) keys))))
 
 (deftest python-description-helper-parity
   (is (approx= 46.618602316031144

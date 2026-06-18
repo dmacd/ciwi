@@ -1,6 +1,6 @@
 # CIWI Plan
 
-Last updated: 2026-06-16.
+Last updated: 2026-06-17.
 
 ## Objective
 
@@ -65,6 +65,16 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   rendering now computes graph-level MDL description once per frame and reuses
   it for selected highlighting and DL labels, so completed house movies can
   use full Python-style graph frames without per-root recomputation.
+- A Cursive-first Clojure port of Python
+  `minimal_classifier_2d_three_cluster_onehot_sweep.ipynb` now lives under
+  `notebooks/ciwi/notebook/`. The public notebook namespace keeps the same
+  cell-level workflow split as the Python notebook, while the companion utils
+  namespace owns deterministic three-cluster data generation, notebook-local
+  classifier operator declarations, recompression scoring/sweeps, progress
+  snapshots, inline SVG/HTML plots, and cached selected-expression rendering.
+  The port uses native deterministic Clojure samples rather than byte-identical
+  NumPy PCG64 samples, and its Python-grid constants remain opt-in through
+  REPL evaluation of `(comment ...)` forms.
 - A first native house-demo scaffold now lives in `ciwi.demos.house`. It
   includes the Python legacy fixture geometry, a small RandomState-compatible
   MT19937 normal generator for the seeded noisy 50x50x3 RGB task, demo-local
@@ -78,16 +88,48 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   bounded guided settings, and writes stats, 18 graph frames, 18 image frames,
   MP4s, and an artifact README. The first unguided runner now removes the
   solution predicate, frontier predicate, and preferred-node scheduling while
-  keeping the same primitive basis; under a bounded 10-yield baseline it
-  yields candidates but only negative-compression low-level roots. A
-  thresholded unguided probe with the same primitive basis did not find a 1%
-  compression candidate within a 180s/100k-pop guard, so the next unguided
-  task is generic search ordering/bounds work to get past the line-candidate
-  flood into useful composition. Unguided recognizer-free house discovery
-  remains pending.
-- The default vector-backend suite passes locally with 194 tests and 1002
-  assertions. The opt-in DJL backend was not rerun in this turn; the last
-  recorded DJL suite remains 8 tests and 43 assertions.
+  keeping the same primitive basis. CIWI now matches Python's delayed-builder
+  duplicate-value guard for forward-generated values as well as inverses, and
+  the house runner can opt into generic Wunderbaum frontier stats. A bounded
+  10-yield unguided baseline previously yielded only negative-compression line
+  roots because raw-yield mode stopped before composition. The house primitive
+  inverses now also cover exact `dye` color inference from known uniform
+  colored points and output-only `draw` inversion into all non-background
+  colored pixels. This exposes the expected degenerate first candidate
+  `draw(full-target-colored-points)` with a `[2500 5]` colored-point leaf; it
+  is not compressive. A 1000-yield/5k-pop probe reaches legitimate
+  `line -> dye -> draw -> add residual` shapes, but the best candidate remains
+  negative compression (`-0.0021`). A heap-capped 30-minute serial probe was
+  stopped deliberately after about 4 minutes to avoid repeating an OOM: it
+  reached 43,292 emitted candidates and 93,604 frontier pops, used about
+  7.5 GiB of an 8 GiB heap cap, and still had the same best
+  `line -> dye -> draw -> add residual` shape at `-0.0018` compression. That
+  memory pressure came from search-scoped caches and seen keys retaining
+  generated dense values by identity/raw data. Dense value-DL and
+  delayed-builder value-content caches now use weak identity keys, and
+  materialized-result de-duplication stores compact fingerprints instead of raw
+  value data. The same 4-minute heap-capped probe now reaches similar work
+  (43,607 candidates, 94,417 pops) at about 5.4 GiB used, with the same best
+  negative-compression shape. A thresholded 5k-pop probe now gets past the
+  line-only phase and materializes fill, dye, concat, draw, and add work, but
+  still finds no 1% compression candidate; a 50k-pop serial probe hit a 60s
+  diagnostic timeout. The house
+  runner now honors the existing
+  Wunderbaum parallel strategy options, and a 20k-pop global-best-first probe
+  on 4 workers completed in about 27s without a compression candidate. A
+  larger 50k-pop global-best-first probe completed in about 60s and still
+  sampled the same low build-DL bucket (`1.2`), while the guided full solution
+  has build-DL `6.6`. The current unguided baseline is therefore not
+  practically close; the next task is using the operator/spec stats to tune
+  generic bounds, ordering, and DL costs so useful roof/body compositions
+  surface much earlier. Unguided recognizer-free house discovery remains
+  pending.
+- Targeted delayed-builder/value cache tests pass locally with 18 tests and 78
+  assertions after the weak dense-cache-key change. The default vector-backend
+  suite was not completed after that cache change; the last completed full run
+  before it passed with 200 tests and 1013 assertions. The opt-in DJL backend
+  was not rerun in this turn; the last recorded DJL suite remains 8 tests and
+  43 assertions.
 
 ## Current State
 

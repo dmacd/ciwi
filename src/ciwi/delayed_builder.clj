@@ -1,12 +1,14 @@
 (ns ciwi.delayed-builder
   (:require [ciwi.cache :as cache]
+            [ciwi.dense.core :as dense]
             [ciwi.graph :as graph]
             [ciwi.hashing :as hashing]
             [ciwi.operator :as op]
             [ciwi.propagation :as propagation]
             [ciwi.rewrite :as rewrite]
             [ciwi.spec :as spec]
-            [ciwi.value :as value]))
+            [ciwi.value :as value])
+  (:import [java.lang.ref WeakReference]))
 
 (defrecord BuildInfo [dl graph memory conditioned-nodes condition-key element-index])
 
@@ -20,6 +22,24 @@
     (hash [::identity-key
            (System/identityHashCode x)
            purpose])))
+
+(deftype WeakIdentityKey [ref identity-hash purpose]
+  Object
+  (equals [_ other]
+    (and (instance? WeakIdentityKey other)
+         (= identity-hash (.-identity-hash ^WeakIdentityKey other))
+         (= purpose (.-purpose ^WeakIdentityKey other))
+         (let [x (.get ^WeakReference ref)
+               y (.get ^WeakReference (.-ref ^WeakIdentityKey other))]
+           (and x y (identical? x y)))))
+  (hashCode [_]
+    (hash [::weak-identity-key identity-hash purpose])))
+
+(defn- weak-identity-key
+  [x purpose]
+  (WeakIdentityKey. (WeakReference. x)
+                    (System/identityHashCode x)
+                    purpose))
 
 (defn build-info
   [{:keys [dl graph memory conditioned-nodes condition-key element-index]
@@ -142,7 +162,9 @@
    (raw-value-fingerprint x))
   ([cache x]
    (if (and cache (value/value? x))
-     (let [k (IdentityKey. x :delayed-value-fingerprint)]
+     (let [k (if (dense/ndarray? (:data x))
+               (weak-identity-key x :delayed-value-fingerprint)
+               (IdentityKey. x :delayed-value-fingerprint))]
        (cache/get-or-compute! cache k #(raw-value-fingerprint x)))
      (raw-value-fingerprint x))))
 
@@ -155,7 +177,7 @@
       :else (compare (pr-str left) (pr-str right)))))
 
 (defn- result-structural-key
-  [graph root-id]
+  [graph root-id value-content-cache]
   (letfn [(key* [id trace]
             (if (contains? trace id)
               [:cycle]
@@ -164,7 +186,7 @@
                 (cond
                   (graph/value-node? n)
                   [:value
-                   (:data (:value n))
+                   (value-fingerprint value-content-cache (:value n))
                    (mapv #(key* % trace) (:options n))]
 
                   (graph/operator-node? n)
@@ -181,16 +203,19 @@
 
 (defn result-key
   "Return the structural key used to de-duplicate materialized delayed builds."
-  [{:keys [graph memory]}]
-  [(->> (graph/roots graph)
-        (sort-by pr-str)
-        (map #(result-structural-key graph %))
-        vec)
-   (->> memory
-        (map (fn [[node-id entry]]
-               [node-id (value/datum (entry-value entry))]))
-        (sort-by (comp pr-str first))
-        vec)])
+  ([result]
+   (result-key result nil))
+  ([{:keys [graph memory]} value-content-cache]
+   [(->> (graph/roots graph)
+         (sort-by pr-str)
+         (map #(result-structural-key graph % value-content-cache))
+         vec)
+    (->> memory
+         (map (fn [[node-id entry]]
+                [node-id
+                 (value-fingerprint value-content-cache (entry-value entry))]))
+         (sort-by (comp pr-str first))
+         vec)]))
 
 (defn- memory-value-fingerprint-buckets
   [cache memory]
@@ -219,11 +244,11 @@
          missing-values)))
 
 (defn- dedupe-results
-  [seen results]
+  [seen results value-content-cache]
   (loop [seen (or seen #{})
          remaining (seq results)]
     (if-let [result (first remaining)]
-      (let [k (result-key result)]
+      (let [k (result-key result value-content-cache)]
         (if (contains? seen k)
           (recur seen (next remaining))
           [(conj seen k) [result]]))
@@ -286,25 +311,38 @@
         (assoc v :spec expected)))))
 
 (defn- forward-build
-  [g memory {:keys [operator arity output-spec] :as element} positions]
+  [g memory {:keys [operator arity output-spec] :as element} positions opts]
   (let [child-ids (mapv positions (range arity))]
     (when (every? some? child-ids)
       (let [inputs (mapv #(memory-value memory %) child-ids)
             output (try-apply-op operator inputs)]
         (when-let [output (and output
                                (value-conforms? output-spec output))]
-          (let [graph-op (costed-operator element)
-                root-id (graph/unique-id g (keyword (str "delayed-" (name (:id operator)))))
-                op-id (graph/unique-id g (keyword (str (name root-id) "-" (name (:id operator)))))
-                g (graph/add-value g root-id output)
-                memory (assoc-memory memory root-id output)
-                g (-> g
-                      (graph/add-operator op-id graph-op root-id child-ids)
-                      (graph/add-root root-id))]
-            {:graph g
-             :memory memory
-             :root root-id
-             :operator-id op-id}))))))
+          (let [value-content-cache (cache/value-content-cache
+                                     (:cache-context opts))
+                existing-value-buckets (memory-value-fingerprint-buckets
+                                        value-content-cache
+                                        memory)]
+            (when-not (duplicate-generated-value? value-content-cache
+                                                  existing-value-buckets
+                                                  [output])
+              (let [graph-op (costed-operator element)
+                    root-id (graph/unique-id
+                             g
+                             (keyword (str "delayed-" (name (:id operator)))))
+                    op-id (graph/unique-id
+                           g
+                           (keyword (str (name root-id) "-"
+                                         (name (:id operator)))))
+                    g (graph/add-value g root-id output)
+                    memory (assoc-memory memory root-id output)
+                    g (-> g
+                          (graph/add-operator op-id graph-op root-id child-ids)
+                          (graph/add-root root-id))]
+                {:graph g
+                 :memory memory
+                 :root root-id
+                 :operator-id op-id}))))))))
 
 (defn- inverse-builds
   [g memory {:keys [operator arity input-specs] :as element} positions opts]
@@ -370,7 +408,7 @@
         memory (:memory build-info)
         results (if (contains? positions :output)
                   (inverse-builds g memory element positions opts)
-                  (when-let [result (forward-build g memory element positions)]
+                  (when-let [result (forward-build g memory element positions opts)]
                     [result]))]
     (vec results)))
 
@@ -379,10 +417,15 @@
   ([build-info elements-by-key seen]
    (delayed-dag-build-with-seen build-info elements-by-key seen {}))
   ([build-info elements-by-key seen opts]
-   (let [[seen results] (dedupe-results seen
-                                        (raw-delayed-dag-build build-info
-                                                               elements-by-key
-                                                               opts))]
+   (let [cache-context (cache/search-context (:cache-context opts))
+         value-content-cache (cache/value-content-cache cache-context)
+         opts (assoc opts :cache-context cache-context)
+         [seen results] (dedupe-results
+                         seen
+                         (raw-delayed-dag-build build-info
+                                                elements-by-key
+                                                opts)
+                         value-content-cache)]
      {:seen seen
       :results results})))
 

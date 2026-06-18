@@ -1,5 +1,6 @@
 (ns ciwi.delayed-builder-test
   (:require [ciwi.delayed-builder :as sut]
+            [ciwi.dense.core :as dense]
             [ciwi.graph :as graph]
             [ciwi.operator :as op]
             [ciwi.propagation :as propagation]
@@ -34,6 +35,15 @@
        (every? (fn [[x y]]
                  (< (abs (- (double x) (double y))) 1.0e-9))
                (map vector left right)))))
+
+(defn- contains-identical?
+  [needle x]
+  (boolean
+   (some #(identical? needle %)
+         (tree-seq #(and (coll? %)
+                         (not (dense/ndarray? %)))
+                   seq
+                   x))))
 
 (defn- delayed-brange-build
   [data]
@@ -191,6 +201,37 @@
                                     :input-specs [:int]
                                     :output-spec :int})]
     (is (empty? (sut/delayed-dag-build info {[:int] [element]} #{})))))
+
+(deftest delayed-dag-build-skips-forward-values-already-in-memory
+  (let [identity-op (op/operator
+                     {:id :identity
+                      :call (fn [[x]] x)})
+        g (one-value-graph :d 8)
+        info (sut/build-info {:dl 8.0
+                              :graph g
+                              :memory (memory [:d 8])
+                              :conditioned-nodes [:d]
+                              :condition-key [:int]})
+        element (sut/graph-element identity-op
+                                   [0]
+                                   {:arity 1
+                                    :input-specs [:int]
+                                    :output-spec :int})]
+    (is (empty? (sut/delayed-dag-build info {[:int] [element]} #{})))))
+
+(deftest result-key-fingerprints-dense-values-without-retaining-raw-arrays
+  (let [arr1 (dense/from-flat [1.0 2.0 3.0 4.0] [2 2] {:dtype :float64})
+        arr2 (dense/from-flat [1.0 2.0 3.0 4.0] [2 2] {:dtype :float64})
+        graph1 (-> (one-value-graph :d arr1)
+                   (graph/set-roots [:d]))
+        graph2 (-> (one-value-graph :d arr2)
+                   (graph/set-roots [:d]))
+        key1 (sut/result-key {:graph graph1
+                              :memory (memory [:d arr1])})
+        key2 (sut/result-key {:graph graph2
+                              :memory (memory [:d arr2])})]
+    (is (= key1 key2))
+    (is (not (contains-identical? arr1 key1)))))
 
 (deftest build-info-ordering-uses-description-length
   (let [info1 (sut/build-info {:dl 5.0})
