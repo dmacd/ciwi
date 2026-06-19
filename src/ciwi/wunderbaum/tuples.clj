@@ -78,8 +78,12 @@
           [queue seen]
           (next-tuple-indices (count ids) indices)))
 
-(defn node-tuples
-  "Enumerate graph value-node tuples in Python NodeTupleEnumerator order."
+(defn tuple-cursor
+  "Return a resumable cursor over graph value-node tuples.
+
+  The cursor preserves the same order as `node-tuples`, but lets callers pull
+  tuples incrementally instead of materializing the whole bounded prefix.
+  "
   [g {:keys [max-tuple-len max-results preferred-nodes]
       :or {max-tuple-len 2
            max-results 1000}
@@ -87,14 +91,32 @@
   (let [ids (cond-> (vec (graph-value-order g (:root-order opts)))
               (seq preferred-nodes)
               (with-preferred-ids preferred-nodes))]
-    (if (empty? ids)
-      []
-      (loop [queue (into (tuple-queue) (starting-tuples ids max-tuple-len))
-             seen (set (map :indices queue))
-             result []]
-        (if (or (empty? queue)
-                (>= (count result) max-results))
-          result
-          (let [[item queue] (pop-tuple queue)
-                [queue seen] (enqueue-next-tuples ids queue seen (:indices item))]
-            (recur queue seen (conj result item))))))))
+    (let [queue (if (empty? ids)
+                  (tuple-queue)
+                  (into (tuple-queue) (starting-tuples ids max-tuple-len)))]
+      {:ids ids
+       :queue queue
+       :seen (set (map :indices queue))
+       :yielded 0
+       :max-results max-results})))
+
+(defn next-tuple
+  "Return `[tuple next-cursor]`, or nil when the cursor is exhausted."
+  [{:keys [ids queue seen yielded max-results] :as cursor}]
+  (when (and (seq queue)
+             (< (long yielded) (long max-results)))
+    (let [[item queue] (pop-tuple queue)
+          [queue seen] (enqueue-next-tuples ids queue seen (:indices item))]
+      [item (assoc cursor
+                   :queue queue
+                   :seen seen
+                   :yielded (inc (long yielded)))])))
+
+(defn node-tuples
+  "Enumerate graph value-node tuples in Python NodeTupleEnumerator order."
+  [g opts]
+  (loop [cursor (tuple-cursor g opts)
+         result []]
+    (if-let [[item cursor] (next-tuple cursor)]
+      (recur cursor (conj result item))
+      result)))

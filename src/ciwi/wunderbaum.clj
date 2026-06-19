@@ -9,6 +9,7 @@
             [ciwi.spec :as spec]
             [ciwi.wunderbaum.attachment :as attachment]
             [ciwi.wunderbaum.declarations :as declarations]
+            [ciwi.wunderbaum.lazy-frontier :as lazy-frontier]
             [ciwi.wunderbaum.tuples :as tuples]))
 
 (defrecord Wunderbaum [registry elements-by-condition-key opts])
@@ -154,6 +155,18 @@
     (boolean (pred info))
     true))
 
+(defn- lazy-frontier?
+  [opts]
+  (or (:lazy-frontier? opts)
+      (= :lazy (:frontier-mode opts))))
+
+(defn- lazy-frontier-callbacks
+  []
+  {:node-condition-key node-condition-key
+   :record-frontier-decision! record-frontier-decision!
+   :keep-frontier-item? keep-frontier-item?
+   :next-frontier-order next-frontier-order})
+
 (defn expand-graph
   [wb queue graph memory dl {:keys [max-dag-dl max-tuple-len max-node-tuples
                                     primary-root-id root-order free-root-ids]
@@ -161,80 +174,89 @@
                                   max-tuple-len 2
                                   max-node-tuples 1000}
                              :as opts} order]
-  (let [attachment-context (attachment/context graph
-                                               primary-root-id
-                                               free-root-ids
-                                               opts)
-        tuple-root-order (if (:recent-roots-first? opts)
-                           (let [fixed-roots (vec (distinct
-                                                   (concat (when primary-root-id
-                                                             [primary-root-id])
-                                                           free-root-ids)))
-                                 fixed-root-set (set fixed-roots)]
-                             (vec (concat fixed-roots
-                                          (remove fixed-root-set
-                                                  (reverse (graph/roots graph))))))
-                           root-order)
-        preferred-nodes (when-let [preferred-node-fn (:preferred-node-fn opts)]
-                          (preferred-node-fn {:graph graph
-                                              :memory memory
-                                              :opts opts}))]
-    (reduce
-     (fn [[queue order] {:keys [nodes]}]
-       (let [k (node-condition-key graph nodes)
-             elements (get (:elements-by-condition-key wb) k)]
-         (reduce
-          (fn [[queue order] [element-index element]]
-            (let [new-dl (+ dl (double (:dl element)))
-                  decision (cond
-                             (> new-dl max-dag-dl)
-                             :max-dag-dl
+  (if (lazy-frontier? opts)
+    (lazy-frontier/expand-graph wb
+                                queue
+                                graph
+                                memory
+                                dl
+                                opts
+                                order
+                                (lazy-frontier-callbacks))
+    (let [attachment-context (attachment/context graph
+                                                 primary-root-id
+                                                 free-root-ids
+                                                 opts)
+          tuple-root-order (if (:recent-roots-first? opts)
+                             (let [fixed-roots (vec (distinct
+                                                     (concat (when primary-root-id
+                                                               [primary-root-id])
+                                                             free-root-ids)))
+                                   fixed-root-set (set fixed-roots)]
+                               (vec (concat fixed-roots
+                                            (remove fixed-root-set
+                                                    (reverse (graph/roots graph))))))
+                             root-order)
+          preferred-nodes (when-let [preferred-node-fn (:preferred-node-fn opts)]
+                            (preferred-node-fn {:graph graph
+                                                :memory memory
+                                                :opts opts}))]
+      (reduce
+       (fn [[queue order] {:keys [nodes]}]
+         (let [k (node-condition-key graph nodes)
+               elements (get (:elements-by-condition-key wb) k)]
+           (reduce
+            (fn [[queue order] [element-index element]]
+              (let [new-dl (+ dl (double (:dl element)))
+                    decision (cond
+                               (> new-dl max-dag-dl)
+                               :max-dag-dl
 
-                             (attachment/invalid? graph
-                                                  (:gen-cond element)
-                                                  nodes
-                                                  attachment-context)
-                             :invalid-attachment
+                               (attachment/invalid? graph
+                                                    (:gen-cond element)
+                                                    nodes
+                                                    attachment-context)
+                               :invalid-attachment
 
-                             (not (keep-frontier-item?
-                                   opts
-                                   {:graph graph
-                                    :memory memory
-                                    :nodes nodes
-                                    :condition-key k
-                                    :element element
-                                    :dl new-dl}))
-                             :frontier-predicate
+                               (not (keep-frontier-item?
+                                     opts
+                                     {:graph graph
+                                      :memory memory
+                                      :nodes nodes
+                                      :condition-key k
+                                      :element element
+                                      :dl new-dl}))
+                               :frontier-predicate
 
-                             :else
-                             :enqueued)]
-              (record-frontier-decision! opts element k decision)
-              (if (not= :enqueued decision)
-                [queue order]
-                (let [[item-order order] (next-frontier-order opts order)
-                      build-info (delayed/build-info
-                                  {:dl new-dl
-                                   :graph graph
-                                   :memory memory
-                                   :conditioned-nodes nodes
-                                   :condition-key k
-                                   :element-index element-index})]
-                  [(enqueue queue {:dl new-dl
-                                   :order item-order
-                                   :operator-id (:id element)
-                                   :condition-key k
-                                   :gen-cond (:gen-cond element)
-                                   :input-specs (:input-specs element)
-                                   :output-spec (:output-spec element)
-                                   :build-info build-info})
-                   order]))))
-          [queue order]
-          (map-indexed vector elements))))
-     [queue order]
-     (tuples/node-tuples graph {:max-tuple-len max-tuple-len
-                                :max-results max-node-tuples
-                                :root-order tuple-root-order
-                                :preferred-nodes preferred-nodes}))))
+                               :else
+                               :enqueued)]
+                (record-frontier-decision! opts element k decision)
+                (if (not= :enqueued decision)
+                  [queue order]
+                  (let [[item-order order] (next-frontier-order opts order)
+                        build-info (delayed/build-info
+                                    {:dl new-dl
+                                     :graph graph
+                                     :memory memory
+                                     :conditioned-nodes nodes
+                                     :condition-key k
+                                     :element-index element-index})]
+                    [(enqueue queue {:dl new-dl
+                                     :order item-order
+                                     :operator-id (:id element)
+                                     :condition-key k
+                                     :gen-cond (:gen-cond element)
+                                     :input-specs (:input-specs element)
+                                     :output-spec (:output-spec element)
+                                     :build-info build-info})
+                     order]))))
+            [queue order]
+            (map-indexed vector elements))))
+       [queue order]
+       (tuples/node-tuples graph {:max-tuple-len max-tuple-len
+                                  :max-results max-node-tuples
+                                  :root-order tuple-root-order
+                                  :preferred-nodes preferred-nodes})))))
 
 (defn- score-target-dl
   [graph target-ids cache-context score-target-count]
@@ -290,10 +312,25 @@
                                                        context)]))
                    (:target-ids summary))))))
 
+(defn- sample-index
+  [x]
+  (cond
+    (number? x) x
+    (sequential? x) (or (last x) 1)
+    :else 1))
+
 (defn- pop-queue
   [queue]
-  (let [item (first queue)]
-    [item (disj queue item)]))
+  (loop [queue queue]
+    (when-let [item (first queue)]
+      (let [queue (disj queue item)]
+        (if (lazy-frontier/cursor? item)
+          (let [[build-item next-cursor] (lazy-frontier/pop-cursor item)
+                queue (cond-> queue next-cursor (enqueue next-cursor))]
+            (if build-item
+              [build-item queue]
+              (recur queue)))
+          [item queue])))))
 
 (defn- under-pop-limit?
   [popped max-popped]
@@ -425,7 +462,7 @@
                           :input-specs (:input-specs item)
                           :output-spec (:output-spec item)
                           :result-count result-count}
-                         (:order item)))
+                         (sample-index (:order item))))
         [queue order yielded emitted stop?]
         (reduce (partial add-materialized-result wb opts target-ids cache-context (:dl item))
                 [queue order yielded [] false]
@@ -994,20 +1031,25 @@
    (let [n-workers (worker-count opts)]
      (if (<= n-workers 1)
        (iterate wb targets opts)
-       (let [{:keys [queue order target-ids cache-context opts]}
-             (initial-frontier wb targets opts)
-             opts (if (threshold-active? (:threshold-dl opts))
-                    (assoc opts :halted? (atom false))
-                    opts)
-             partitions (partition-frontier n-workers queue)]
-         (if (empty? partitions)
-           '()
-           (search-frontier-partitions wb
-                                       opts
-                                       target-ids
-                                       cache-context
-                                       order
-                                       partitions)))))))
+       (do
+         (when (lazy-frontier? opts)
+           (throw (ex-info "Lazy frontier mode is currently serial-only"
+                           {:parallelism n-workers
+                            :frontier-mode (:frontier-mode opts)})))
+         (let [{:keys [queue order target-ids cache-context opts]}
+               (initial-frontier wb targets opts)
+               opts (if (threshold-active? (:threshold-dl opts))
+                      (assoc opts :halted? (atom false))
+                      opts)
+               partitions (partition-frontier n-workers queue)]
+           (if (empty? partitions)
+             '()
+             (search-frontier-partitions wb
+                                         opts
+                                         target-ids
+                                         cache-context
+                                         order
+                                         partitions))))))))
 
 (defn iterate-global-best-first
   "Yield materialized candidates using a coordinated global frontier.
@@ -1023,14 +1065,19 @@
    (let [n-workers (worker-count opts)]
      (if (<= n-workers 1)
        (iterate wb targets opts)
-       (let [{:keys [queue order target-ids cache-context opts]}
-             (initial-frontier wb targets opts)]
-         (if (empty? queue)
-           '()
-           (search-global-frontier wb
-                                   opts
-                                   target-ids
-                                   cache-context
-                                   queue
-                                   order
-                                   n-workers)))))))
+       (do
+         (when (lazy-frontier? opts)
+           (throw (ex-info "Lazy frontier mode is currently serial-only"
+                           {:parallelism n-workers
+                            :frontier-mode (:frontier-mode opts)})))
+         (let [{:keys [queue order target-ids cache-context opts]}
+               (initial-frontier wb targets opts)]
+           (if (empty? queue)
+             '()
+             (search-global-frontier wb
+                                     opts
+                                     target-ids
+                                     cache-context
+                                     queue
+                                     order
+                                     n-workers))))))))

@@ -79,27 +79,35 @@
       (mdl/graph-dl graph context))))
 
 (defn- optimized-candidate-summary
-  [summary]
+  [summary opts]
   (let [cache-context (:cache-context summary)
         optimization (graph-optimize/try-to-optimize
                       (:graph summary)
                       (:memory summary)
-                      {:root-id (:primary-root-id summary)
-                       :section-ids (:root-order summary)
-                       :value-dl-cache (cache/value-dl-cache cache-context)})]
-    (if-let [optimized-memory (:memory optimization)]
-      (let [optimized-graph (graph-optimize/apply-memory-values
-                             (:graph summary)
-                             optimized-memory)]
-        (assoc summary
-               :graph optimized-graph
-               :memory optimized-memory
-               :optimizer-result optimization
-               :dl (score-target-dl optimized-graph
-                                    (:target-ids summary)
-                                    cache-context
-                                    (:score-target-count summary))))
-      summary)))
+                      (cond-> {:root-id (:primary-root-id summary)
+                               :section-ids (:root-order summary)
+                               :value-dl-cache (cache/value-dl-cache cache-context)}
+                        (:optimizer-fn opts)
+                        (assoc :optimizer-fn (:optimizer-fn opts))
+
+                        (:optimizer-propagation-options opts)
+                        (assoc :propagation-options
+                               (:optimizer-propagation-options opts))))]
+    (if-not (seq (:slots optimization))
+      summary
+      (if-let [optimized-memory (:memory optimization)]
+        (let [optimized-graph (graph-optimize/apply-memory-values
+                               (:graph summary)
+                               optimized-memory)]
+          (assoc summary
+                 :graph optimized-graph
+                 :memory optimized-memory
+                 :optimizer-result optimization
+                 :dl (score-target-dl optimized-graph
+                                      (:target-ids summary)
+                                      cache-context
+                                      (:score-target-count summary))))
+        summary))))
 
 (defn- with-candidate-transform
   [opts]
@@ -108,7 +116,7 @@
     opts
 
     (:optimize-candidates? opts)
-    (assoc opts :candidate-transform optimized-candidate-summary)
+    (assoc opts :candidate-transform #(optimized-candidate-summary % opts))
 
     :else
     opts))

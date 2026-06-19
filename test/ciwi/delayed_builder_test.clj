@@ -6,7 +6,9 @@
             [ciwi.propagation :as propagation]
             [ciwi.test-helpers :as h]
             [ciwi.value :as value]
-            [clojure.test :refer [deftest is]]))
+            [clojure.test :refer [deftest is]])
+  (:import [ciwi.delayed_builder WeakIdentityKey]
+           [java.lang.ref WeakReference]))
 
 (defn- one-value-graph
   [node-id data]
@@ -44,6 +46,20 @@
                          (not (dense/ndarray? %)))
                    seq
                    x))))
+
+(deftest weak-identity-key-equality-tolerates-cleared-references
+  (let [make-key (var-get #'sut/weak-identity-key)
+        x (Object.)
+        cleared-key (make-key x :delayed-value-fingerprint)
+        live-key (make-key x :delayed-value-fingerprint)
+        null-ref-key (WeakIdentityKey. nil
+                                       (System/identityHashCode x)
+                                       :delayed-value-fingerprint)]
+    (.clear ^WeakReference (.-ref ^WeakIdentityKey cleared-key))
+    (is (not (.equals cleared-key live-key)))
+    (is (not (.equals live-key cleared-key)))
+    (is (not (.equals null-ref-key live-key)))
+    (is (not (.equals live-key null-ref-key)))))
 
 (defn- delayed-brange-build
   [data]

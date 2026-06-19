@@ -111,6 +111,20 @@
 (def ^:private python-wunderbaum-solution
   [:setitem [:repeat 3 [45]] [:negate [-1 -2]] [:negate [-87 -87]]])
 
+(defn- python-wunderbaum-targets
+  []
+  [(value/value [45 87 87]
+                {:spec :array-int
+                 :permeable? false
+                 :name "target"})
+   (value/value [45]
+                {:spec :array-int
+                 :permeable? false
+                 :name "target2"})
+   (value/value 3
+                {:spec :int
+                 :name "free"})])
+
 (defn- expression-products
   [expression-sets]
   (if (empty? expression-sets)
@@ -137,6 +151,41 @@
               (expression-products child-expressions)))
 
       :else #{})))
+
+(defn- candidate-signature
+  [candidate]
+  (let [candidate (sut/realize-selected candidate)]
+    {:dl (:dl candidate)
+     :build-dl (:build-dl candidate)
+     :selected (get-in candidate [:selected :target0])}))
+
+(defn- collect-tuples
+  [cursor]
+  (loop [cursor cursor
+         result []]
+    (if-let [[item cursor] (tuples/next-tuple cursor)]
+      (recur cursor (conj result item))
+      result)))
+
+(defn- frontier-pop-signatures
+  [wb targets opts]
+  (let [events (atom [])]
+    (doall (sut/iterate wb
+                        targets
+                        (assoc opts
+                               :threshold-dl 0.0
+                               :observer #(swap! events conj %)
+                               :observer-sample-rate 1)))
+    (mapv (fn [event]
+            (select-keys event
+                         [:frontier-dl
+                          :operator-id
+                          :condition-key
+                          :gen-cond
+                          :input-specs
+                          :output-spec
+                          :result-count]))
+          (filter #(= :frontier-materialized (:event %)) @events))))
 
 (deftest wunderbaum-requires-injected-registry
   (is (thrown-with-msg?
@@ -171,7 +220,11 @@
     (is (= [[0] [0 0] [1] [2] [0 1] [0 2] [1 0]]
            (mapv :indices tuples)))
     (is (= [[:a] [:a :a] [:b] [:c] [:a :b] [:a :c] [:b :a]]
-           (mapv :nodes tuples)))))
+           (mapv :nodes tuples)))
+    (is (= tuples
+           (collect-tuples
+            (tuples/tuple-cursor g {:max-tuple-len 2
+                                    :max-results 7}))))))
 
 (deftest wunderbaum-finds-range-by-delayed-output-inversion
   (let [target (value/value [0 1 2 3] {:spec :array-int})
@@ -211,6 +264,66 @@
     (is (some? result))
     (is (= [:brange 0 4]
            (get-in result [:selected :target0])))))
+
+(deftest lazy-frontier-finds-range-by-delayed-output-inversion
+  (let [target (value/value [0 1 2 3] {:spec :array-int})
+        result (sut/realize-selected
+                (first (sut/iterate (range-wunderbaum)
+                                    [target]
+                                    {:max-popped 8
+                                     :max-yields 1
+                                     :lazy-frontier? true})))]
+    (is (some? result))
+    (is (= [:brange 0 4]
+           (get-in result [:selected :target0])))))
+
+(deftest lazy-frontier-preserves-serial-candidate-prefix
+  (let [wb (sut/wunderbaum
+            {:registry python-wunderbaum-registry
+             :ops-with-counts python-wunderbaum-operator-declarations})
+        targets (python-wunderbaum-targets)
+        opts {:max-popped 600
+              :max-yields 32
+              :max-node-tuples 120}
+        eager (mapv candidate-signature
+                    (sut/iterate wb targets opts))
+        lazy (mapv candidate-signature
+                   (sut/iterate wb
+                                targets
+                                (assoc opts :lazy-frontier? true)))]
+    (is (= eager lazy))
+    (is (seq lazy))))
+
+(deftest lazy-frontier-preserves-frontier-pop-order
+  (let [wb (sut/wunderbaum
+            {:registry python-wunderbaum-registry
+             :ops-with-counts python-wunderbaum-operator-declarations})
+        targets (python-wunderbaum-targets)
+        opts {:max-popped 250
+              :max-node-tuples 120}
+        eager (frontier-pop-signatures wb targets opts)
+        lazy (frontier-pop-signatures wb
+                                      targets
+                                      (assoc opts :lazy-frontier? true))]
+    (is (= eager lazy))
+    (is (= 250 (count lazy)))))
+
+(deftest lazy-frontier-is-currently-serial-only
+  (let [target (value/value [0 1 2 3] {:spec :array-int})]
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo
+         #"serial-only"
+         (doall (sut/iterate-parallel (range-wunderbaum)
+                                      [target]
+                                      {:parallelism 2
+                                       :lazy-frontier? true}))))
+    (is (thrown-with-msg?
+         clojure.lang.ExceptionInfo
+         #"serial-only"
+         (doall (sut/iterate-global-best-first (range-wunderbaum)
+                                               [target]
+                                               {:parallelism 2
+                                                :lazy-frontier? true}))))))
 
 (deftest global-best-first-defers-descendant-expansion
   (let [target (value/value [0 1 2 3] {:spec :array-int})
@@ -277,17 +390,7 @@
   (let [wb (sut/wunderbaum
             {:registry python-wunderbaum-registry
              :ops-with-counts python-wunderbaum-operator-declarations})
-        targets [(value/value [45 87 87]
-                              {:spec :array-int
-                               :permeable? false
-                               :name "target"})
-                 (value/value [45]
-                              {:spec :array-int
-                               :permeable? false
-                               :name "target2"})
-                 (value/value 3
-                              {:spec :int
-                               :name "free"})]
+        targets (python-wunderbaum-targets)
         results (doall (sut/iterate-parallel wb
                                              targets
                                              {:parallelism 2
@@ -300,17 +403,7 @@
   (let [wb (sut/wunderbaum
             {:registry python-wunderbaum-registry
              :ops-with-counts python-wunderbaum-operator-declarations})
-        targets [(value/value [45 87 87]
-                              {:spec :array-int
-                               :permeable? false
-                               :name "target"})
-                 (value/value [45]
-                              {:spec :array-int
-                               :permeable? false
-                               :name "target2"})
-                 (value/value 3
-                              {:spec :int
-                               :name "free"})]
+        targets (python-wunderbaum-targets)
         result (some (fn [[idx candidate]]
                        (let [expressions (option-expressions (:graph candidate) :target0)]
                          (when (contains? expressions python-wunderbaum-solution)

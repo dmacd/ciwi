@@ -759,7 +759,12 @@ materialized candidates. `:candidate-transform` can replace a materialized
 summary with another summary before threshold scoring. Alice uses this hook for
 optimizer-backed numeric candidates: the symbolic DAG is still found by
 Wunderbaum, then permeable leaves are optimized and the candidate DL is
-recomputed.
+recomputed. `ciwi.alice.wunderbaum.context/task-search-context` is the
+standard place to install that optimizer transform for unguided Alice-style
+searches; demo-specific guided runners may still install their own predicates
+and scheduling hooks around the same raw Wunderbaum core. Candidates with no
+optimizable slots are left unchanged by the Alice transform, matching Python's
+effective no-op behavior for empty optimizer coordinate vectors.
 
 Non-parity demos can also install opt-in pre-materialization scheduling hooks.
 `:frontier-predicate` receives the current graph, memory, conditioned nodes,
@@ -802,6 +807,23 @@ compression steps so yielded candidate counts correspond to accepted
 compression candidates rather than every explored frontier materialization.
 Once a threshold-accepted graph has been scored, CIWI returns it without
 expanding descendants that will be discarded by the stopping rule.
+
+`wunderbaum/iterate` can opt into `:lazy-frontier?` or
+`:frontier-mode :lazy` for serial searches. Lazy frontier mode queues
+expansion cursors instead of eagerly materializing every delayed build
+descriptor for an expanded graph. Each cursor owns a resumable node-tuple
+enumerator, an internal heap of generated-but-not-emitted child descriptors,
+and a lower bound on unscanned children. It emits a concrete build item only
+when the internal best child is no later than the unscanned lower bound; this
+preserves best-first ordering while avoiding upfront descriptor vectors.
+Ordering ties use `[expansion-order local-order]`, which represents the same
+block ordering as eager expansion: all children of an earlier expansion sort
+before same-DL children of later expansions, and local order matches the
+tuple/operator scan order inside the expansion. Cursor pops are scheduler
+bookkeeping and do not count as frontier pops; only emitted build items are
+materialized and counted. Lazy frontier mode is deliberately serial-only for
+now because the partitioned and global parallel schedulers still use numeric
+order counters and different queue semantics.
 
 `wunderbaum/iterate-parallel` is the first JVM-threaded parallel port. It is
 enabled only when callers pass `:parallelism` or Python-shaped `:num-workers`.

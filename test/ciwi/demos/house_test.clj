@@ -1,7 +1,11 @@
 (ns ciwi.demos.house-test
   (:require [ciwi.demos.house :as sut]
             [ciwi.dense.core :as dense]
+            [ciwi.graph :as graph]
+            [ciwi.graph-optimize :as graph-optimize]
             [ciwi.operator :as operator]
+            [ciwi.optimize :as optimize]
+            [ciwi.propagation :as propagation]
             [ciwi.value :as value]
             [clojure.java.io :as io]
             [clojure.test :refer [deftest is]]))
@@ -10,6 +14,20 @@
   [expected actual]
   (< (Math/abs (- (double expected) (double actual)))
      1.0e-9))
+
+(defn- l2-distance
+  [left right]
+  (Math/sqrt
+   (reduce + 0.0
+           (map (fn [x y]
+                  (let [d (- (double x) (double y))]
+                    (* d d)))
+                left
+                right))))
+
+(defn- mem-entry
+  [data opts]
+  (propagation/entry false (value/value data opts)))
 
 (deftest random-state-normals-match-numpy-prefix
   (let [normals (sut/standard-normal-seq 42 3)]
@@ -137,6 +155,76 @@
     (is (nil? (:preferred-node-fn opts)))
     (is (= 1000 (:max-node-tuples opts)))))
 
+(deftest free-values-can-include-learned-color-without-house-colors
+  (let [free (sut/free-values {:include-house-colors? false
+                               :learned-colors [[128.0 129.0 130.0]]})
+        colors (filter #(= :color (:spec %)) free)
+        points (filter #(= :point (:spec %)) free)]
+    (is (= 1 (count colors)))
+    (is (= [128.0 129.0 130.0]
+           (dense/ravel (:data (first colors)))))
+    (is (:permeable? (first colors)))
+    (is (= 5 (count points)))))
+
+(deftest color-leaf-can-be-optimized-through-dye-and-residual
+  (let [draw-opts {:shape [2 2 3]
+                   :background [0.0 0.0 0.0]}
+        points [[0 0] [0 1]]
+        target-color [30.0 60.0 90.0]
+        initial-color [200.0 200.0 200.0]
+        target-image (sut/draw (sut/dye target-color points) draw-opts)
+        initial-image (sut/draw (sut/dye initial-color points) draw-opts)
+        residual (dense/subtract target-image initial-image)
+        root-value (value/value target-image {:spec :rgb-image
+                                              :permeable? false})
+        color-value (value/value (dense/array initial-color {:dtype :float64})
+                                 {:spec :color
+                                  :permeable? true})
+        points-value (value/value points {:spec :point-list
+                                          :permeable? false})
+        residual-value (value/value residual {:spec :rgb-image
+                                              :permeable? false})
+        g (-> (graph/empty-graph)
+              (graph/add-value :root root-value)
+              (graph/add-value :drawn nil)
+              (graph/add-value :colored nil)
+              (graph/add-value :color color-value)
+              (graph/add-value :points points-value)
+              (graph/add-value :residual residual-value)
+              (graph/set-roots [:root])
+              (graph/add-operator :dye sut/dye-operator :colored [:color :points])
+              (graph/add-operator :draw (sut/draw-operator draw-opts) :drawn [:colored])
+              (graph/add-operator :add sut/image-add-operator :root [:drawn :residual]))
+        mem {:root (mem-entry target-image {:spec :rgb-image
+                                            :permeable? false})
+             :color (propagation/entry false color-value)
+             :points (propagation/entry false points-value)
+             :residual (propagation/entry false residual-value)}
+        result (graph-optimize/try-to-optimize
+                g
+                mem
+                {:root-id :root
+                 :section-ids [:root :color :points]
+                 :optimizer-fn #(optimize/adaptive-grid-search
+                                  {:int-mask %
+                                   :n-points 5
+                                   :jointly-optimize? true
+                                   :shrink 1.0
+                                   :max-iters 12})})
+        optimized-color (dense/ravel
+                         (value/datum
+                          (propagation/value-at (:memory result) :color)))]
+    (is (= [{:node-id :color
+             :start 0
+             :end 3
+             :kind :array
+             :int? false}]
+           (mapv #(dissoc % :template) (:slots result))))
+    (is (:improved? result))
+    (is (< (:dl result) (:initial-dl result)))
+    (is (< (l2-distance optimized-color target-color)
+           (l2-distance initial-color target-color)))))
+
 (deftest bounded-unguided-house-baseline-yields-no-compression
   (let [result (sut/run-unguided-compression {:max-yields 10
                                               :max-popped 20000})]
@@ -145,6 +233,15 @@
     (is (nil? (:candidate result)))
     (is (:best result))
     (is (neg? (:compression-rate result)))))
+
+(deftest unguided-house-runner-skips-optimizer-result-when-no-slots-exist
+  (let [result (sut/run-unguided-compression {:max-yields 1
+                                              :max-popped 200
+                                              :optimize-candidates? true})
+        best (:best result)]
+    (is (= :exhausted (:stop-reason result)))
+    (is best)
+    (is (not (contains? best :optimizer-result)))))
 
 (deftest unguided-house-can-collect-frontier-stats
   (let [result (sut/run-unguided-compression {:max-yields 3

@@ -1,6 +1,6 @@
 # CIWI Plan
 
-Last updated: 2026-06-17.
+Last updated: 2026-06-19.
 
 ## Objective
 
@@ -72,9 +72,19 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   namespace owns deterministic three-cluster data generation, notebook-local
   classifier operator declarations, recompression scoring/sweeps, progress
   snapshots, inline SVG/HTML plots, and cached selected-expression rendering.
+  The visible cells now use one `(cell ...)` macro form inside each `comment`
+  block, so Cursive can evaluate the whole cell in place and show output inline
+  without running it at namespace load time. The HTML views set explicit light
+  backgrounds and dark foregrounds for readability in IDE render panes.
+  `sweep-config` is the single source of truth for notebook sweep defaults.
+  Sweep score rows and progress views now report heap-used/total/max MiB
+  snapshots, including best-effort failure snapshots and sampled in-search heap
+  observations, and cached graph inspection embeds successful Graphviz PNG
+  renders while suppressing raw Clojure graph expressions by default.
   The port uses native deterministic Clojure samples rather than byte-identical
-  NumPy PCG64 samples, and its Python-grid constants remain opt-in through
-  REPL evaluation of `(comment ...)` forms.
+  NumPy PCG64 samples, uses CIWI's fraction rate semantics throughout, and its
+  Python-grid constants remain opt-in through REPL evaluation of `(comment
+  ...)` forms.
 - A first native house-demo scaffold now lives in `ciwi.demos.house`. It
   includes the Python legacy fixture geometry, a small RandomState-compatible
   MT19937 normal generator for the seeded noisy 50x50x3 RGB task, demo-local
@@ -86,9 +96,15 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   map vectors. The guided run now reaches the full 18-step expression through
   `draw` and residual `add`, hits a `0.1136` compression rate under default
   bounded guided settings, and writes stats, 18 graph frames, 18 image frames,
-  MP4s, and an artifact README. The first unguided runner now removes the
-  solution predicate, frontier predicate, and preferred-node scheduling while
-  keeping the same primitive basis. CIWI now matches Python's delayed-builder
+  MP4s, and an artifact README. The unguided house runner now goes through the
+  standard Alice `task-search-context`, so it shares Alice value wrapping,
+  cache setup, parallel candidate dispatch, and optimizer candidate-transform
+  wiring while still using the house primitive registry and artifact-facing
+  result shape. The guided runner remains custom because it owns prefix
+  collection, image previews, solution-prefix predicates, and demo artifacts.
+  The unguided runner removes the solution predicate, frontier predicate, and
+  preferred-node scheduling while keeping the same primitive basis. CIWI now
+  matches Python's delayed-builder
   duplicate-value guard for forward-generated values as well as inverses, and
   the house runner can opt into generic Wunderbaum frontier stats. A bounded
   10-yield unguided baseline previously yielded only negative-compression line
@@ -108,26 +124,119 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   generated dense values by identity/raw data. Dense value-DL and
   delayed-builder value-content caches now use weak identity keys, and
   materialized-result de-duplication stores compact fingerprints instead of raw
-  value data. The same 4-minute heap-capped probe now reaches similar work
+  value data. Weak dense-cache key equality now explicitly returns a boolean
+  when a weak referent has been cleared, after a long house probe exposed a
+  Java primitive-unboxing `NullPointerException` under GC pressure. The same
+  4-minute heap-capped probe now reaches similar work
   (43,607 candidates, 94,417 pops) at about 5.4 GiB used, with the same best
-  negative-compression shape. A thresholded 5k-pop probe now gets past the
-  line-only phase and materializes fill, dye, concat, draw, and add work, but
-  still finds no 1% compression candidate; a 50k-pop serial probe hit a 60s
-  diagnostic timeout. The house
-  runner now honors the existing
-  Wunderbaum parallel strategy options, and a 20k-pop global-best-first probe
-  on 4 workers completed in about 27s without a compression candidate. A
+  negative-compression shape. A compact-frontier cursor experiment packed
+  sibling delayed-build descriptors sharing one graph/memory pair and realized
+  one build item at pop time, but it was removed after measurement because it
+  slowed the core path and did not materially reduce retained heap. The initial
+  time-boxed comparison overstated the memory win because compact mode
+  completed less work in the same wall time. A corrected fixed-work probe with
+  the live queue retained during post-GC measurement showed identical search
+  work at 10k/25k/50k pops and identical logical pending frontier sizes, while
+  physical queue entries shrank from 208k/584k/1.28M concrete build items to
+  4.6k/11.9k/25k cursors. Post-GC heap only dropped from 477/1232/2595 MiB to
+  466/1197/2516 MiB. CIWI now has the first opt-in serial
+  `:lazy-frontier?` implementation of that next idea: expansion cursors keep a
+  resumable node-tuple enumerator and an internal child heap, expose a build
+  item only when it is no later than the unscanned lower bound, and use
+  `[expansion-order local-order]` ties to preserve eager block ordering. It is
+  intentionally disabled for the partitioned/global parallel paths. Current
+  tests verify tuple-cursor/eager tuple parity, range completion under lazy
+  mode, eager-vs-lazy candidate-prefix equality, eager-vs-lazy
+  frontier-materialization order equality over a 250-pop Python Wunderbaum
+  prefix, and serial-only rejection for multi-worker modes. Fixed-candidate
+  house probes show lazy frontier reducing both retained heap and runtime at
+  equal yielded-candidate counts; the detailed memory-growth and timing tables
+  live in `lazy-frontier-optimization.md`. A longer lazy-frontier house probe
+  on an 8 GiB heap did not hit a formal OOM, but became GC-bound around
+  100k emitted candidates and was stopped at 18.1 minutes after 104,725
+  candidates, 222,786 frontier pops, 542,839 kept frontier entries, and
+  8,181 MiB used, with the same best negative-compression shape. A follow-up
+  lazy-frontier probe with a 16 GiB heap and no practical search timeout
+  reached 213,209 emitted candidates, 433,777 frontier pops, and 1,042,670
+  kept frontier entries after 21.1 minutes, then was stopped once throughput
+  fell below about 500 candidates/minute near the heap cap; the best graph was
+  still unchanged. The observed multi-core activity during these serial probes
+  is consistent with JVM GC/JIT work; the lazy frontier implementation still
+  rejects multi-worker partitioned/global paths. A thresholded 5k-pop probe now gets
+  past the line-only phase and materializes fill, dye, concat, draw, and add
+  work, but still finds no 1% compression candidate; a 50k-pop serial probe
+  hit a 60s diagnostic timeout. The house runner now honors the existing Wunderbaum
+  parallel strategy options, and a 20k-pop global-best-first probe on 4 workers
+  completed in about 27s without a compression candidate. A
   larger 50k-pop global-best-first probe completed in about 60s and still
   sampled the same low build-DL bucket (`1.2`), while the guided full solution
-  has build-DL `6.6`. The current unguided baseline is therefore not
+  has build-DL `6.6`. Unguided experiments can now add learned permeable
+  `:color` leaves without the baked-in house colors; a small graph optimizer
+  test shows a learned color leaf moving through `dye -> draw -> add residual`
+  with lower DL when a joint RGB optimizer is supplied through the standard
+  context. The Alice optimizer transform now leaves no-slot candidates
+  unchanged instead of attaching an empty optimizer result and recomputing DL.
+  A 5-yield learned-color unguided probe exercised the new path but only
+  reached `draw` candidates with no color slots. A 1000-yield slot probe with
+  learned colors and baked-in colors disabled found 30 actual optimizer slots,
+  all `:color` dense arrays of size 3; it also encountered large permeable
+  `:colored-point-list` `[2500 5]` and `:rgb-image` `[50 50 3]` leaves, but
+  those were skipped by the existing large-array optimizer limit and were not
+  optimized. A focused gated probe that only optimized slotted `dye -> draw`
+  candidates found the first color-slot candidate at 318 yielded candidates
+  and the first useful one at 361 yielded candidates, with graph ops
+  `[:add :line :dye :draw]`; the learned color moved from `[128 128 128]` to
+  `[128 193 63]` and reduced candidate DL by about `2.46` bits, but the graph
+  remained non-compressive. A deeper 1200-yield optimized probe was stopped
+  after about two minutes because optimizing all eligible color-slot candidates
+  is too expensive without a gating strategy. A 30-minute 16 GiB learned-color
+  run through the standard Alice context used two learned color leaves, removed
+  the baked-in house colors, kept lazy frontier enabled, and optimized only
+  candidates containing `dye`, `draw`, and residual `add`. It timed out after
+  1,801s with 7,575 emitted candidates, 18,227 frontier pops, 99,626 frontier
+  items considered, 47,781 kept frontier entries, and about 1.7 GiB heap used.
+  The gate still optimized too much low-depth work: 374 candidates were
+  optimizer-eligible, 266 had slots, and 138 improved locally. The best
+  optimizer-local improvement was about `50.8` bits on an
+  `[:add :add :line :dye :draw]` variant, but the best overall graph remained
+  the same negative-compression `[:add :line :dye :draw]` shape with build-DL
+  `1.15` and compression rate `-0.000981`. A concurrent no-optimizer
+  rank-depth sampler with the same learned-color free values reached 5,000
+  emitted candidates and was still in the build-DL `1.20` bucket; the guided
+  full solution has build-DL `6.60`. This confirms that color fitting removes
+  a candidate-scoring blocker but does not address the topology-ordering
+  blocker, because the Wunderbaum queue is still ranked by `[build-dl, order]`
+  and optimized candidate memories do not reprioritize or seed descendant
+  expansion. `HOUSE-DEMO-PLAN.md` is now the focused checkpoint for this demo's
+  state, probe results, blockers, and resume plan. A direct CIWI-vs-Python raw-image
+  DL check on the legacy house fixture now matches Python exactly for the red
+  field, noiseless house, noisy red field, noisy house, noise-only residual,
+  and shape residual diagnostics. Under the current Python-compatible
+  channel-wise Gaussian array codec, the noisy house target is
+  `110668.334` bits, the noisy red field is `97818.280` bits, and the full
+  true-house residual is `97787.868` bits. Removing only the roof lowers the
+  residual by about `2499.7` bits, removing only the body by about `6492.7`
+  bits, and removing the full house by about `12880.5` bits before expression
+  cost. The corresponding low-level expression costs are small under the
+  current demo DLs, but the codec only sees per-channel marginal variance and
+  not spatial arrangement, so partial shape rewards are much weaker than a
+  human visual-complexity intuition would suggest. The current unguided
+  baseline is therefore not
   practically close; the next task is using the operator/spec stats to tune
   generic bounds, ordering, and DL costs so useful roof/body compositions
   surface much earlier. Unguided recognizer-free house discovery remains
   pending.
-- Targeted delayed-builder/value cache tests pass locally with 18 tests and 78
-  assertions after the weak dense-cache-key change. The default vector-backend
-  suite was not completed after that cache change; the last completed full run
-  before it passed with 200 tests and 1013 assertions. The opt-in DJL backend
+- Targeted Wunderbaum tests pass locally with 17 tests and 43 assertions, and
+  targeted house-demo tests pass locally with 18 tests and 59 assertions after
+  moving unguided house onto the Alice context and adding the learned-color
+  optimizer checks. Targeted delayed-builder tests pass locally with 11 tests
+  and 39 assertions after the weak dense-cache-key equality fix. Targeted
+  graph-optimizer tests pass locally with 5 tests and 19 assertions, targeted
+  Alice Wunderbaum tests pass with 14 tests and 134 assertions, and targeted
+  matrix-regression Alice tests pass with 4 tests and 19 assertions after
+  wiring `:optimizer-fn` through the Alice context. The default vector-backend
+  suite was not completed after those changes; the last completed full run
+  before them passed with 200 tests and 1013 assertions. The opt-in DJL backend
   was not rerun in this turn; the last recorded DJL suite remains 8 tests and
   43 assertions.
 
@@ -151,7 +260,9 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   emits matching accepted-step events. The observer path is a debugging/demo
   surface and does not alter search results when absent. Absent observers are
   checked before event payload construction, so rendering/tracing costs stay
-  opt-in. Non-parity demos can additionally opt into pre-materialization
+  opt-in. Serial searches can opt into lazy frontier cursors with
+  `:lazy-frontier?` or `:frontier-mode :lazy`; default eager expansion remains
+  unchanged. Non-parity demos can additionally opt into pre-materialization
   frontier predicates and preferred tuple nodes; those hooks are caller-owned
   scheduling controls and are not enabled by the Alice parity harness.
 - `ciwi.render.graph` is the generic graph visualization surface. It renders
@@ -165,8 +276,10 @@ resource-bounded local graph rewrites and later outer-loop learning mechanisms.
   Alice parity basis. Current coverage verifies deterministic fixture
   generation, primitive rendering behavior, PNG writing, bounded guided
   partial-expression discovery, partial image preview changes, guided artifact
-  writing, full guided threshold completion, and the first bounded unguided
-  no-compression baseline. Removing the guide and still discovering a
+  writing, full guided threshold completion, the first bounded unguided
+  no-compression baseline through the standard Alice context, and learned-color
+  optimizer behavior on a small `dye`/`draw` residual graph. Removing the guide
+  and still discovering a
   recognizably house-shaped compressive graph remains the next open demo
   milestone.
 - `ciwi.alice.wunderbaum` adds an Alice-facing greedy runner over that core.

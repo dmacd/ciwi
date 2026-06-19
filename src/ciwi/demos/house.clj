@@ -1,6 +1,7 @@
 (ns ciwi.demos.house
   (:refer-clojure :exclude [line])
   (:require [ciwi.alice :as alice]
+            [ciwi.alice.wunderbaum.context :as wb-context]
             [ciwi.dense.core :as dense]
             [ciwi.graph :as graph]
             [ciwi.hashing :as hashing]
@@ -541,15 +542,42 @@
   [data spec]
   (value/value data {:spec spec}))
 
+(defn- learned-color-seeds
+  [{:keys [learned-colors learn-free-color-count learn-free-color?]
+    :or {learn-free-color-count 0}}]
+  (cond
+    (some? learned-colors)
+    (vec learned-colors)
+
+    (pos? (long learn-free-color-count))
+    (vec (repeat (long learn-free-color-count) [128.0 128.0 128.0]))
+
+    learn-free-color?
+    [[128.0 128.0 128.0]]
+
+    :else
+    []))
+
 (defn free-values
-  "Return the low-level constants used by the guided house demo."
-  []
-  (vec
-   (concat [(spec-value red :color)
-            (spec-value green :color)
-            (spec-value blue :color)]
-           (map #(spec-value % :point)
-                (distinct (concat roof-points body-points))))))
+  "Return the low-level constants used by the house demo.
+
+  The default matches the guided fixture constants. Unguided experiments can
+  add learned color leaves with `:learned-colors`, `:learn-free-color?`, or
+  `:learn-free-color-count`, and can remove the baked-in house colors with
+  `:include-house-colors? false`.
+  "
+  ([]
+   (free-values {}))
+  ([opts]
+   (vec
+    (concat (when (not= false (:include-house-colors? opts))
+              [(spec-value red :color)
+               (spec-value green :color)
+               (spec-value blue :color)])
+            (map #(spec-value % :color)
+                 (learned-color-seeds opts))
+            (map #(spec-value % :point)
+                 (distinct (concat roof-points body-points)))))))
 
 (defn- spec-data
   [data spec]
@@ -882,6 +910,14 @@
                        :allowed #{:partitioned :global-best-first}})))
     (wunderbaum/iterate wb inputs opts)))
 
+(defn- unguided-task
+  [opts]
+  (alice/compression-task [(house-value)]
+                          {:name "house-unguided"
+                           :threshold-rate (double (or (:min-compression-rate opts)
+                                                       0.01))
+                           :free-values (free-values opts)}))
+
 (defn run-guided-compression
   "Run the guided house compression search with the demo-local primitive basis."
   ([]
@@ -955,15 +991,14 @@
   ([opts]
    (let [opts (merge (unguided-options) opts)
          [opts stats] (with-search-stats opts)
-         target (house-value)
-         inputs (into [target] (free-values))
-         wb (wunderbaum/wunderbaum opts)
-         initial-dl (value/desc-len target)
+         search-context (wb-context/task-search-context (unguided-task opts)
+                                                        opts)
+         initial-dl (:initial-dl search-context)
          min-compression-rate (double (or (:min-compression-rate opts) 0.01))
          collected (when (:collect-candidates? opts) (atom []))
          candidate-limit (long (or (:candidate-limit opts) 64))
          t0 (System/nanoTime)
-         candidates (candidate-seq wb inputs opts)]
+         candidates (wb-context/candidate-seq search-context)]
      (loop [remaining candidates
             consumed 0
             best nil]

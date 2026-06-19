@@ -26,12 +26,16 @@
 (deftype WeakIdentityKey [ref identity-hash purpose]
   Object
   (equals [_ other]
-    (and (instance? WeakIdentityKey other)
-         (= identity-hash (.-identity-hash ^WeakIdentityKey other))
-         (= purpose (.-purpose ^WeakIdentityKey other))
-         (let [x (.get ^WeakReference ref)
-               y (.get ^WeakReference (.-ref ^WeakIdentityKey other))]
-           (and x y (identical? x y)))))
+    (boolean
+     (and (instance? WeakIdentityKey other)
+          (= identity-hash (.-identity-hash ^WeakIdentityKey other))
+          (= purpose (.-purpose ^WeakIdentityKey other))
+          (let [other-ref (.-ref ^WeakIdentityKey other)
+                x (when ref
+                    (.get ^WeakReference ref))
+                y (when other-ref
+                    (.get ^WeakReference other-ref))]
+            (and x y (identical? x y))))))
   (hashCode [_]
     (hash [::weak-identity-key identity-hash purpose])))
 
