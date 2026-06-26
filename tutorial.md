@@ -136,6 +136,17 @@ defines `case-names`, `case-data`, `run-case`, `run-step`, `run-all`,
 `inspect`, `summary`, `step-rows`, and `pp` locally in its own
 namespace, so nothing needs to be added to `dev/user.clj`.
 
+The three-cluster classifier sweep is also Cursive-first:
+`notebooks/ciwi/notebook/minimal_classifier_2d_three_cluster_onehot_sweep.clj`
+keeps the cell-level calls short, while
+`ciwi.notebook.minimal-classifier-2d-three-cluster-utils` holds the
+notebook-specific support functions. Its plots and progress snapshots return
+`cursive/html` tagged literals for inline display. Each visible cell is one
+`(cell ...)` form inside a `comment` block; evaluate that inner form to run the
+whole cell and get output inline at the cell location. This notebook requires
+the `:dev` alias because that alias puts `notebooks` on the classpath. Rate
+settings use CIWI's fraction convention: `1.0` means 100% and `0.01` means 1%.
+
 Good experiments:
 
 - lower `:max-depth` in the square graph rewrite operator from `2` to `1`
@@ -164,4 +175,11 @@ Load the Alice REPL notebook namespace:
 
 ```bash
 ./bin/clojure -M:dev -e "(require 'ciwi.notebook.alice-machinery)"
+```
+
+Load the three-cluster classifier sweep notebook namespaces:
+
+```bash
+./bin/clojure -M:dev \
+  -e "(require 'ciwi.notebook.minimal-classifier-2d-three-cluster-utils 'ciwi.notebook.minimal-classifier-2d-three-cluster-onehot-sweep)"
 ```

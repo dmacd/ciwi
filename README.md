@@ -97,10 +97,13 @@ For Cursive-driven REPL notebooks, start a REPL with the `:dev` alias and open:
 ```text
 notebooks/ciwi/notebook/core_machinery.clj
 notebooks/ciwi/notebook/alice_machinery.clj
+notebooks/ciwi/notebook/minimal_classifier_2d_three_cluster_onehot_sweep.clj
 ```
 
 The `:dev` alias includes `notebooks`, so those namespaces can be loaded and
-their `(comment ...)` forms can be evaluated directly in Cursive.
+their `(comment ...)` forms can be evaluated directly in Cursive. If Cursive
+cannot locate a notebook utility namespace, refresh the Deps project and verify
+that the REPL is using `:dev`.
 
 If `.tooling/clojure` is missing, run:
 
